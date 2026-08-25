@@ -16,23 +16,27 @@ func (e *Engine) ingest(m *gomsf.EventMonitor, ch <-chan gomsf.Event) {
 	for ev := range ch {
 		switch ev.Type {
 		case gomsf.EventSessionOpened:
-			e.sessionOpened(ev)
+			e.sessionOpened(m, ev)
 		case gomsf.EventSessionClosed:
 			e.sessionClosed(ev)
 		case gomsf.EventSessionOutput:
 			e.sessionOutput(ev)
 		case gomsf.EventJobStarted:
-			e.jobChanged(ev.Job.ID, ev.Job.Name, true)
+			e.jobChanged(m, ev.Job.ID, ev.Job.Name, true)
 		case gomsf.EventJobStopped:
-			e.jobChanged(ev.Job.ID, ev.Job.Name, false)
+			e.jobChanged(m, ev.Job.ID, ev.Job.Name, false)
 		case gomsf.EventError:
 			e.monitorError(m, ev.Err)
 		}
 	}
 }
 
-func (e *Engine) sessionOpened(ev gomsf.Event) {
+func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.mu.Lock()
+	if m != e.monitor {
+		e.mu.Unlock()
+		return
+	}
 	if _, exists := e.sessions[ev.SessionID]; exists {
 		e.mu.Unlock()
 		return
@@ -100,8 +104,12 @@ func (e *Engine) sessionOutput(ev gomsf.Event) {
 	e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: ev.SessionID, Data: data})
 }
 
-func (e *Engine) jobChanged(id, name string, started bool) {
+func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool) {
 	e.mu.Lock()
+	if m != e.monitor {
+		e.mu.Unlock()
+		return
+	}
 	if started {
 		e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
 	} else {
