@@ -9,7 +9,8 @@
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
     "types": [
-      "vite/client"
+      "vite/client",
+      "node"
     ],
     "skipLibCheck": true,
     "esModuleInterop": true,

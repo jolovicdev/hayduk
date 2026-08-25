@@ -19,37 +19,35 @@ out_css = src / "styles/icons.css"
 out_fonts = src / "styles/fonts"
 out_fonts.mkdir(parents=True, exist_ok=True)
 
-# names referenced as ph-<name> classes anywhere in the source, plus names
-# passed through icon= / icon: props (rendered as ph-<name>)
+# names referenced as ph-<name> classes anywhere in the source, plus any
+# quoted string that is a real phosphor name - names built from data at
+# runtime (menu items, tab tuples, ternaries) are only visible as literals,
+# so over-inclusion is the safe direction
 names = set()
 for p in src.rglob("*"):
     if p.suffix not in (".ts", ".tsx", ".css"):
         continue
     text = p.read_text()
     names.update(re.findall(r"\bph-([a-z0-9-]+)", text))
-    names.update(re.findall(r'\bicon[=:]\s*"([a-z0-9-]+)"', text))
+    for m in re.finditer(r"([\"'])([a-z0-9][a-z0-9-]*)\1", text):
+        names.add(m.group(2))
 names -= {"fill", "bold", "thin", "light", "duotone"}  # weight classes
 names = {n for n in names if not n.endswith("-")}  # template-literal partials
 # dynamic template suffixes the scan cannot see
 names |= {"folder-open"}
 
 codepoints = {}
-missing = []
 for weight, prefix in (("regular", "ph"), ("fill", "ph-fill")):
     css = (web / weight / "style.css").read_text()
     for name, cp in re.findall(r'\.%s\.ph-([a-z0-9-]+):before\s*\{\s*content:\s*"\\([0-9a-f]+)"' % prefix, css):
         codepoints.setdefault(name, {})[prefix] = cp
 
-# the app renders regular and fill from one name space; a glyph missing from
-# a weight is fine unless the source uses that weight for it
+# literals that are not phosphor names are just strings (css classes, field
+# names, numbers); only real glyph names ship
 used = {}
 for name in sorted(names):
-    if name not in codepoints:
-        missing.append(name)
-        continue
-    used[name] = codepoints[name]
-if missing:
-    sys.exit("no phosphor glyph for: %s" % ", ".join(missing))
+    if name in codepoints:
+        used[name] = codepoints[name]
 
 def subset(weight, family, prefix):
     cps = sorted({cp for weights in used.values() for cp in [weights.get(prefix)] if cp})

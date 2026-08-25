@@ -33,12 +33,18 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+.ph.ph-archive:before { content: "\e00c"; }
+.ph-fill.ph-archive:before { content: "\e00c"; }
 .ph.ph-arrows-clockwise:before { content: "\e094"; }
 .ph-fill.ph-arrows-clockwise:before { content: "\e094"; }
 .ph.ph-arrows-out-simple:before { content: "\e0a6"; }
 .ph-fill.ph-arrows-out-simple:before { content: "\e0a6"; }
 .ph.ph-broadcast:before { content: "\e0f2"; }
 .ph-fill.ph-broadcast:before { content: "\e0f2"; }
+.ph.ph-check:before { content: "\e182"; }
+.ph-fill.ph-check:before { content: "\e182"; }
+.ph.ph-command:before { content: "\e1c4"; }
+.ph-fill.ph-command:before { content: "\e1c4"; }
 .ph.ph-copy:before { content: "\e1ca"; }
 .ph-fill.ph-copy:before { content: "\e1ca"; }
 .ph.ph-corners-out:before { content: "\e1d0"; }
@@ -57,6 +63,8 @@
 .ph-fill.ph-folder:before { content: "\e24a"; }
 .ph.ph-folder-open:before { content: "\e256"; }
 .ph-fill.ph-folder-open:before { content: "\e256"; }
+.ph.ph-gear:before { content: "\e270"; }
+.ph-fill.ph-gear:before { content: "\e270"; }
 .ph.ph-graph:before { content: "\eb58"; }
 .ph-fill.ph-graph:before { content: "\eb58"; }
 .ph.ph-info:before { content: "\e2ce"; }
@@ -71,12 +79,18 @@
 .ph-fill.ph-magnifying-glass:before { content: "\e30c"; }
 .ph.ph-minus:before { content: "\e32a"; }
 .ph-fill.ph-minus:before { content: "\e32a"; }
+.ph.ph-password:before { content: "\e752"; }
+.ph-fill.ph-password:before { content: "\e752"; }
+.ph.ph-pi:before { content: "\ec80"; }
+.ph-fill.ph-pi:before { content: "\ec80"; }
 .ph.ph-plug:before { content: "\e946"; }
 .ph-fill.ph-plug:before { content: "\e946"; }
 .ph.ph-plus:before { content: "\e3d4"; }
 .ph-fill.ph-plus:before { content: "\e3d4"; }
 .ph.ph-pulse:before { content: "\e000"; }
 .ph-fill.ph-pulse:before { content: "\e000"; }
+.ph.ph-resize:before { content: "\ed6e"; }
+.ph-fill.ph-resize:before { content: "\ed6e"; }
 .ph.ph-rocket-launch:before { content: "\e3fe"; }
 .ph-fill.ph-rocket-launch:before { content: "\e3fe"; }
 .ph.ph-signpost:before { content: "\e89c"; }
@@ -87,8 +101,14 @@
 .ph-fill.ph-table:before { content: "\e476"; }
 .ph.ph-target:before { content: "\e47c"; }
 .ph-fill.ph-target:before { content: "\e47c"; }
+.ph.ph-terminal:before { content: "\e47e"; }
+.ph-fill.ph-terminal:before { content: "\e47e"; }
 .ph.ph-terminal-window:before { content: "\eae8"; }
 .ph-fill.ph-terminal-window:before { content: "\eae8"; }
+.ph.ph-tree:before { content: "\e6da"; }
+.ph-fill.ph-tree:before { content: "\e6da"; }
+.ph.ph-user:before { content: "\e4c2"; }
+.ph-fill.ph-user:before { content: "\e4c2"; }
 .ph.ph-users-three:before { content: "\e68e"; }
 .ph-fill.ph-users-three:before { content: "\e68e"; }
 .ph.ph-wifi-high:before { content: "\e4ea"; }
