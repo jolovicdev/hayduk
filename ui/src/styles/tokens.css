@@ -1,0 +1,62 @@
+/* ============================================================
+   HAYDUK design tokens
+   Type:    IBM Plex Sans (UI) / IBM Plex Mono (data), self-hosted
+   Icons:   Phosphor web font (regular + fill)
+   Palette: gunmetal neutrals, one oxide-red brand accent,
+            green / amber reserved for semantic state
+   Radius:  10 cards · 6 controls · 4 chips and tags
+   ============================================================ */
+
+:root {
+  --bg0:#0a0c0f;            /* page canvas */
+  --bg1:#12151b;            /* cards */
+  --bg2:#181d26;            /* hover, elevated */
+  --bg3:#20262f;            /* active */
+  --well:#0d1015;           /* inset wells: graph, note, search */
+  --cardline:#1e2430;
+  --line:#262d3a;
+  --tx0:#e2e7ee;
+  --tx1:#9aa4b2;
+  --tx2:#7e8896;
+  --red:#c9404a;
+  --red-hi:#d54954;
+  --red-br:#e2666b;
+  --red-dim:rgba(201,64,74,.16);
+  --grn:#3fa87c;
+  --grn-tx:#55c78f;
+  --grn-dim:rgba(63,168,124,.16);
+  --amb:#d9a13f;
+  --amb-dim:rgba(217,161,63,.14);
+  --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace;
+  --shadow:0 16px 46px rgba(0,0,0,.5);
+}
+
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; }
+body {
+  background:var(--bg0);
+  background-image:radial-gradient(1200px 500px at 50% -10%, rgba(38,45,58,.35), transparent 70%);
+  color:var(--tx0);
+  font:400 13px/1.5 var(--sans);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+  padding:10px;
+}
+button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
+button:disabled { opacity:.4; cursor:not-allowed; }
+:focus-visible { outline:2px solid var(--red-br); outline-offset:1px; border-radius:4px; }
+::selection { background:var(--red-dim); }
+
+*::-webkit-scrollbar { width:10px; height:10px; }
+*::-webkit-scrollbar-thumb { background:#262d3a; border:3px solid var(--bg1); border-radius:6px; }
+*::-webkit-scrollbar-track { background:transparent; }
+* { scrollbar-width:thin; scrollbar-color:#262d3a transparent; }
+
+i.ph, i.ph-fill { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; font-size:16px; flex:none; }
+
+kbd {
+  font:500 10.5px var(--mono);
+  background:var(--well); border:1px solid var(--line); border-bottom-width:2px;
+  border-radius:4px; padding:2px 6px; color:var(--tx1);
+}

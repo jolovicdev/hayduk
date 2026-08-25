@@ -1,0 +1,10 @@
+packages:
+  - path: github.com/jolovicdev/hayduk/internal/protocol
+    output_path: ui/src/protocol/types.ts
+    type-name: protocol
+    indent: "  "
+    exclude:
+      - ClientMessage
+    flavor: default
+    type_mappings:
+      time.Time: string

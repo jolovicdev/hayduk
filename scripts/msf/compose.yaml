@@ -1,0 +1,38 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: msf
+      POSTGRES_PASSWORD: msf
+      POSTGRES_DB: msf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U msf"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  msf:
+    image: metasploitframework/metasploit-framework
+    command: ./msfrpcd -P testpass123 -S -f -a 0.0.0.0 -p 55553
+    environment:
+      MSF_DATABASE_CONFIG: /tmp/database.yml
+    volumes:
+      - ./database.yml:/tmp/database.yml:ro
+    ports:
+      - "55553:55553"
+    depends_on:
+      db:
+        condition: service_healthy
+  # disposable targets for local, authorized testing: real services to
+  # discover, fingerprint and attack from hayduk
+  vulnbox:
+    image: citizenstig/dvwa:latest
+    container_name: hayduk-vulnbox
+    profiles: ["vulnbox"]
+  sshbox:
+    image: linuxserver/openssh-server:latest
+    container_name: hayduk-sshbox
+    environment:
+      PASSWORD_ACCESS: "true"
+      USER_PASSWORD: msfadmin
+      USER_NAME: msfadmin
+    profiles: ["vulnbox"]

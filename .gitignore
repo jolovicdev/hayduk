@@ -1,0 +1,14 @@
+# build output
+bin/
+ui/dist/
+
+# the embedded UI stays committed: go:embed all:dist must resolve for go build
+!internal/server/dist/
+
+# dependencies and tool caches
+node_modules/
+.vite/
+*.tsbuildinfo
+
+# go test binaries
+*.test

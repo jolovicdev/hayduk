@@ -1,0 +1,10 @@
+development: &pgsql
+  adapter: postgresql
+  host: db
+  port: 5432
+  username: msf
+  password: msf
+  database: msf
+  pool: 5
+production:
+  <<: *pgsql
