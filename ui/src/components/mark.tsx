@@ -1,7 +1,7 @@
 import { Show } from "solid-js";
 
-// The hayduk mark: a plain H in a red box. No logo system - just the
-// letter, drawn as three rects so it stays crisp at every size.
+// The hayduk mark: a white H on the oxide-red box, drawn as three rects
+// so it stays crisp at every size.
 export function HaydukMark(props: { size?: number; tile?: boolean; title?: string }) {
   const size = () => props.size ?? 24;
   return (

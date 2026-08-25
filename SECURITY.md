@@ -1,8 +1,8 @@
 # Security policy
 
 Hayduk is a graphical attack management console for Metasploit, for use
-against systems you are authorized to test. This file states the trust
-model honestly so operators can decide where the tool may run.
+against systems you are authorized to test. This file records the trust
+model so operators can decide where the tool may run.
 
 ## Threat model
 
