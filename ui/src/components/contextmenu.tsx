@@ -43,6 +43,10 @@ export function closeContextMenu() {
   menuEl?.classList.remove("show");
 }
 
+export function contextMenuOpen(): boolean {
+  return menuEl?.classList.contains("show") ?? false;
+}
+
 // placeMenu fits the menu inside the viewport without ever going negative.
 export function placeMenu(x: number, y: number, w: number, h: number, vw: number, vh: number) {
   return {

@@ -56,6 +56,12 @@ function sortRecursive(n: TreeNode) {
   for (const c of n.children) sortRecursive(c);
 }
 
+// A collapsed branch renders no rows: the module index carries thousands of
+// entries and a hidden-but-present DOM bogs the panel down.
+export function visibleChildren(children: TreeNode[], expanded: boolean): TreeNode[] {
+  return expanded ? children : [];
+}
+
 // filterTree returns the set of node paths that match the query or contain a
 // matching descendant; empty query returns an empty set (show everything).
 export function filterTree(root: TreeNode, query: string): Set<string> {

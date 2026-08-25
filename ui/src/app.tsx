@@ -27,6 +27,7 @@ import { currentOperator } from "./ws/client";
 import { forgetOperator, restoreOperator, saveOperator } from "./ws/operator";
 import { flash } from "./statusflash";
 import { HaydukMark } from "./components/mark";
+import { switchWorkspaceAction } from "./appActions";
 import { DEFAULT_PANELS, clamp, clampNotebook, clampPanels, type PanelSizes } from "./stores/panels";
 
 const notebookTabs: [string, string, string][] = [
@@ -153,14 +154,11 @@ export default function App() {
     ]);
   }
 
-  async function switchWorkspace(name: string) {
-    try {
-      await ws.command("workspace.set", { name });
-      flash(`switched to workspace ${name}`);
-    } catch (e: any) {
-      flash(e.message ?? "workspace switch failed");
-    }
-  }
+  const switchWorkspace = switchWorkspaceAction({
+    command: (method, params) => ws.command(method, params),
+    onSwitched: () => setSelectedHost(undefined),
+    flash,
+  });
 
   function commitOperator() {
     const name = operatorDraft().trim();

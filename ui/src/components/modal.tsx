@@ -1,4 +1,6 @@
 import { JSX, createUniqueId, onCleanup, onMount } from "solid-js";
+import { contextMenuOpen } from "./contextmenu";
+import { escapeCloser } from "./escape";
 
 export function Modal(props: { title: string; onClose: () => void; children: JSX.Element; width?: string }) {
   let card: HTMLDivElement | undefined;
@@ -8,6 +10,9 @@ export function Modal(props: { title: string; onClose: () => void; children: JSX
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     card?.focus();
     onCleanup(() => previous?.focus());
+    const onKey = escapeCloser({ onClose: props.onClose, overlayOpen: contextMenuOpen });
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
   });
   return (
     <div class="modalback show" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>

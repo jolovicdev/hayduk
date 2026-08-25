@@ -1,5 +1,5 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
-import { buildModuleTree, filterTree, type TreeNode } from "./tree";
+import { buildModuleTree, filterTree, visibleChildren, type TreeNode } from "./tree";
 import { rankChip } from "./rank";
 import { campaignState } from "../stores/store";
 import { openContextMenu } from "./contextmenu";
@@ -93,7 +93,7 @@ function Branch(props: {
           </Show>
         </button>
         <ul classList={{ open: expanded() }}>
-          <For each={props.node.children}>{(child) =>
+          <For each={visibleChildren(props.node.children, expanded())}>{(child) =>
             child.children.length === 0 ? (
               <li>
                 <button class="trow leaf" title={child.path}

@@ -89,3 +89,47 @@ export function missingRequired(
   }
   return missing;
 }
+
+// The compatible-payloads request must identify the module the way every
+// other module command does.
+export function compatiblePayloadsParams(
+  type: string,
+  name: string,
+): Record<string, string> | null {
+  if (type !== "exploit") return null;
+  return { type, name };
+}
+
+// missingLaunchOptions names the required options blocking a launch: the
+// module's own, plus the chosen payload's once its settings are in hand.
+export function missingLaunchOptions(o: {
+  optionsLoading: boolean;
+  optionsError: boolean;
+  payloadChosen: boolean;
+  payloadLoading: boolean;
+  optsDefs: Record<string, OptionDef>;
+  optsValues: Record<string, unknown>;
+  payDefs: Record<string, OptionDef>;
+  payValues: Record<string, unknown>;
+}): string[] {
+  if (o.optionsLoading || o.optionsError) return [];
+  const missing = missingRequired(o.optsDefs, o.optsValues);
+  if (o.payloadChosen && !o.payloadLoading) {
+    missing.push(...missingRequired(o.payDefs, o.payValues));
+  }
+  return missing;
+}
+
+// The launch button's gate: no launch while either option set is still
+// loading (it would send without defaults), or while anything is missing.
+export function launchDisabled(o: {
+  busy: boolean;
+  optionsLoading: boolean;
+  payloadChosen: boolean;
+  payloadLoading: boolean;
+  missing: string[];
+}): boolean {
+  if (o.busy || o.optionsLoading) return true;
+  if (o.payloadChosen && o.payloadLoading) return true;
+  return o.missing.length > 0;
+}

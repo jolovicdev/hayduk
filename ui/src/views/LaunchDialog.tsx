@@ -2,7 +2,9 @@ import { For, Show, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { ws } from "../ws/singleton";
 import { CommandError } from "../ws/client";
-import { collectOptions, defaultText, missingRequired, optionKind } from "./launchOptions";
+import {
+  collectOptions, compatiblePayloadsParams, defaultText, launchDisabled, missingLaunchOptions, optionKind,
+} from "./launchOptions";
 import type { ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
 
 type OptionsMap = Record<string, ModuleOptionPayload>;
@@ -65,10 +67,10 @@ export function LaunchDialog(props: {
     ws.command<ModuleInfoPayload>("module.info", { type: props.type, name: props.path }));
   const [options] = createResource(async () =>
     ws.command<OptionsMap>("module.options", { type: props.type, name: props.path }));
-  const [payloads] = createResource(async () =>
-    props.type === "exploit"
-      ? ws.command<string[]>("module.compatible_payloads", { name: props.path })
-      : []);
+  const [payloads] = createResource(async () => {
+    const params = compatiblePayloadsParams(props.type, props.path);
+    return params ? ws.command<string[]>("module.compatible_payloads", params) : [];
+  });
   const [payload, setPayload] = createSignal("");
   const [payloadOptions] = createResource(payload, async (p) => {
     if (!p) return null;
@@ -102,7 +104,16 @@ export function LaunchDialog(props: {
     return { ...defaultsFor(payMap()), ...payloadValues() };
   }
 
-  const blockers = () => (options.loading || options.error ? [] : missingRequired(optsMap(), resolved()));
+  const blockers = () => missingLaunchOptions({
+    optionsLoading: options.loading,
+    optionsError: !!options.error,
+    payloadChosen: !!payload(),
+    payloadLoading: payloadOptions.loading,
+    optsDefs: optsMap(),
+    optsValues: resolved(),
+    payDefs: payMap(),
+    payValues: resolvedPayload(),
+  });
 
   async function launch() {
     setBusy(true);
@@ -187,7 +198,13 @@ export function LaunchDialog(props: {
 
       <div class="mbtns">
         <button class="abtn" style="flex:none; padding:0 20px"
-          disabled={busy() || options.loading || blockers().length > 0} onClick={() => void launch()}>
+          disabled={launchDisabled({
+            busy: busy(),
+            optionsLoading: options.loading,
+            payloadChosen: !!payload(),
+            payloadLoading: payloadOptions.loading,
+            missing: blockers(),
+          })} onClick={() => void launch()}>
           {busy() ? "Launching…" : "Launch"}
         </button>
       </div>
