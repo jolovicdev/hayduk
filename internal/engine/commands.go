@@ -15,8 +15,9 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 	if !knownMethod(method) {
 		return nil, &protocol.ErrorBody{Code: protocol.CodeUnknownMethod, Message: "no such method: " + method}
 	}
-	if eb := requireConnected(e); eb != nil {
-		return nil, eb
+	rpc := e.connectedRPC()
+	if rpc == nil {
+		return nil, notConnected()
 	}
 
 	switch method {
@@ -60,7 +61,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		info, err := gomsf.NewModuleManager(e.rpcClient()).Info(ctx, gomsf.ModuleType(p.Type), p.Name)
+		info, err := gomsf.NewModuleManager(rpc).Info(ctx, gomsf.ModuleType(p.Type), p.Name)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -74,7 +75,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		mod, err := gomsf.NewModuleWithContext(ctx, e.rpcClient(), gomsf.ModuleType(p.Type), p.Name)
+		mod, err := gomsf.NewModuleWithContext(ctx, rpc, gomsf.ModuleType(p.Type), p.Name)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -96,7 +97,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		payloads, err := gomsf.NewModuleManager(e.rpcClient()).CompatiblePayloads(ctx, p.Name)
+		payloads, err := gomsf.NewModuleManager(rpc).CompatiblePayloads(ctx, p.Name)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -110,7 +111,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		return e.moduleExecute(ctx, operator, p)
+		return e.moduleExecute(ctx, rpc, operator, p)
 
 	case protocol.MethodSessionAttach:
 		var p protocol.SessionRefParams
@@ -153,7 +154,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.SID == "" {
 			return nil, badParam("sid is required")
 		}
-		if err := gomsf.NewSessionManager(e.rpcClient()).Stop(ctx, p.SID); err != nil {
+		if err := gomsf.NewSessionManager(rpc).Stop(ctx, p.SID); err != nil {
 			return nil, mapErr(err)
 		}
 		return nil, nil
@@ -178,7 +179,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		return nil, nil
 
 	case protocol.MethodWorkspaceList:
-		names, err := gomsf.NewDbManager(e.rpcClient()).Workspaces().List(ctx)
+		names, err := gomsf.NewDbManager(rpc).Workspaces().List(ctx)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -192,7 +193,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.Name == "" {
 			return nil, badParam("name is required")
 		}
-		if err := gomsf.NewDbManager(e.rpcClient()).SetWorkspace(ctx, p.Name); err != nil {
+		if err := gomsf.NewDbManager(rpc).SetWorkspace(ctx, p.Name); err != nil {
 			return nil, mapErr(err)
 		}
 		e.eventfOp(operator, protocol.LevelInfo, "switched to workspace %s", p.Name)
@@ -225,13 +226,15 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
 
-func (e *Engine) moduleExecute(ctx context.Context, operator string, p protocol.ModuleExecuteParams) (json.RawMessage, *protocol.ErrorBody) {
+func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operator string, p protocol.ModuleExecuteParams) (json.RawMessage, *protocol.ErrorBody) {
+	if rpc == nil {
+		return nil, notConnected()
+	}
 	// JSON numbers decode as float64; msf's option validator rejects floats
 	// for integer options, so integral values become integers first
 	normalizeNumericOptions(p.Options)
 	normalizeNumericOptions(p.PayloadOptions)
 
-	rpc := e.rpcClient()
 	mod, err := gomsf.NewModuleWithContext(ctx, rpc, gomsf.ModuleType(p.Type), p.Name)
 	if err != nil {
 		return nil, mapErr(err)
@@ -390,12 +393,6 @@ func (e *Engine) currentConsole() *gomsf.MsfConsole {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.console
-}
-
-func (e *Engine) rpcClient() gomsf.RPCCaller {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.rpc
 }
 
 func moduleInfoPayload(info *gomsf.MsfModuleInfo) protocol.ModuleInfoPayload {

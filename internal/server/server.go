@@ -2,12 +2,15 @@
 package server
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"path"
+	"strings"
 	"sync"
 	"time"
 
@@ -116,7 +119,70 @@ func (s *Server) handleStatic(w http.ResponseWriter, r *http.Request) {
 		s.devProxy(w, r)
 		return
 	}
+	// Hashed build assets are immutable: a browser may keep them forever.
+	// Everything else - index.html, favicon - revalidates so a new binary's
+	// UI is picked up on the next load.
+	if strings.HasPrefix(r.URL.Path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	} else {
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	w.Header().Add("Vary", "Accept-Encoding")
+	if r.Method == http.MethodGet &&
+		strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") &&
+		gzipCompressible(r.URL.Path) {
+		gz := &gzipResponseWriter{ResponseWriter: w, gw: gzip.NewWriter(w)}
+		defer gz.Close()
+		http.FileServerFS(distFileSystem()).ServeHTTP(gz, r)
+		return
+	}
 	http.FileServerFS(distFileSystem()).ServeHTTP(w, r)
+}
+
+// gzipCompressible reports whether the static file at p is worth a gzip pass;
+// the woff2 fonts are deflate-compressed already and gain nothing from another.
+func gzipCompressible(p string) bool {
+	if p == "/" {
+		return true // serves index.html
+	}
+	switch path.Ext(p) {
+	case ".html", ".js", ".mjs", ".css", ".svg", ".json", ".txt", ".webmanifest", ".map":
+		return true
+	}
+	return false
+}
+
+// gzipResponseWriter streams the file server's reply through gzip. The
+// compressed length is unknown up front, so ServeContent's Content-Length is
+// dropped and Go falls back to chunked transfer. Bodyless statuses (304, 204)
+// pass through untouched - they must not grow a gzip trailer.
+type gzipResponseWriter struct {
+	http.ResponseWriter
+	gw        *gzip.Writer
+	wroteGzip bool
+}
+
+func (g *gzipResponseWriter) WriteHeader(code int) {
+	if code != http.StatusNotModified && code != http.StatusNoContent {
+		h := g.Header()
+		h.Del("Content-Length")
+		h.Set("Content-Encoding", "gzip")
+		g.wroteGzip = true
+	}
+	g.ResponseWriter.WriteHeader(code)
+}
+
+func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !g.wroteGzip {
+		return g.ResponseWriter.Write(b) // headers already went out plain
+	}
+	return g.gw.Write(b)
+}
+
+func (g *gzipResponseWriter) Close() {
+	if g.wroteGzip {
+		g.gw.Close() // flushes the gzip trailer
+	}
 }
 
 func (s *Server) devProxy(w http.ResponseWriter, r *http.Request) {
@@ -324,6 +390,11 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 				return
 			case <-ticker.C:
 				if !c.ping() {
+					// the link is dead: close everything, not just this
+					// goroutine. A reader parked on the command semaphore
+					// with eight stuck requests never reads the socket, so
+					// only the cancelled command context can free it.
+					c.close()
 					return
 				}
 			}

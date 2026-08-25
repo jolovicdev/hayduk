@@ -104,6 +104,8 @@ func (e *Engine) refreshDB(ctx context.Context) error {
 	e.services = newServices
 	e.creds = newCreds
 	e.loot = newLoot
+	// the round trip proves the link healthy; the monitor's streak starts over
+	e.errStreak = 0
 	if wsChanged {
 		e.conn.Workspace = workspace
 		e.logf(protocol.LevelInfo, "workspace changed to %s", workspace)

@@ -251,7 +251,8 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 }
 
 // Disconnect drops the msfrpcd link. Discovered data (hosts, creds, events)
-// is kept; live state (sessions, jobs, console) is rebuilt on next connect.
+// is kept; live state (sessions, jobs, console) dies with the link and is
+// rebuilt on next connect.
 func (e *Engine) Disconnect() {
 	e.mu.Lock()
 	e.gen++ // invalidates any bootstrap or refresh still in flight
@@ -271,6 +272,10 @@ func (e *Engine) Disconnect() {
 	e.routeConsole = nil
 	hadRoutes := len(e.routes) > 0
 	e.routes = nil
+	hadSessions := len(e.sessions) > 0
+	hadJobs := len(e.jobs) > 0
+	e.sessions = make(map[string]*protocol.SessionState)
+	e.jobs = make(map[string]*protocol.JobState)
 	e.interactSID = ""
 	e.interactOut = nil
 	if e.conn.Status != "disconnected" {
@@ -288,6 +293,12 @@ func (e *Engine) Disconnect() {
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	if hadRoutes {
 		e.bus.send(protocol.RoutesUpdate([]*protocol.RouteState{}))
+	}
+	if hadSessions {
+		e.bus.send(protocol.SessionsUpdate(map[string]*protocol.SessionState{}))
+	}
+	if hadJobs {
+		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
 	}
 	// consoles destroyed and the client logged out only after the operator
 	// saw the disconnect; bounded so a dead daemon cannot wedge this call

@@ -370,13 +370,12 @@ func mustJSON(v any) json.RawMessage {
 	return b
 }
 
-func requireConnected(e *Engine) *protocol.ErrorBody {
+// connectedRPC returns the live RPC client in one lock acquisition so a
+// disconnect racing the caller cannot split a nil-check from the use.
+func (e *Engine) connectedRPC() gomsf.RPCCaller {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.rpc == nil {
-		return &protocol.ErrorBody{Code: protocol.CodeNotConnected, Message: "not connected to msfrpcd"}
-	}
-	return nil
+	return e.rpc
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)

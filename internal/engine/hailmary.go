@@ -86,13 +86,12 @@ func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailM
 					e.eventfOp(operator, protocol.LevelWarn, "hail mary aborted after %d launches: connection ended", launched)
 					return
 				}
-				if _, eb := e.moduleExecute(runCtx, operator, protocol.ModuleExecuteParams{
+				if _, eb := e.moduleExecute(runCtx, e.connectedRPC(), operator, protocol.ModuleExecuteParams{
 					Type: "exploit", Name: m.Name,
 					Options: map[string]interface{}{"RHOSTS": t.host.Address},
-				}); eb != nil {
-					continue
+				}); eb == nil {
+					launched++
 				}
-				launched++
 				select {
 				case <-runCtx.Done():
 				case <-time.After(hailMaryPace):
