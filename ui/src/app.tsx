@@ -461,7 +461,7 @@ export default function App() {
             </div>
           </div>
           <p style="margin:14px 0 0; font:400 11px var(--mono); color:var(--tx2)">
-            Hayduk {serverVersion() || ""} · jolovicdev · MIT
+            Hayduk {serverVersion() || ""} · jolovicdev · MIT · Assisted by: GLM 5.3
           </p>
           <div class="mbtns">
             <button class="abtn" onClick={() => setShowAbout(false)}>Close</button>
