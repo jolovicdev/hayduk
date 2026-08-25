@@ -396,11 +396,14 @@ export function TopologyGraph(props: {
     >
       <defs>
         <linearGradient id="topo-node-fill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#1b2230" />
+          <stop offset="0" stop-color="#1e2634" />
           <stop offset="1" stop-color="#141a23" />
         </linearGradient>
         <filter id="topo-node-shadow" x="-30%" y="-35%" width="160%" height="180%">
-          <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#000000" flood-opacity=".38" />
+          <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity=".32" />
+        </filter>
+        <filter id="topo-node-glow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="0" stdDeviation="5" flood-color="#e2666b" flood-opacity=".4" />
         </filter>
         <marker id="topo-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
           <path d="M 0 0 L 8 4 L 0 8 z" />
@@ -493,8 +496,7 @@ export function TopologyGraph(props: {
                     }}
                   >
                     <title>{`${host.name || host.address} · ${host.address}`}</title>
-                    <rect class="topo-node-shell" width={NW} height={NH} rx="9" />
-                    <path class="topo-node-accent" d={`M 1 10 V ${NH - 10}`} />
+                    <rect class="topo-node-shell" width={NW} height={NH} rx="10" />
                     <g class={`topo-device ${badge().key}`} transform="translate(14 13)">
                       <rect class="topo-device-bg" width="28" height="28" rx="7" />
                       <rect class="topo-device-screen" x="6.5" y="6.5" width="15" height="11" rx="2" />

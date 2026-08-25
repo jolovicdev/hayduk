@@ -46,7 +46,7 @@ or spin the disposable docker lab used by the integration tests:
     scripts/msf/up.sh --with-vulnbox   # plus disposable target boxes to scan and attack
     scripts/msf/down.sh
 
-The screenshot above is Hayduk live against that lab: six discovered hosts,
+The screenshot above is Hayduk live against that lab: five discovered hosts,
 real OS fingerprints and services.
 
 ## Team mode

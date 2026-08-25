@@ -119,18 +119,15 @@
 #topo .topo-node { cursor:grab; outline:none; }
 #topo .topo-node:active { cursor:grabbing; }
 #topo .topo-node-shell {
-  fill:url(#topo-node-fill); stroke:#303a48; stroke-width:1;
-  filter:url(#topo-node-shadow); transition:filter .14s ease;
+  fill:url(#topo-node-fill); stroke:#39455a; stroke-width:1;
+  filter:url(#topo-node-shadow); transition:filter .14s ease, stroke .14s ease;
 }
-#topo .topo-node:hover .topo-node-shell { stroke:#465268; filter:url(#topo-node-shadow) brightness(1.08); }
+#topo .topo-node:hover .topo-node-shell { stroke:#4e5d7a; filter:url(#topo-node-shadow) brightness(1.08); }
 #topo .topo-node.selected .topo-node-shell,
-#topo .topo-node:focus-visible .topo-node-shell { stroke:rgba(226,102,107,.8); stroke-width:1.25; }
-#topo .topo-node-accent {
-  fill:none; stroke:#566275; stroke-width:2; stroke-linecap:round; opacity:.75;
+#topo .topo-node:focus-visible .topo-node-shell {
+  stroke:rgba(226,102,107,.85); stroke-width:1.25;
+  filter:url(#topo-node-shadow) url(#topo-node-glow);
 }
-#topo .topo-node.access .topo-node-accent { stroke:var(--red-br); opacity:1; }
-#topo .topo-node.login .topo-node-accent { stroke:var(--amb); opacity:.9; }
-#topo .topo-node.selected .topo-node-accent { stroke:var(--red-br); opacity:1; }
 #topo .topo-device-bg { fill:#202936; stroke:#303c4c; stroke-width:1; }
 #topo .topo-device-screen, #topo .topo-device-stand {
   fill:none; stroke:#8b97a8; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round;
