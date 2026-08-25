@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildModuleTree, filterTree } from "./tree";
+import { buildModuleTree, filterTree, visibleChildren } from "./tree";
 
 // the wire ModuleIndex carries plural collection keys; msf module types are
 // singular and module refnames are relative to their type
@@ -74,5 +74,20 @@ describe("filterTree", () => {
 
   it("empty query keeps nothing", () => {
     expect(filterTree(root, "").size).toBe(0);
+  });
+});
+
+describe("visibleChildren", () => {
+  const root = buildModuleTree({
+    exploits: ["windows/smb/a", "windows/smb/b", "multi/http/c"],
+  });
+  const windows = root.children[0]!.children[0]!;
+
+  it("renders a collapsed branch's children not at all", () => {
+    expect(visibleChildren(windows.children, false)).toEqual([]);
+  });
+
+  it("renders an expanded branch's children", () => {
+    expect(visibleChildren(windows.children, true)).toEqual(windows.children);
   });
 });

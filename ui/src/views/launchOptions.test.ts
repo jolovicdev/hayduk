@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { collectOptions, missingRequired, optionKind } from "./launchOptions";
+import {
+  collectOptions, compatiblePayloadsParams, launchDisabled, missingLaunchOptions, missingRequired, optionKind,
+} from "./launchOptions";
 
 const defs = {
   RHOSTS: { type: "string", required: true },
@@ -52,5 +54,64 @@ describe("missingRequired", () => {
     const d = { PORT: { type: "port", required: true } };
     expect(missingRequired(d, { PORT: "zz" })).toEqual(["PORT"]);
     expect(missingRequired(d, { PORT: "4444" })).toEqual([]);
+  });
+});
+
+describe("compatiblePayloadsParams", () => {
+  it("identifies the module by type and name", () => {
+    expect(compatiblePayloadsParams("exploit", "windows/smb/psexec"))
+      .toEqual({ type: "exploit", name: "windows/smb/psexec" });
+  });
+
+  it("asks for nothing on non-exploits", () => {
+    expect(compatiblePayloadsParams("auxiliary", "scanner/discovery/udp_probe")).toBeNull();
+  });
+});
+
+describe("missingLaunchOptions", () => {
+  const base = {
+    optionsLoading: false, optionsError: false,
+    optsDefs: { RHOSTS: { type: "string", required: true } },
+    optsValues: { RHOSTS: "10.0.0.5" },
+    payDefs: { LHOST: { type: "string", required: true } },
+    payValues: {},
+  };
+
+  it("names required payload options without values", () => {
+    expect(missingLaunchOptions({ ...base, payloadChosen: true, payloadLoading: false }))
+      .toEqual(["LHOST"]);
+  });
+
+  it("stays quiet about the payload until one is chosen", () => {
+    expect(missingLaunchOptions({ ...base, payloadChosen: false, payloadLoading: false }))
+      .toEqual([]);
+  });
+
+  it("names module options and payload options together", () => {
+    expect(missingLaunchOptions({
+      ...base,
+      optsValues: {},
+      payloadChosen: true, payloadLoading: false,
+    })).toEqual(["RHOSTS", "LHOST"]);
+  });
+});
+
+describe("launchDisabled", () => {
+  it("holds the launch while payload settings load", () => {
+    expect(launchDisabled({
+      busy: false, optionsLoading: false, payloadChosen: true, payloadLoading: true, missing: [],
+    })).toBe(true);
+  });
+
+  it("launches once everything is loaded and complete", () => {
+    expect(launchDisabled({
+      busy: false, optionsLoading: false, payloadChosen: true, payloadLoading: false, missing: [],
+    })).toBe(false);
+  });
+
+  it("holds the launch while module options load", () => {
+    expect(launchDisabled({
+      busy: false, optionsLoading: true, payloadChosen: false, payloadLoading: false, missing: [],
+    })).toBe(true);
   });
 });

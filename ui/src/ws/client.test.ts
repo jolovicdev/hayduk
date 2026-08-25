@@ -114,6 +114,14 @@ describe("ws client", () => {
     expect(c.status()).toBe("connecting");
   });
 
+  it("delivers hello messages to hello handlers", () => {
+    const c = createWS();
+    const hellos: any[] = [];
+    c.on("hello", m => hellos.push(m));
+    FakeSocket.instances[0]!.message({ type: "hello", proto: 1, version: "9.9.9", team: true });
+    expect(hellos).toEqual([{ type: "hello", proto: 1, version: "9.9.9", team: true }]);
+  });
+
   it("stops reconnecting after a protocol mismatch", async () => {
     vi.useFakeTimers();
     const mismatches: any[] = [];
