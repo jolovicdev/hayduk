@@ -764,6 +764,37 @@ func TestDisconnectDuringConnectAbortsBootstrap(t *testing.T) {
 	}
 }
 
+func TestDisconnectDestroysBothConsoles(t *testing.T) {
+	fake := stdFake()
+	var mu sync.Mutex
+	destroyed := map[string]bool{}
+	fake.set(gomsf.ConsoleDestroy, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(args) > 0 {
+			destroyed[fmt.Sprint(args[0])] = true
+		}
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
+		OutputInterval: time.Hour, RefreshInterval: time.Hour})
+	t.Cleanup(e.Shutdown)
+
+	if err := e.Connect(context.Background(), protocol.ConnectParams{Host: "h", Port: 55553}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, func() bool { return e.State().Connection.Status == "connected" })
+	e.Disconnect()
+
+	mu.Lock()
+	defer mu.Unlock()
+	// stdFake numbers consoles from "0": the operator console and the
+	// route-poll console must both be destroyed on the way out
+	if !destroyed["0"] || !destroyed["1"] {
+		t.Fatalf("disconnect must destroy both consoles, destroyed=%v", destroyed)
+	}
+}
+
 func TestStaleReconnectCannotOverwriteNewerConnection(t *testing.T) {
 	var mu sync.Mutex
 	fail := true

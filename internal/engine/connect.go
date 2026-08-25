@@ -4,10 +4,32 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
+
+// release tears down a dropped msfrpcd session: both consoles destroyed and
+// the RPC client logged out. Best effort with a short deadline - the daemon
+// may already be gone or hanging, and cleanup must never wedge the caller.
+func release(rpc gomsf.RPCCaller, consoleID, routeCID string) {
+	if rpc == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	consoles := gomsf.NewConsoleManager(rpc)
+	if consoleID != "" {
+		_ = consoles.Destroy(ctx, consoleID)
+	}
+	if routeCID != "" {
+		_ = consoles.Destroy(ctx, routeCID)
+	}
+	if c, ok := rpc.(*gomsf.Client); ok {
+		_ = c.Logout(ctx)
+	}
+}
 
 // Connect dials msfrpcd and bootstraps state. It is synchronous: it returns
 // once the snapshot-worthy state is loaded (modules, db, console, monitor).
@@ -165,9 +187,20 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	if e.gen != gen {
 		e.mu.Unlock()
 		cancel() // our monitor's ctx; nobody else owns it
+		ourRoute := ""
+		if routeCon != nil {
+			ourRoute = routeCon.CID
+		}
+		go release(rpc, con.ID, ourRoute)
 		return errSuperseded
 	}
 	oldCancel := e.runCancel
+	oldRPC := e.rpc
+	oldConsoleID := e.consoleID
+	oldRouteCID := ""
+	if e.routeConsole != nil {
+		oldRouteCID = e.routeConsole.CID
+	}
 	e.rpc = rpc
 	e.runCtx = runCtx
 	e.runCancel = cancel
@@ -194,6 +227,7 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	if oldCancel != nil {
 		oldCancel()
 	}
+	go release(oldRPC, oldConsoleID, oldRouteCID)
 
 	if workspace == "" {
 		e.eventf(protocol.LevelWarn, "msf database not connected; hosts and credentials views will stay empty")
@@ -215,6 +249,12 @@ func (e *Engine) Disconnect() {
 	e.mu.Lock()
 	e.gen++ // invalidates any bootstrap or refresh still in flight
 	cancel := e.runCancel
+	dropRPC := e.rpc
+	dropConsoleID := e.consoleID
+	dropRouteCID := ""
+	if e.routeConsole != nil {
+		dropRouteCID = e.routeConsole.CID
+	}
 	e.runCancel = nil
 	e.rpc = nil
 	e.monitor = nil
@@ -242,6 +282,9 @@ func (e *Engine) Disconnect() {
 	if hadRoutes {
 		e.bus.send(protocol.RoutesUpdate([]*protocol.RouteState{}))
 	}
+	// consoles destroyed and the client logged out only after the operator
+	// saw the disconnect; bounded so a dead daemon cannot wedge this call
+	release(dropRPC, dropConsoleID, dropRouteCID)
 }
 
 func hostStates(in []*gomsf.Host) []*protocol.HostState {
