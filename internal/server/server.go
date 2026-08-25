@@ -390,10 +390,9 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 				return
 			case <-ticker.C:
 				if !c.ping() {
-					// the link is dead: close everything, not just this
-					// goroutine. A reader parked on the command semaphore
-					// with eight stuck requests never reads the socket, so
-					// only the cancelled command context can free it.
+					// a dead link must close the connection, not just stop
+					// the keepalive: closing also cancels the command
+					// contexts, the only thing that frees a parked reader
 					c.close()
 					return
 				}
