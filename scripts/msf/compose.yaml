@@ -18,7 +18,7 @@ services:
     volumes:
       - ./database.yml:/tmp/database.yml:ro
     ports:
-      - "55553:55553"
+      - "127.0.0.1:55553:55553"
     depends_on:
       db:
         condition: service_healthy
