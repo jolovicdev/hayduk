@@ -19,11 +19,20 @@ func (e *Engine) reconnect() {
 	}
 	gen := e.gen
 	cancel := e.runCancel
+	// the dropped link owns consoles and a login on the daemon; capture
+	// them before the reset so they can be released, not just forgotten
+	dropRPC := e.rpc
+	dropConsoleID := e.consoleID
+	dropRouteCID := ""
+	if e.routeConsole != nil {
+		dropRouteCID = e.routeConsole.CID
+	}
 	e.runCancel = nil
 	e.rpc = nil
 	e.monitor = nil
 	e.console = nil
 	e.consoleID = ""
+	e.routeConsole = nil
 	e.interactSID = ""
 	e.interactOut = nil
 	p := protocol.ConnectParams{
@@ -36,6 +45,9 @@ func (e *Engine) reconnect() {
 	if cancel != nil {
 		cancel()
 	}
+	// the daemon is likely the reason we are here; release is bounded and
+	// async so a stalled one cannot slow the retry loop
+	go release(dropRPC, dropConsoleID, dropRouteCID)
 	e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 

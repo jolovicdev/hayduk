@@ -106,6 +106,15 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	if err != nil {
 		return err
 	}
+	// rpc is authenticated from here on: if this bootstrap does not commit,
+	// its consoles and login must not linger on the daemon
+	var conID, routeID string
+	committed := false
+	defer func() {
+		if !committed {
+			release(rpc, conID, routeID)
+		}
+	}()
 
 	version, err := gomsf.NewCoreManager(rpc).Version(ctx)
 	if err != nil {
@@ -162,11 +171,13 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	if err != nil {
 		return fmt.Errorf("create console: %w", err)
 	}
+	conID = con.ID
 	// The route poll needs its own console so route tables never leak into
 	// the operator's console stream. Failure is non-fatal: no routes tracked.
 	var routeCon *gomsf.MsfConsole
 	if con2, err := gomsf.NewConsoleManager(rpc).Create(ctx); err == nil {
 		routeCon = gomsf.NewMsfConsole(rpc, con2.ID)
+		routeID = con2.ID
 	} else {
 		e.eventf(protocol.LevelWarn, "route console unavailable; pivot routes will not be tracked")
 	}
@@ -187,12 +198,7 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	if e.gen != gen {
 		e.mu.Unlock()
 		cancel() // our monitor's ctx; nobody else owns it
-		ourRoute := ""
-		if routeCon != nil {
-			ourRoute = routeCon.CID
-		}
-		go release(rpc, con.ID, ourRoute)
-		return errSuperseded
+		return errSuperseded // the defer releases this attempt's consoles
 	}
 	oldCancel := e.runCancel
 	oldRPC := e.rpc
@@ -224,6 +230,7 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.errStreak = 0
 	e.gen = gen + 1
 	e.mu.Unlock()
+	committed = true // the engine owns rpc and both consoles from the swap on
 	if oldCancel != nil {
 		oldCancel()
 	}

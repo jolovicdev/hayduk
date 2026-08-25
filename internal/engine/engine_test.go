@@ -795,6 +795,86 @@ func TestDisconnectDestroysBothConsoles(t *testing.T) {
 	}
 }
 
+func TestReconnectReleasesOldConsoles(t *testing.T) {
+	var fail bool
+	var mu sync.Mutex
+	fake := stdFake()
+	fake.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if fail {
+			return nil, errors.New("connection refused")
+		}
+		return map[string]interface{}{}, nil
+	})
+	destroyed := map[string]bool{}
+	fake.set(gomsf.ConsoleDestroy, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(args) > 0 {
+			destroyed[fmt.Sprint(args[0])] = true
+		}
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	e := New(Config{RPC: fake, SessionInterval: 10 * time.Millisecond,
+		JobInterval: time.Hour, OutputInterval: time.Hour, RefreshInterval: time.Hour})
+	t.Cleanup(e.Shutdown)
+	sub := e.Subscribe()
+	defer sub.Stop()
+
+	if err := e.Connect(context.Background(), protocol.ConnectParams{Host: "h", Port: 55553}); err != nil {
+		t.Fatal(err)
+	}
+	waitEvent(t, sub, "console ready") // consoles "0" and "1" are live
+
+	mu.Lock()
+	fail = true // the monitor's session poll starts failing
+	mu.Unlock()
+	waitEvent(t, sub, "reconnected to h:55553")
+
+	// release is async on the reconnect path: poll for both old consoles
+	waitFor(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return destroyed["0"] && destroyed["1"]
+	})
+}
+
+func TestReleaseBestEffort(t *testing.T) {
+	release(nil, "0", "1") // a dropped link without a client must not panic
+
+	fake := stdFake()
+	var mu sync.Mutex
+	destroyed := map[string]bool{}
+	logouts := 0
+	fake.set(gomsf.ConsoleDestroy, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if len(args) > 0 {
+			destroyed[fmt.Sprint(args[0])] = true
+		}
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	fake.set(gomsf.AuthLogout, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		logouts++
+		return map[string]interface{}{"result": "success"}, nil
+	})
+
+	release(fake, "7", "8")
+	mu.Lock()
+	defer mu.Unlock()
+	if !destroyed["7"] || !destroyed["8"] {
+		t.Fatalf("release must destroy both consoles, destroyed=%v", destroyed)
+	}
+	// logout goes through the concrete *gomsf.Client only; a plain
+	// RPCCaller (the fake, and any custom caller) is left untouched
+	if logouts != 0 {
+		t.Fatalf("release must not call auth.logout on a bare RPCCaller, got %d", logouts)
+	}
+}
+
 func TestStaleReconnectCannotOverwriteNewerConnection(t *testing.T) {
 	var mu sync.Mutex
 	fail := true
