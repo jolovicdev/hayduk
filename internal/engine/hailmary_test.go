@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -146,6 +147,42 @@ func TestHailMaryTargetsItsHosts(t *testing.T) {
 	}
 	if len(targets) != 2 {
 		t.Fatalf("both hosts must be targeted, got %+v", targets)
+	}
+}
+
+func TestHailMaryPacesFailedLaunchesToo(t *testing.T) {
+	fake, _ := hailFake(t)
+	var mu sync.Mutex
+	var attempts []time.Time
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		attempts = append(attempts, time.Now())
+		mu.Unlock()
+		return nil, fmt.Errorf("%w: target immune", gomsf.ErrRPC)
+	})
+	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
+		OutputInterval: time.Hour, RefreshInterval: time.Hour, RouteInterval: time.Hour})
+	t.Cleanup(e.Shutdown)
+	sub := e.Subscribe()
+	defer sub.Stop()
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("connect: %+v", err)
+	}
+
+	if _, errBody := e.Exec(context.Background(), "dana", "campaign.hail_mary",
+		json.RawMessage(`{"hosts":["10.0.0.5","10.0.0.6"],"maxPerHost":1}`)); errBody != nil {
+		t.Fatalf("hail mary: %+v", errBody)
+	}
+	waitEvent(t, sub, "hail mary finished: 0 of 2 planned launches")
+
+	mu.Lock()
+	got := append([]time.Time(nil), attempts...)
+	mu.Unlock()
+	if len(got) != 2 {
+		t.Fatalf("executed %d launches, want 2", len(got))
+	}
+	if gap := got[1].Sub(got[0]); gap < hailMaryPace {
+		t.Fatalf("failed launches ran back-to-back (%v apart, want >= %v)", gap, hailMaryPace)
 	}
 }
 

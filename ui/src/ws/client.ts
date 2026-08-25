@@ -67,7 +67,10 @@ export function createWS(): WSClient {
           try { sock?.close(); } catch { /* already closing */ }
           return;
         }
-        return; // version/team are consumed by the store's hello handler
+        // version and team mode are live values: hand the hello to the
+        // store's handler so they surface on every (re)connect
+        handlers.get("hello")?.forEach(h => h(msg));
+        return;
       }
       if (msg?.type === "response") {
         const p = pending.get(msg.id);
