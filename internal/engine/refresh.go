@@ -39,6 +39,8 @@ func (e *Engine) runContext() context.Context {
 var errNotConnected = errors.New("not connected to msfrpcd")
 
 func (e *Engine) refreshDB(ctx context.Context) error {
+	e.refreshMu.Lock()
+	defer e.refreshMu.Unlock()
 	e.mu.Lock()
 	rpc := e.rpc
 	gen := e.gen

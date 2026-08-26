@@ -87,6 +87,10 @@ type Engine struct {
 	errStreak     int
 
 	connecting bool
+	// refreshMu serializes db refreshes: the loop's periodic sweep and
+	// command-driven ones can overlap, and a stalled read committing after
+	// a newer refresh would revert it
+	refreshMu sync.Mutex
 	// gen counts connection attempts that took effect (commits, teardowns).
 	// Async work started under one generation must not commit under a later
 	// one: a disconnect or a newer connection invalidates it.
