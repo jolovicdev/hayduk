@@ -16,10 +16,6 @@ builds:
 checksum:
   name_template: "SHA256SUMS"
 
-# dashed tags (rc, beta) must never take the "Latest" slot from a stable
-# release
-prerelease: auto
-
 changelog:
   sort: asc
   filters:
@@ -27,3 +23,8 @@ changelog:
       - "^docs:"
       - "^ci:"
       - "^test:"
+
+release:
+  # dashed tags (rc, beta) must never take the "Latest" slot from a stable
+  # release
+  prerelease: auto
