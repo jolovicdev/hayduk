@@ -12,3 +12,5 @@ node_modules/
 
 # go test binaries
 *.test
+# goreleaser build output
+dist/
