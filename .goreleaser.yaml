@@ -1,0 +1,25 @@
+version: 2
+
+project_name: hayduk
+
+builds:
+  - main: ./cmd/hayduk
+    env: [CGO_ENABLED=0]
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X main.version={{ .Version }}
+
+# the UI is committed under internal/server/dist and embedded at compile
+# time, so nothing node-shaped is needed here
+
+checksum:
+  name_template: "SHA256SUMS"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^ci:"
+      - "^test:"
