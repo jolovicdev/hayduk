@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"net"
+	"net/netip"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -88,14 +89,15 @@ func main() {
 }
 
 // loopbackOnly reports whether a --listen host can serve nothing but this
-// machine: a literal loopback IP, or a hostname resolving exclusively to
-// loopback (localhost never parses as an IP). Unresolvable names are left to
-// net.Listen, which fails with its own error.
+// machine: a literal loopback IP (scoped IPv6 included, which netip parses
+// and Go can bind but net.ParseIP rejects), or a hostname resolving
+// exclusively to loopback (localhost never parses as an IP). Unresolvable
+// names are left to net.Listen, which fails with its own error.
 func loopbackOnly(host string) bool {
 	if host == "" {
 		return false
 	}
-	if ip := net.ParseIP(host); ip != nil {
+	if ip, err := netip.ParseAddr(host); err == nil {
 		return ip.IsLoopback()
 	}
 	addrs, err := net.LookupHost(host)
@@ -103,7 +105,7 @@ func loopbackOnly(host string) bool {
 		return false
 	}
 	for _, a := range addrs {
-		if ip := net.ParseIP(a); ip == nil || !ip.IsLoopback() {
+		if ip, err := netip.ParseAddr(a); err != nil || !ip.IsLoopback() {
 			return false
 		}
 	}

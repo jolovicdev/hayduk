@@ -12,6 +12,8 @@ func TestLoopbackOnly(t *testing.T) {
 		{"127.0.0.1", true},
 		{"127.255.0.1", true},
 		{"::1", true},
+		{"::1%lo", true}, // scoped loopback: ParseIP rejects it, Listen binds it
+		{"fe80::1%eth0", false},
 		{"localhost", true},
 		{"", false}, // wildcard bind: every interface
 		{"0.0.0.0", false},
