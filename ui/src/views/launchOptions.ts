@@ -121,17 +121,18 @@ export function missingLaunchOptions(o: {
 }
 
 // The launch button's gate: no launch while either option set is still
-// loading (it would send without defaults), while the module's options failed
-// to load (it would send an empty option set), or while anything is missing.
+// loading (it would send without defaults) or failed to load (it would send
+// an empty option set), or while anything is missing.
 export function launchDisabled(o: {
   busy: boolean;
   optionsLoading: boolean;
   optionsError: boolean;
   payloadChosen: boolean;
   payloadLoading: boolean;
+  payloadError: boolean;
   missing: string[];
 }): boolean {
   if (o.busy || o.optionsLoading || o.optionsError) return true;
-  if (o.payloadChosen && o.payloadLoading) return true;
+  if (o.payloadChosen && (o.payloadLoading || o.payloadError)) return true;
   return o.missing.length > 0;
 }

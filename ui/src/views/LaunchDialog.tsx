@@ -74,11 +74,7 @@ export function LaunchDialog(props: {
   const [payload, setPayload] = createSignal("");
   const [payloadOptions] = createResource(payload, async (p) => {
     if (!p) return null;
-    try {
-      return await ws.command<OptionsMap>("module.options", { type: "payload", name: p });
-    } catch {
-      return null; // payload options are a convenience; the launch still works
-    }
+    return ws.command<OptionsMap>("module.options", { type: "payload", name: p });
   });
   const [values, setValues] = createSignal<Record<string, unknown>>({});
   const [payloadValues, setPayloadValues] = createSignal<Record<string, unknown>>({});
@@ -114,7 +110,6 @@ export function LaunchDialog(props: {
     payDefs: payMap(),
     payValues: resolvedPayload(),
   });
-
   async function launch() {
     setBusy(true);
     setError("");
@@ -167,6 +162,11 @@ export function LaunchDialog(props: {
           Could not load module options: {String((options.error as Error)?.message ?? options.error)}
         </p>
       </Show>
+      <Show when={payload() && payloadOptions.error}>
+        <p style="color:var(--red-br); margin-top:12px">
+          Could not load payload options: {String((payloadOptions.error as Error)?.message ?? payloadOptions.error)}
+        </p>
+      </Show>
 
       <Show when={!payloads.loading && (payloads.latest?.length ?? 0) > 0}>
         <label style="margin-top:12px; display:grid; gap:4px">
@@ -204,6 +204,7 @@ export function LaunchDialog(props: {
             optionsError: !!options.error,
             payloadChosen: !!payload(),
             payloadLoading: payloadOptions.loading,
+            payloadError: !!payloadOptions.error,
             missing: blockers(),
           })} onClick={() => void launch()}>
           {busy() ? "Launching…" : "Launch"}
