@@ -201,6 +201,7 @@ export function LaunchDialog(props: {
           disabled={launchDisabled({
             busy: busy(),
             optionsLoading: options.loading,
+            optionsError: !!options.error,
             payloadChosen: !!payload(),
             payloadLoading: payloadOptions.loading,
             missing: blockers(),

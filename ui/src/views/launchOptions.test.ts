@@ -99,19 +99,31 @@ describe("missingLaunchOptions", () => {
 describe("launchDisabled", () => {
   it("holds the launch while payload settings load", () => {
     expect(launchDisabled({
-      busy: false, optionsLoading: false, payloadChosen: true, payloadLoading: true, missing: [],
+      busy: false, optionsLoading: false, optionsError: false,
+      payloadChosen: true, payloadLoading: true, missing: [],
     })).toBe(true);
   });
 
   it("launches once everything is loaded and complete", () => {
     expect(launchDisabled({
-      busy: false, optionsLoading: false, payloadChosen: true, payloadLoading: false, missing: [],
+      busy: false, optionsLoading: false, optionsError: false,
+      payloadChosen: true, payloadLoading: false, missing: [],
     })).toBe(false);
   });
 
   it("holds the launch while module options load", () => {
     expect(launchDisabled({
-      busy: false, optionsLoading: true, payloadChosen: false, payloadLoading: false, missing: [],
+      busy: false, optionsLoading: true, optionsError: false,
+      payloadChosen: false, payloadLoading: false, missing: [],
+    })).toBe(true);
+  });
+
+  it("holds the launch when module options failed to load", () => {
+    // a failed options load leaves nothing to gate on; an enabled button
+    // would submit an empty option set
+    expect(launchDisabled({
+      busy: false, optionsLoading: false, optionsError: true,
+      payloadChosen: false, payloadLoading: false, missing: [],
     })).toBe(true);
   });
 });
