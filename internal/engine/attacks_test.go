@@ -71,6 +71,27 @@ func TestMatchAttacksNoServices(t *testing.T) {
 	}
 }
 
+// Only services recorded as open (or recorded without a state) can match;
+// hail mary fires at matches, and a closed port must not draw exploits.
+func TestMatchAttacksSkipsClosedServices(t *testing.T) {
+	exploits := []string{
+		"windows/smb/ms17_010_eternalblue",
+		"multi/http/workspace_one_upload",
+	}
+	services := []*protocol.ServiceState{
+		{Host: "10.0.0.5", Port: 445, Proto: "tcp", Name: "smb", State: "closed"},
+		{Host: "10.0.0.5", Port: 80, Proto: "tcp", Name: "http", State: "open"},
+		{Host: "10.0.0.5", Port: 22, Proto: "tcp", Name: "ssh"}, // no state recorded
+	}
+	matches := matchAttacks(exploits, services, "")
+	if len(matches) != 1 || matches[0].Name != "multi/http/workspace_one_upload" {
+		t.Fatalf("only the open service should match, got %+v", matches)
+	}
+	if matchAttacks(exploits[:1], services[:1], "") != nil {
+		t.Fatal("a closed service must not match")
+	}
+}
+
 func TestMatchAttacksCap(t *testing.T) {
 	var exploits []string
 	for i := 0; i < attackMatchCap+50; i++ {
