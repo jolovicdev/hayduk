@@ -21,7 +21,10 @@ changelog:
   filters:
     exclude:
       - "^docs:"
-      - "^ci:"
+      # case-insensitive and ci/ as well: "CI:" and "ci/release binaries"
+      # both leaked into the v0.1.2 notes. CLI: stays: its second letter
+      # is not i
+      - "(?i)^ci[/:]"
       - "^test:"
 
 release:
