@@ -76,10 +76,16 @@ func osPathPrefix(osName string) string {
 	return ""
 }
 
+// serviceOpen keeps rows whose state says the port is reachable. An empty
+// state counts: not every scanner records one.
+func serviceOpen(s *protocol.ServiceState) bool {
+	return s.State == "" || s.State == "open"
+}
+
 func matchAttacks(exploits []string, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
 	tokens := make(map[string]bool)
 	for _, s := range services {
-		if s == nil {
+		if s == nil || !serviceOpen(s) {
 			continue
 		}
 		if t := serviceToken(s.Name, s.Port); t != "" {
