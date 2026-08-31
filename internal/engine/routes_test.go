@@ -70,7 +70,7 @@ func TestRoutePollIgnoresBusyPartialOutput(t *testing.T) {
 		return map[string]interface{}{"id": string(rune('0' + atomic.AddInt32(&consoles, 1) - 1))}, nil
 	})
 	// first poll sees the full table; the next poll returns a busy half
-	// table first (msfrpcd still printing), then the complete one
+	// table first (msfrpcd still printing), then the rest that completes it
 	var polls int32
 	fake.set(gomsf.ConsoleRead, func(args ...interface{}) (interface{}, error) {
 		if len(args) > 0 && args[0] == "1" {
@@ -81,6 +81,9 @@ func TestRoutePollIgnoresBusyPartialOutput(t *testing.T) {
 				half := "IPv4 Active Routing Table\nSubnet Netmask Gateway\n" +
 					"10.99.0.0          255.255.255.0      Session 1\n"
 				return map[string]interface{}{"data": half, "prompt": "", "busy": true}, nil
+			case 3:
+				rest := "192.168.0.0        255.255.0.0        Session 3\n\nmsf > "
+				return map[string]interface{}{"data": rest, "prompt": "msf > ", "busy": false}, nil
 			default:
 				return map[string]interface{}{"data": routeTable, "prompt": "msf > ", "busy": false}, nil
 			}
@@ -162,6 +165,52 @@ func TestAutorouteJobEndKicksRoutePoll(t *testing.T) {
 	waitEvent(t, sub, "route added: 10.99.0.0/24 through session 1")
 	if got := atomic.LoadInt32(&routeWrites); got < 2 {
 		t.Fatalf("autoroute job end must re-poll routes, got %d route console writes", got)
+	}
+}
+
+// msfrpcd streams a large table across console reads and each read drains
+// only what printed since the last one, so the poll must assemble the chunks
+// before parsing; the final chunk alone reads as lost routes.
+func TestRoutePollAssemblesChunkedTable(t *testing.T) {
+	fake := stdFake()
+	var consoles int32
+	fake.set(gomsf.ConsoleCreate, func(args ...interface{}) (interface{}, error) {
+		return map[string]interface{}{"id": string(rune('0' + atomic.AddInt32(&consoles, 1) - 1))}, nil
+	})
+	var polls int32
+	fake.set(gomsf.ConsoleRead, func(args ...interface{}) (interface{}, error) {
+		if len(args) > 0 && args[0] == "1" {
+			switch atomic.AddInt32(&polls, 1) {
+			case 1:
+				half := "IPv4 Active Routing Table\nSubnet Netmask Gateway\n" +
+					"10.99.0.0          255.255.255.0      Session 1\n"
+				return map[string]interface{}{"data": half, "prompt": "", "busy": true}, nil
+			default:
+				rest := "192.168.0.0        255.255.0.0        Session 3\n\nmsf > "
+				return map[string]interface{}{"data": rest, "prompt": "msf > ", "busy": false}, nil
+			}
+		}
+		return map[string]interface{}{"data": "", "prompt": "msf > ", "busy": false}, nil
+	})
+
+	// RouteInterval keeps this to the bootstrap poll, so the table must come
+	// out of that one poll's two reads complete
+	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
+		OutputInterval: 5 * time.Millisecond, RefreshInterval: time.Hour,
+		RouteInterval: time.Hour})
+	t.Cleanup(e.Shutdown)
+
+	if err := e.Connect(context.Background(), protocol.ConnectParams{Host: "h", Port: 55553, Password: "p"}); err != nil {
+		t.Fatalf("connect: %+v", err)
+	}
+	waitFor(t, func() bool { return len(e.State().Routes) == 2 })
+	for _, ev := range e.State().Events {
+		if ev != nil && strings.Contains(ev.Text, "route removed") {
+			t.Fatalf("chunked table was parsed as removals: %s", ev.Text)
+		}
+	}
+	if got := e.State().Routes; got[0].Subnet != "10.99.0.0/24" || got[1].Subnet != "192.168.0.0/16" {
+		t.Fatalf("routes from chunked table: %+v", got)
 	}
 }
 
