@@ -11,16 +11,17 @@ import (
 // ingest drains the EventMonitor channel into engine state. It exits when the
 // monitor's channel closes (runCtx cancelled). Events from a superseded
 // monitor are dropped: its buffered errors must not trip the reconnect logic
-// of the monitor that replaced it.
+// of the monitor that replaced it, and its buffered session events must not
+// touch the replacement link's reused session IDs.
 func (e *Engine) ingest(m *gomsf.EventMonitor, ch <-chan gomsf.Event) {
 	for ev := range ch {
 		switch ev.Type {
 		case gomsf.EventSessionOpened:
 			e.sessionOpened(m, ev)
 		case gomsf.EventSessionClosed:
-			e.sessionClosed(ev)
+			e.sessionClosed(m, ev)
 		case gomsf.EventSessionOutput:
-			e.sessionOutput(ev)
+			e.sessionOutput(m, ev)
 		case gomsf.EventJobStarted:
 			e.jobChanged(m, ev.Job.ID, ev.Job.Name, true)
 		case gomsf.EventJobStopped:
@@ -66,8 +67,12 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.bus.send(protocol.SessionsUpdate(sessions))
 }
 
-func (e *Engine) sessionClosed(ev gomsf.Event) {
+func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.mu.Lock()
+	if m != e.monitor {
+		e.mu.Unlock()
+		return
+	}
 	if _, exists := e.sessions[ev.SessionID]; !exists {
 		e.mu.Unlock()
 		return
@@ -88,8 +93,12 @@ func (e *Engine) sessionClosed(ev gomsf.Event) {
 	}
 }
 
-func (e *Engine) sessionOutput(ev gomsf.Event) {
+func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.mu.Lock()
+	if m != e.monitor {
+		e.mu.Unlock()
+		return
+	}
 	if ev.SessionID != e.interactSID {
 		e.mu.Unlock()
 		return
