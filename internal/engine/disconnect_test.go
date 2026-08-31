@@ -61,6 +61,46 @@ func TestDisconnectClearsSessionsAndJobs(t *testing.T) {
 // can still be drained after the state was cleared, and would resurrect
 // ghosts. They belong to a dead monitor and must be dropped, like the
 // monitor's errors already are.
+// Session IDs are per-link counters, so a reconnect reuses them. A close or
+// output event buffered on the dead link's monitor must not delete or splice
+// into the replacement link's session of the same ID.
+func TestStaleMonitorCloseDoesNotTouchReusedSessionID(t *testing.T) {
+	e := connectedEngine(t, stdFake())
+	e.mu.Lock()
+	oldMon := e.monitor
+	e.mu.Unlock()
+
+	e.sessionOpened(oldMon, gomsf.Event{SessionID: "1", Session: &gomsf.Session{Type: "shell"}})
+	waitFor(t, func() bool { return len(e.State().Sessions) == 1 })
+
+	// the link died and the engine reconnected: bootstrap reset live state and
+	// the new link opened its own session 1
+	e.mu.Lock()
+	newMon := &gomsf.EventMonitor{}
+	e.monitor = newMon
+	e.sessions = make(map[string]*protocol.SessionState)
+	e.interactSID = "1"
+	e.mu.Unlock()
+	e.sessionOpened(newMon, gomsf.Event{SessionID: "1", Session: &gomsf.Session{Type: "meterpreter"}})
+	waitFor(t, func() bool {
+		s := e.State().Sessions["1"]
+		return s != nil && s.Type == "meterpreter"
+	})
+
+	e.sessionClosed(oldMon, gomsf.Event{SessionID: "1"})
+	if s := e.State().Sessions["1"]; s == nil {
+		t.Fatal("stale monitor close deleted the reused session ID")
+	}
+
+	e.sessionOutput(oldMon, gomsf.Event{SessionID: "1", Data: "stale output\r\n"})
+	e.mu.Lock()
+	stale := len(e.interactOut)
+	e.mu.Unlock()
+	if stale != 0 {
+		t.Fatalf("stale monitor output reached the interact buffer: %d bytes", stale)
+	}
+}
+
 func TestStaleMonitorEventsDoNotResurrectClearedState(t *testing.T) {
 	e := connectedEngine(t, stdFake())
 	e.mu.Lock()
