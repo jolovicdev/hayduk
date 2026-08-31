@@ -1,8 +1,10 @@
 # build output
 bin/
 ui/dist/
+dist/
 
 # the embedded UI stays committed: go:embed all:dist must resolve for go build
+# (the negation must come after the blanket dist/ to win)
 !internal/server/dist/
 
 # dependencies and tool caches
@@ -12,5 +14,3 @@ node_modules/
 
 # go test binaries
 *.test
-# goreleaser build output
-dist/
