@@ -43,11 +43,9 @@ func main() {
 			fmt.Fprintln(os.Stderr, "hayduk: --team needs an explicit --listen bind, e.g. --listen 0.0.0.0:8787")
 			os.Exit(1)
 		}
-		if host, _, err := net.SplitHostPort(*listen); err == nil {
-			if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-				fmt.Fprintln(os.Stderr, "hayduk: --team needs a non-loopback --listen bind; operators connect from other machines")
-				os.Exit(1)
-			}
+		if host, _, err := net.SplitHostPort(*listen); err == nil && loopbackOnly(host) {
+			fmt.Fprintln(os.Stderr, "hayduk: --team needs a non-loopback --listen bind; operators connect from other machines")
+			os.Exit(1)
 		}
 	}
 
@@ -87,6 +85,29 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	srv.Close()
+}
+
+// loopbackOnly reports whether a --listen host can serve nothing but this
+// machine: a literal loopback IP, or a hostname resolving exclusively to
+// loopback (localhost never parses as an IP). Unresolvable names are left to
+// net.Listen, which fails with its own error.
+func loopbackOnly(host string) bool {
+	if host == "" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	addrs, err := net.LookupHost(host)
+	if err != nil {
+		return false
+	}
+	for _, a := range addrs {
+		if ip := net.ParseIP(a); ip == nil || !ip.IsLoopback() {
+			return false
+		}
+	}
+	return len(addrs) > 0
 }
 
 func openBrowser(url string) {
