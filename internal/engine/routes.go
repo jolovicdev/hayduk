@@ -115,11 +115,14 @@ func (e *Engine) pollRoutes(ctx context.Context, monitor *gomsf.EventMonitor, co
 	// msfrpcd streams the table as it prints; a busy read carries a partial
 	// table that would read as mass removals. Keep draining until the prompt
 	// returns, bounded so a wedged console cannot stall the loop forever.
+	// Each read drains only what printed since the last one, so the chunks
+	// assemble into the full table.
 	result, err := console.Read(ctx)
 	if err != nil {
 		e.monitorError(monitor, err)
 		return
 	}
+	data := result.Data
 	for i := 0; err == nil && result.Busy && i < 10; i++ {
 		select {
 		case <-ctx.Done():
@@ -127,6 +130,9 @@ func (e *Engine) pollRoutes(ctx context.Context, monitor *gomsf.EventMonitor, co
 		case <-time.After(e.cfg.OutputInterval):
 		}
 		result, err = console.Read(ctx)
+		if err == nil {
+			data += result.Data
+		}
 	}
 	if err != nil {
 		e.monitorError(monitor, err)
@@ -135,7 +141,7 @@ func (e *Engine) pollRoutes(ctx context.Context, monitor *gomsf.EventMonitor, co
 	if result.Busy {
 		return // table never settled; the next poll retries
 	}
-	routes := parseRoutes(cleanOutput(result.Data))
+	routes := parseRoutes(cleanOutput(data))
 
 	e.mu.Lock()
 	if e.routeConsole != console {
