@@ -100,21 +100,30 @@ describe("launchDisabled", () => {
   it("holds the launch while payload settings load", () => {
     expect(launchDisabled({
       busy: false, optionsLoading: false, optionsError: false,
-      payloadChosen: true, payloadLoading: true, missing: [],
+      payloadChosen: true, payloadLoading: true, payloadError: false, missing: [],
+    })).toBe(true);
+  });
+
+  it("holds the launch when payload options failed to load", () => {
+    // an enabled button would send the payload with no options; required
+    // ones like LHOST would be rejected with no way to enter them
+    expect(launchDisabled({
+      busy: false, optionsLoading: false, optionsError: false,
+      payloadChosen: true, payloadLoading: false, payloadError: true, missing: [],
     })).toBe(true);
   });
 
   it("launches once everything is loaded and complete", () => {
     expect(launchDisabled({
       busy: false, optionsLoading: false, optionsError: false,
-      payloadChosen: true, payloadLoading: false, missing: [],
+      payloadChosen: true, payloadLoading: false, payloadError: false, missing: [],
     })).toBe(false);
   });
 
   it("holds the launch while module options load", () => {
     expect(launchDisabled({
       busy: false, optionsLoading: true, optionsError: false,
-      payloadChosen: false, payloadLoading: false, missing: [],
+      payloadChosen: false, payloadLoading: false, payloadError: false, missing: [],
     })).toBe(true);
   });
 
@@ -123,7 +132,7 @@ describe("launchDisabled", () => {
     // would submit an empty option set
     expect(launchDisabled({
       busy: false, optionsLoading: false, optionsError: true,
-      payloadChosen: false, payloadLoading: false, missing: [],
+      payloadChosen: false, payloadLoading: false, payloadError: false, missing: [],
     })).toBe(true);
   });
 });
