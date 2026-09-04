@@ -5,6 +5,7 @@ import {
   autorouteAutoadd,
   autorouteRemove,
   isIPv4,
+  parsePrefix,
   parseRouteTarget,
   prefixToNetmask,
   removeRouteItems,
@@ -96,5 +97,25 @@ describe("removeRouteItems", () => {
   });
   it("skips routes without a subnet or session", () => {
     expect(removeRouteItems([{ subnet: "", sessionId: "1" }, { subnet: "a/24", sessionId: "" }], vi.fn())).toEqual([]);
+  });
+});
+
+describe("parsePrefix", () => {
+  it("accepts ordinary prefixes", () => {
+    expect(parsePrefix("24")).toBe(24);
+    expect(parsePrefix(" 16 ")).toBe(16);
+  });
+  it("keeps an explicit zero as a real choice", () => {
+    expect(parsePrefix("0")).toBe(0);
+  });
+  it("rejects blank and whitespace-only input instead of /0", () => {
+    expect(parsePrefix("")).toBeUndefined();
+    expect(parsePrefix("   ")).toBeUndefined();
+  });
+  it("rejects garbage and out-of-range values", () => {
+    expect(parsePrefix("abc")).toBeUndefined();
+    expect(parsePrefix("33")).toBeUndefined();
+    expect(parsePrefix("-1")).toBeUndefined();
+    expect(parsePrefix("1.5")).toBeUndefined();
   });
 });

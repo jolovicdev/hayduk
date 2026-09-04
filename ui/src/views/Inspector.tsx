@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
+import { serviceOpen } from "./serviceState";
 
 export function Inspector(props: {
   addr: () => string | undefined;
@@ -15,9 +16,11 @@ export function Inspector(props: {
     const h = host();
     return h ? (credsByHostMemo().get(h.address) ?? []) : [];
   });
+  // only reachable rows: the count is labelled "Open services" and closed
+  // ports are noise in an attack summary
   const services = createMemo(() => {
     const h = host();
-    return h ? campaignState().services.filter(s => s?.host === h.address) : [];
+    return h ? campaignState().services.filter(s => s?.host === h.address && serviceOpen(s)) : [];
   });
 
   return (

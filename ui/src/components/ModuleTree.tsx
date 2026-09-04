@@ -31,12 +31,21 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
   }
 
   function nodeMenu(e: MouseEvent, node: TreeNode, type: string) {
-    openContextMenuFor(e, [
+    const items: Parameters<typeof openContextMenuFor>[1] = [
       { head: node.name, sub: node.path },
-      { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(type, node.path) },
+    ];
+    // only a leaf is a module; launching a category branch would dispatch
+    // its folder path as a refname and msf would reject it. Type roots of
+    // empty collections are childless too, so they are excluded by path:
+    // a type root's path is the bare type, a leaf's never is.
+    if (node.children.length === 0 && node.path !== type) {
+      items.push({ icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(type, node.path) });
+    }
+    items.push(
       { sep: true },
       { icon: "copy", label: "Copy path", fn: () => navigator.clipboard.writeText(node.path) },
-    ]);
+    );
+    openContextMenuFor(e, items);
   }
 
   return (
@@ -44,7 +53,7 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
       <nav class="tree"><div class="noresult">{total() === 0 ? "Not connected." : "No modules."}</div></nav>
     }>
       {(r) => (
-        <nav class="tree" classList={{ filtered: !!query() }}>
+        <nav class="tree" classList={{ filtered: !!query() && keep().size === 0 }}>
           <div class="filterbox">
             <i class="ph ph-magnifying-glass"></i>
             <input placeholder="Filter modules" value={query()}
@@ -83,7 +92,7 @@ function Branch(props: {
         <button class="trow branch" classList={{ expanded: expanded() }} aria-expanded={expanded()}
           onClick={() => props.toggle(props.node.path)}
           onContextMenu={(e) => props.onMenu(e, props.node, props.type)}>
-          <i class={`ph ph-caret-${expanded() ? "d" : "r"} caret`}></i>
+          <i class={`ph ${expanded() ? "ph-caret-down" : "ph-caret-right"} caret`}></i>
           <i class={`ph ph-folder${expanded() ? "-open" : ""} fic`}></i>
           <span class="tlabel">{props.node.name}/</span>
           <Show when={props.node.count > 0}>

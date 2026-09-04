@@ -41,6 +41,10 @@
 .ph-fill.ph-arrows-out-simple:before { content: "\e0a6"; }
 .ph.ph-broadcast:before { content: "\e0f2"; }
 .ph-fill.ph-broadcast:before { content: "\e0f2"; }
+.ph.ph-caret-down:before { content: "\e136"; }
+.ph-fill.ph-caret-down:before { content: "\e136"; }
+.ph.ph-caret-right:before { content: "\e13a"; }
+.ph-fill.ph-caret-right:before { content: "\e13a"; }
 .ph.ph-check:before { content: "\e182"; }
 .ph-fill.ph-check:before { content: "\e182"; }
 .ph.ph-command:before { content: "\e1c4"; }

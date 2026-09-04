@@ -1,7 +1,7 @@
 import { Show, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { CommandError } from "../ws/client";
-import { autorouteAdd, autorouteAutoadd, isIPv4, prefixToNetmask, runAutoroute } from "./pivot";
+import { autorouteAdd, autorouteAutoadd, isIPv4, parsePrefix, runAutoroute } from "./pivot";
 
 export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose: () => void }) {
   const [mode, setMode] = createSignal<"auto" | "manual">(props.meterpreter ? "auto" : "manual");
@@ -10,9 +10,10 @@ export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose:
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
+  const prefixBits = () => parsePrefix(prefix());
   const valid = () =>
     mode() === "auto" ? props.meterpreter
-      : isIPv4(address()) && prefixToNetmask(Number(prefix())) !== undefined;
+      : isIPv4(address()) && prefixBits() !== undefined;
 
   async function pivot() {
     setBusy(true);
@@ -21,7 +22,7 @@ export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose:
       await runAutoroute(
         mode() === "auto"
           ? autorouteAutoadd(props.sid)
-          : autorouteAdd(props.sid, address().trim(), Number(prefix())),
+          : autorouteAdd(props.sid, address().trim(), prefixBits()!),
       );
       props.onClose();
     } catch (e) {

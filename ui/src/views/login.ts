@@ -1,3 +1,5 @@
+import { serviceOpen } from "./serviceState";
+
 export interface LoginModule {
   module: string;
   label: string;
@@ -19,15 +21,18 @@ export const LOGIN_MODULES: LoginModule[] = [
 ];
 
 // Login modules worth offering for the services a host runs. A service
-// matches on its database name or its port; the operator can still pick any
-// module in the dialog, this only preselects. The matched service's port
-// rides along so logins can target non-standard ports.
+// matches on its database name or its port, and only while its port is
+// actually reachable - a closed SMB row is not a login target. The
+// operator can still pick any module in the dialog, this only preselects.
+// The matched service's port rides along so logins can target
+// non-standard ports.
 export function loginOptions(
-  services: readonly { port?: number; name: string }[],
+  services: readonly { port?: number; name: string; state?: string }[],
 ): (LoginModule & { port?: number })[] {
   const found: (LoginModule & { port?: number })[] = [];
   for (const lm of LOGIN_MODULES) {
-    const hit = services.find(s => lm.names.some(n => s.name.includes(n)) || lm.ports.includes(s.port ?? -1));
+    const hit = services.find(s =>
+      serviceOpen(s) && (lm.names.some(n => s.name.includes(n)) || lm.ports.includes(s.port ?? -1)));
     if (hit) found.push({ ...lm, port: hit.port });
   }
   return found;

@@ -31,6 +31,16 @@ export function parseRouteTarget(subnet: string): RouteTarget {
   return { subnet: subnet.slice(0, slash), netmask };
 }
 
+// parsePrefix validates the manual prefix field. A blank value is not a
+// prefix - Number("") is 0, which would silently become a 0.0.0.0 route -
+// but an explicitly typed "0" is a real choice and stays valid.
+export function parsePrefix(value: string): number | undefined {
+  const text = value.trim();
+  if (text === "") return undefined;
+  const bits = Number(text);
+  return prefixToNetmask(bits) === undefined ? undefined : bits;
+}
+
 export function isIPv4(value: string): boolean {
   const parts = value.trim().split(".");
   if (parts.length !== 4) return false;

@@ -2,6 +2,7 @@ import { Show } from "solid-js";
 import { ConsoleView } from "../components/ConsoleView";
 import { detach, interactOutput, interactSID, write } from "../stores/interact";
 import { campaignState } from "../stores/store";
+import { flash } from "../statusflash";
 import { interactPrompt } from "./format";
 
 export function InteractView() {
@@ -19,13 +20,14 @@ export function InteractView() {
           session {interactSID()} · {session()?.type ?? ""} · {session()?.username || session()?.targetHost || ""}
         </span>
         <span style="flex:1"></span>
-        <button class="abtn" style="flex:none; padding:0 12px" onClick={() => void detach()}>
+        <button class="abtn" style="flex:none; padding:0 12px"
+          onClick={() => void detach().catch((e: any) => flash(e?.message ?? "detach failed"))}>
           <i class="ph ph-x"></i>Detach
         </button>
       </div>
       <ConsoleView output={interactOutput}
         prompt={interactPrompt(session()?.type, interactSID())} busy={false}
-        write={(cmd) => void write(cmd)}
+        write={(cmd) => void write(cmd).catch((e: any) => flash(e?.message ?? "session write failed"))}
         tabComplete={async () => []} />
     </Show>
   );

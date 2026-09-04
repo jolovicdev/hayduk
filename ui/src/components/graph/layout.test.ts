@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUP_HEADER, GROUP_INSET, NH, NW, fitLabel, layoutHosts, subnetGroups, subnetKey } from "./layout";
+import { GROUP_HEADER, GROUP_INSET, NH, NW, cidrCovers, fitLabel, geometrySignature, layoutHosts, subnetGroups, subnetKey } from "./layout";
 import { osBadge } from "../../views/os";
 
 describe("subnetKey", () => {
@@ -123,5 +123,83 @@ describe("sticky overrides", () => {
     const withSticky = layoutHosts(hosts, new Map([["10.0.1.1", { x: 500, y: 500 }]]));
     expect(withSticky.get("10.0.1.2")).toEqual(plain.get("10.0.1.2"));
     expect(withSticky.get("10.0.2.1")).toEqual(plain.get("10.0.2.1"));
+  });
+});
+
+describe("cidrCovers", () => {
+  it("honors the prefix width across groups", () => {
+    expect(cidrCovers("10.0.0.0/8", "10.200.3.4")).toBe(true);
+    expect(cidrCovers("10.0.0.0/16", "10.0.99.4")).toBe(true);
+    expect(cidrCovers("10.0.0.0/24", "10.0.1.4")).toBe(false);
+    expect(cidrCovers("192.168.0.0/22", "192.168.3.255")).toBe(true);
+    expect(cidrCovers("192.168.0.0/22", "192.168.4.0")).toBe(false);
+  });
+  it("handles the extreme prefixes", () => {
+    expect(cidrCovers("0.0.0.0/0", "203.0.113.7")).toBe(true);
+    expect(cidrCovers("10.0.0.5/32", "10.0.0.5")).toBe(true);
+    expect(cidrCovers("10.0.0.5/32", "10.0.0.6")).toBe(false);
+  });
+  it("treats a prefixless route as one host", () => {
+    expect(cidrCovers("10.0.0.5", "10.0.0.5")).toBe(true);
+    expect(cidrCovers("10.0.0.5", "10.0.0.6")).toBe(false);
+  });
+  it("covers nothing when the route is not strict IPv4 CIDR", () => {
+    expect(cidrCovers("dead:beef::/64", "dead:beef::1")).toBe(false);
+    expect(cidrCovers("dead:beef::/64", "10.0.0.1")).toBe(false);
+    expect(cidrCovers("10.0.0.0/", "10.0.0.1")).toBe(false); // empty prefix is not 0
+    expect(cidrCovers("10.0.0.0/33", "10.0.0.1")).toBe(false);
+    expect(cidrCovers("10.0.0.0/-1", "10.0.0.1")).toBe(false);
+    expect(cidrCovers("300.0.0.0/8", "10.0.0.1")).toBe(false);
+  });
+  it("never covers a non-IPv4 host", () => {
+    expect(cidrCovers("10.0.0.0/8", "hostname")).toBe(false);
+    expect(cidrCovers("10.0.0.0/8", "")).toBe(false);
+    expect(cidrCovers("10.0.0.0/8", "::1")).toBe(false);
+  });
+});
+
+describe("geometrySignature", () => {
+  const base = {
+    hosts: [{ address: "10.0.0.1" }, { address: "10.0.0.2" }],
+    routes: [{ subnet: "10.9.0.0/24", sessionId: "3" }],
+    sessions: { "3": { targetHost: "10.0.0.1" } },
+  };
+  const sig = (hosts: any, routes: any, sessions: any) =>
+    geometrySignature(hosts, routes, sessions);
+
+  it("is stable when equal geometry arrives as fresh objects", () => {
+    // every resource update replaces the whole campaign state object; the
+    // signature must key on values, never on identity, or unrelated churn
+    // (jobs, creds, operators, ranks arriving in the same new state) would
+    // refit the view
+    const fresh = JSON.parse(JSON.stringify(base));
+    expect(sig(fresh.hosts, fresh.routes, fresh.sessions))
+      .toBe(sig(base.hosts, base.routes, base.sessions));
+  });
+  it("moves when a host appears or leaves", () => {
+    expect(sig([...base.hosts, { address: "10.0.1.1" }], base.routes, base.sessions))
+      .not.toBe(sig(base.hosts, base.routes, base.sessions));
+    expect(sig([base.hosts[0]], base.routes, base.sessions))
+      .not.toBe(sig(base.hosts, base.routes, base.sessions));
+  });
+  it("moves when a route or its source session's host moves", () => {
+    expect(sig(base.hosts, [{ subnet: "10.9.0.0/16", sessionId: "3" }], base.sessions))
+      .not.toBe(sig(base.hosts, base.routes, base.sessions));
+    expect(sig(base.hosts, base.routes, { "3": { targetHost: "10.0.0.2" } }))
+      .not.toBe(sig(base.hosts, base.routes, base.sessions));
+    // sessionHost is the fallback source; same host, same geometry
+    expect(sig(base.hosts, base.routes, { "3": { sessionHost: "10.0.0.1" } }))
+      .toBe(sig(base.hosts, base.routes, base.sessions));
+    expect(sig(base.hosts, base.routes, { "3": { sessionHost: "10.0.0.2" } }))
+      .not.toBe(sig(base.hosts, base.routes, base.sessions));
+  });
+  it("is stable for session churn that keeps the source host", () => {
+    expect(sig(base.hosts, base.routes, {
+      "3": { targetHost: "10.0.0.1", username: "root", viaExploit: "x" },
+    })).toBe(sig(base.hosts, base.routes, base.sessions));
+  });
+  it("tolerates null host and route entries", () => {
+    expect(sig([...base.hosts, null], [...base.routes, null], base.sessions))
+      .toBe(sig(base.hosts, base.routes, base.sessions));
   });
 });

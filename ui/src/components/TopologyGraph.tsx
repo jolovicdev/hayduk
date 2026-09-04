@@ -1,14 +1,17 @@
-import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import type { HostState } from "../protocol/types";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { osBadge } from "../views/os";
+import { flash } from "../statusflash";
 import { openContextMenuFor } from "./contextmenu";
 import {
   GROUP_INSET,
   NH,
   NW,
+  cidrCovers,
   fitLabel,
+  geometrySignature,
   layoutHosts,
   subnetGroups,
   subnetKey,
@@ -80,9 +83,31 @@ export function TopologyGraph(props: {
     });
   });
 
-  const routedKeys = createMemo(() => new Set(campaignState().routes
-    .filter(route => !!route?.subnet)
-    .map(route => subnetKey(route!.subnet.split("/")[0] ?? ""))));
+  // Every route paired with the host groups its CIDR actually covers -
+  // strict membership, so a /8 reaches every group inside it and an
+  // unparseable or non-IPv4 route reaches none instead of sweeping the
+  // shared "other" rail into ROUTED.
+  const routedGroups = createMemo(() => {
+    const state = campaignState();
+    const pairs: { route: { subnet: string; sessionId: string }; covered: Set<string> }[] = [];
+    for (const route of state.routes) {
+      if (!route?.subnet || !route.sessionId) continue;
+      const covered = new Set<string>();
+      for (const host of hosts()) {
+        if (cidrCovers(route.subnet, host.address)) covered.add(subnetKey(host.address));
+      }
+      pairs.push({ route: { subnet: route.subnet, sessionId: route.sessionId }, covered });
+    }
+    return pairs;
+  });
+
+  const routedKeys = createMemo(() => {
+    const keys = new Set<string>();
+    for (const { covered } of routedGroups()) {
+      for (const key of covered) keys.add(key);
+    }
+    return keys;
+  });
 
   const ghosts = createMemo(() => {
     const result = new Map<string, Ghost>();
@@ -91,10 +116,10 @@ export function TopologyGraph(props: {
     const state = campaignState();
     const right = Math.max(0, ...[...groupMap.values()].map(group => group.x + group.w)) + 84;
 
-    for (const route of state.routes) {
-      if (!route?.subnet || !route.sessionId) continue;
-      const key = subnetKey(route.subnet.split("/")[0] ?? "");
-      if (key === "other" || groupMap.has(key) || result.has(key)) continue;
+    for (const { route, covered } of routedGroups()) {
+      // a route that reaches discovered hosts draws real edges to those
+      // groups; only an entirely undiscovered network gets a ghost card
+      if (covered.size > 0 || result.has(route.subnet)) continue;
 
       const session = state.sessions[route.sessionId];
       const sourceHost = session?.targetHost || session?.sessionHost;
@@ -102,7 +127,7 @@ export function TopologyGraph(props: {
       let y = source ? source.y + NH / 2 - GHOST_H / 2 : result.size * (GHOST_H + GHOST_GAP);
       const previous = [...result.values()].at(-1);
       if (previous) y = Math.max(y, previous.y + GHOST_H + GHOST_GAP);
-      result.set(key, { label: route.subnet, x: right, y });
+      result.set(route.subnet, { label: route.subnet, x: right, y });
     }
 
     return result;
@@ -115,19 +140,17 @@ export function TopologyGraph(props: {
     const ghostMap = ghosts();
     const result: RouteEdge[] = [];
 
-    state.routes.forEach(route => {
-      if (!route?.subnet || !route.sessionId) return;
+    for (const { route, covered } of routedGroups()) {
       const session = state.sessions[route.sessionId];
       const sourceHost = session?.targetHost || session?.sessionHost;
       const source = sourceHost ? hostPositions.get(sourceHost) : undefined;
-      if (!source) return;
-
-      const key = subnetKey(route.subnet.split("/")[0] ?? "");
-      const group = groupMap.get(key);
-      const ghost = ghostMap.get(key);
+      if (!source) continue;
       const from = { x: source.x + NW, y: source.y + NH / 2 };
 
-      if (group) {
+      let drawn = false;
+      for (const key of covered) {
+        const group = groupMap.get(key);
+        if (!group) continue;
         const lane = Math.max(from.x, group.x + group.w) + 64 + result.length * 16;
         const to = { x: group.x + group.w, y: group.y + 14 };
         result.push({
@@ -139,9 +162,11 @@ export function TopologyGraph(props: {
           label: { x: lane - 40, y: (from.y + to.y) / 2 - 11 },
           labelW: routeLabelWidth(route.sessionId),
         });
-        return;
+        drawn = true;
       }
+      if (drawn) continue;
 
+      const ghost = ghostMap.get(route.subnet);
       if (ghost) {
         const to = { x: ghost.x, y: ghost.y + GHOST_H / 2 };
         result.push({
@@ -153,7 +178,7 @@ export function TopologyGraph(props: {
           labelW: routeLabelWidth(route.sessionId),
         });
       }
-    });
+    }
 
     return result;
   });
@@ -233,9 +258,12 @@ export function TopologyGraph(props: {
   }
 
   // removing a pivot runs the autoroute module on the session that owns the
-  // route; the engine's launch and route-diff events narrate the outcome
+  // route; the engine's launch and route-diff events narrate the outcome.
+  // The command itself can still fail before any of that - a rejected
+  // launch must reach the operator instead of vanishing.
   function removeRoute(route: { subnet: string; sessionId: string }) {
-    void runAutoroute(autorouteRemove(route.sessionId, parseRouteTarget(route.subnet)));
+    runAutoroute(autorouteRemove(route.sessionId, parseRouteTarget(route.subnet)))
+      .catch((e: any) => flash(e?.message ?? `could not remove route ${route.subnet}`));
   }
 
   function edgeMenu(edge: RouteEdge, event: MouseEvent) {
@@ -243,11 +271,12 @@ export function TopologyGraph(props: {
       removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute));
   }
 
-  // a routed-network card stands for one subnet; offer every session routing
-  // it, since several pivots can cover the same network
-  function ghostMenu(key: string, event: MouseEvent) {
+  // a routed-network card stands for one unrouted subnet's worth of pivot;
+  // offer every session routing it, since several pivots can cover the same
+  // network
+  function ghostMenu(subnet: string, event: MouseEvent) {
     const routes = campaignState().routes
-      .filter(r => !!r && subnetKey(r.subnet.split("/")[0] ?? "") === key)
+      .filter(r => !!r && r.subnet === subnet)
       .map(r => ({ subnet: r!.subnet, sessionId: r!.sessionId }));
     openContextMenuFor(event, removeRouteItems(routes, removeRoute));
   }
@@ -370,11 +399,16 @@ export function TopologyGraph(props: {
     });
   });
 
-  createEffect(() => {
-    hosts().map(host => host.address).join("|");
-    campaignState().routes.map(route => `${route?.subnet}:${route?.sessionId}`).join("|");
-    scheduleFit();
+  // Fit only when the graph's geometry changes - hosts appear or leave,
+  // routes or their source sessions move. Every resource update swaps the
+  // campaign state object, so reading it directly would refit on jobs,
+  // creds, operators and rank churn too, stomping a manual pan and zoom;
+  // the memo's string equality is the gate.
+  const geometry = createMemo(() => {
+    const state = campaignState();
+    return geometrySignature(state.hosts, state.routes, state.sessions);
   });
+  createEffect(on(geometry, () => scheduleFit(), { defer: true }));
 
   return (
     <svg
