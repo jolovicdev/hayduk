@@ -317,7 +317,7 @@ func (e *Engine) attach(sid string) *protocol.ErrorBody {
 	e.interactSID = sid
 	e.interactOut = nil
 	mon := e.monitor
-	interact := &protocol.InteractState{SID: sid}
+	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{SID: sid}))
 	e.mu.Unlock()
 	if mon != nil {
 		if previous != "" && previous != sid {
@@ -325,7 +325,6 @@ func (e *Engine) attach(sid string) *protocol.ErrorBody {
 		}
 		mon.WatchSession(sid)
 	}
-	e.bus.send(protocol.InteractUpdate(interact))
 	return nil
 }
 
@@ -339,11 +338,11 @@ func (e *Engine) detach() {
 	e.interactSID = ""
 	e.interactOut = nil
 	mon := e.monitor
+	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	e.mu.Unlock()
 	if mon != nil {
 		mon.UnwatchSession(sid)
 	}
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 }
 
 func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams) *protocol.ErrorBody {

@@ -45,8 +45,8 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 		Status: "connecting", Host: p.Host, Port: p.Port,
 		SSL: p.SSL, Username: p.Username,
 	}
+	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	e.mu.Unlock()
-	e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
 
 	err := e.bootstrap(ctx, p, gen)
 
@@ -57,11 +57,9 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 		if ownsState { // a disconnect or newer connect already owns the state
 			e.conn.Status = "disconnected"
 			e.conn.Error = err.Error()
+			e.bus.send(protocol.ConnectionUpdate(e.conn))
 		}
 		e.mu.Unlock()
-		if ownsState {
-			e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
-		}
 		return &protocol.ErrorBody{Code: protocol.CodeConnectFailed, Message: err.Error()}
 	}
 	if e.gen != gen+1 { // bootstrap committed, then something tore the link down
@@ -73,11 +71,11 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 	e.lastPassword = p.Password
 	e.errStreak = 0
 	e.logf(protocol.LevelSuccess, "connected to %s:%d (metasploit %s)", p.Host, p.Port, e.conn.MSFVersion)
-	e.mu.Unlock()
-	e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
+	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	// bootstrap swapped the whole campaign; a snapshot is the only message
 	// that carries modules and db state to already-connected browsers
-	e.bus.send(protocol.NewSnapshot(e.State()))
+	e.bus.send(protocol.NewSnapshot(e.stateLocked()))
+	e.mu.Unlock()
 	return nil
 }
 
@@ -285,11 +283,7 @@ func (e *Engine) Disconnect() {
 	}
 	e.password = ""
 	e.lastPassword = ""
-	e.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
-	e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
+	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	if hadRoutes {
 		e.bus.send(protocol.RoutesUpdate([]*protocol.RouteState{}))
@@ -299,6 +293,10 @@ func (e *Engine) Disconnect() {
 	}
 	if hadJobs {
 		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
+	}
+	e.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
 	// consoles destroyed and the client logged out only after the operator
 	// saw the disconnect; bounded so a dead daemon cannot wedge this call

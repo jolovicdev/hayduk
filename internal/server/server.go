@@ -56,7 +56,7 @@ type Server struct {
 // satisfies it. Declared here so server tests can run without msfrpcd.
 type engineInterface interface {
 	State() protocol.CampaignState
-	Subscribe() *engine.Subscription
+	SubscribeSnapshot() (*engine.Subscription, protocol.CampaignState)
 	Exec(ctx context.Context, operator, method string, params json.RawMessage) (json.RawMessage, *protocol.ErrorBody)
 	OperatorJoin(name string)
 	OperatorLeave(name string)
@@ -281,19 +281,19 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 	cmdCtx, cmdCancel := context.WithCancel(context.Background())
 	c := &wsConn{conn: conn, out: make(chan any, 256), done: make(chan struct{}), cancel: cmdCancel}
 
-	// Subscribe before taking the snapshot: anything broadcast from here on
-	// is queued for this socket, so no update can slip through the gap
-	// between the state copy and the subscription. Updates queued while the
-	// snapshot was being taken are already reflected in it; replaying them
-	// is harmless (resources are absolute replaces, streams may repeat a
-	// chunk) compared to silently losing one.
-	sub := s.engine.Subscribe()
+	// The subscription and the snapshot come out of one engine-lock hold:
+	// broadcasts already folded into the snapshot are suppressed for this
+	// socket by the bus, and everything sent after lands in order behind it.
+	// Neither side of the handshake can starve the other - subscribing alone
+	// would replay pre-snapshot messages (reverting newer state), snapshotting
+	// alone would drop updates that land in between.
+	sub, snap := s.engine.SubscribeSnapshot()
 	// the pump exits on c.done when the connection dies, so the subscription
 	// is released here rather than after the wait
 	defer sub.Stop()
 
 	c.send(protocol.NewHello(s.opts.Version, s.opts.Team))
-	c.send(protocol.NewSnapshot(s.engine.State()))
+	c.send(protocol.NewSnapshot(snap))
 
 	// writer: single goroutine owns conn writes; a write that stalls longer
 	// than the deadline kills the connection instead of freezing every

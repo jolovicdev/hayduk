@@ -12,6 +12,24 @@ import (
 // rather than sitting on a silently lossy feed.
 const busQueueCap = 8192
 
+// busMsg is one queued broadcast stamped with the sequence assigned at
+// enqueue time. The sequence is what makes snapshot handshakes safe: a
+// subscriber starts at the sequence observed when it joined, so messages
+// queued before it existed are skipped even if the broadcaster has not
+// drained them yet.
+type busMsg struct {
+	seq int64
+	m   protocol.ServerMessage
+}
+
+// busSub is one registered subscriber. after is the last sequence that
+// predates the subscription: everything at or below it is already reflected
+// in the snapshot the subscriber took (or will take) alongside joining.
+type busSub struct {
+	ch    chan protocol.ServerMessage
+	after int64
+}
+
 // bus fans messages out to subscribers. Sends never block the engine: the
 // producer appends to a bounded queue; one broadcaster goroutine delivers
 // to each subscriber with a bounded channel, closing subscribers that fall
@@ -19,9 +37,10 @@ const busQueueCap = 8192
 type bus struct {
 	mu       sync.Mutex
 	cond     *sync.Cond
-	queue    []protocol.ServerMessage
-	subs     map[int]chan protocol.ServerMessage
+	queue    []busMsg
+	subs     map[int]*busSub
 	nextID   int
+	seq      int64
 	stopped  bool
 	overflow bool
 	stopOnce sync.Once
@@ -29,7 +48,7 @@ type bus struct {
 
 func newBus() *bus {
 	b := &bus{
-		subs: make(map[int]chan protocol.ServerMessage),
+		subs: make(map[int]*busSub),
 	}
 	b.cond = sync.NewCond(&b.mu)
 	return b
@@ -51,7 +70,8 @@ func (b *bus) send(m protocol.ServerMessage) {
 	if b.stopped {
 		return
 	}
-	b.queue = append(b.queue, m)
+	b.seq++
+	b.queue = append(b.queue, busMsg{seq: b.seq, m: m})
 	if len(b.queue) > busQueueCap {
 		// bound memory now; run() closes every subscriber and drops the
 		// backlog - silently shedding a few messages while subscribers
@@ -62,6 +82,11 @@ func (b *bus) send(m protocol.ServerMessage) {
 	b.cond.Signal()
 }
 
+// subscribe registers a subscriber whose delivery starts strictly after the
+// messages already queued: the returned channel never carries a broadcast
+// that predates the subscription. Callers that pair the subscription with a
+// state snapshot must hold the state lock across both for that guarantee to
+// line up with the snapshot's contents.
 func (b *bus) subscribe() (int, chan protocol.ServerMessage) {
 	ch := make(chan protocol.ServerMessage, 256)
 	b.mu.Lock()
@@ -71,7 +96,7 @@ func (b *bus) subscribe() (int, chan protocol.ServerMessage) {
 		return 0, ch
 	}
 	b.nextID++
-	b.subs[b.nextID] = ch
+	b.subs[b.nextID] = &busSub{ch: ch, after: b.seq}
 	return b.nextID, ch
 }
 
@@ -107,17 +132,20 @@ func (b *bus) run() {
 		if len(b.queue) == 0 {
 			b.queue = nil // drop a burst's grown backing array once drained
 		}
-		subs := make([]chan protocol.ServerMessage, 0, len(b.subs))
-		for _, ch := range b.subs {
-			subs = append(subs, ch)
+		subs := make([]*busSub, 0, len(b.subs))
+		for _, s := range b.subs {
+			subs = append(subs, s)
 		}
 		b.mu.Unlock()
 
-		for _, ch := range subs {
+		for _, s := range subs {
+			if m.seq <= s.after {
+				continue // predates the subscription; its snapshot covers it
+			}
 			select {
-			case ch <- m:
+			case s.ch <- m.m:
 			default:
-				b.drop(ch)
+				b.drop(s.ch)
 			}
 		}
 	}
@@ -126,8 +154,8 @@ func (b *bus) run() {
 func (b *bus) drop(ch chan protocol.ServerMessage) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for id, c := range b.subs {
-		if c == ch {
+	for id, s := range b.subs {
+		if s.ch == ch {
 			close(ch)
 			delete(b.subs, id)
 			return
@@ -138,8 +166,8 @@ func (b *bus) drop(ch chan protocol.ServerMessage) {
 func (b *bus) closeAll() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	for id, ch := range b.subs {
-		close(ch)
+	for id, s := range b.subs {
+		close(s.ch)
 		delete(b.subs, id)
 	}
 }

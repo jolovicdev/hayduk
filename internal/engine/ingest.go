@@ -63,8 +63,8 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 	host := hostLabel(st.TargetHost)
 	e.logf(protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
 		ev.SessionID, st.Type, host, st.ViaExploit)
-	e.mu.Unlock()
 	e.bus.send(protocol.SessionsUpdate(sessions))
+	e.mu.Unlock()
 }
 
 func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
@@ -80,17 +80,13 @@ func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 	delete(e.sessions, ev.SessionID)
 	sessions := copyMap(e.sessions)
 	e.logf(protocol.LevelWarn, "session %s closed", ev.SessionID)
-	var interact *protocol.InteractState
 	if e.interactSID == ev.SessionID {
 		e.interactSID = ""
 		e.interactOut = nil
-		interact = &protocol.InteractState{}
+		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	}
-	e.mu.Unlock()
 	e.bus.send(protocol.SessionsUpdate(sessions))
-	if interact != nil {
-		e.bus.send(protocol.InteractUpdate(interact))
-	}
+	e.mu.Unlock()
 }
 
 func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {
@@ -109,8 +105,8 @@ func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {
 		return
 	}
 	e.interactOut = appendCapped(e.interactOut, []byte(data))
-	e.mu.Unlock()
 	e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: ev.SessionID, Data: data})
+	e.mu.Unlock()
 }
 
 func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool) {
@@ -130,8 +126,8 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 	} else {
 		e.logf(protocol.LevelInfo, "job %s stopped", id)
 	}
-	e.mu.Unlock()
 	e.bus.send(protocol.JobsUpdate(jobs))
+	e.mu.Unlock()
 	// autoroute only lives to change the route table; when it finishes the
 	// table changed, so the poller should look now rather than next interval
 	if !started && strings.Contains(name, "manage/autoroute") {
