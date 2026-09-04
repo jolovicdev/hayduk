@@ -86,9 +86,15 @@ func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailM
 					e.eventfOp(operator, protocol.LevelWarn, "hail mary aborted after %d launches: connection ended", launched)
 					return
 				}
+				options := map[string]interface{}{"RHOSTS": t.host.Address}
+				// attack the port the matching service was found on; the
+				// module default is a guess, the scan is not
+				if m.Port > 0 {
+					options["RPORT"] = m.Port
+				}
 				if _, eb := e.moduleExecute(runCtx, e.connectedRPC(), operator, protocol.ModuleExecuteParams{
 					Type: "exploit", Name: m.Name,
-					Options: map[string]interface{}{"RHOSTS": t.host.Address},
+					Options: options,
 				}); eb == nil {
 					launched++
 				}

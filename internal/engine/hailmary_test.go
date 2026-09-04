@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,9 +38,14 @@ func hailFake(t *testing.T) (*fakeRPC, func() []hailLaunch) {
 	})
 	fake.set(gomsf.ModuleInfo, okModuleInfo())
 	fake.set(gomsf.ModuleOptions, func(args ...interface{}) (interface{}, error) {
-		return map[string]interface{}{"RHOSTS": map[string]interface{}{
-			"type": "string", "required": true, "desc": "The target address range",
-		}}, nil
+		return map[string]interface{}{
+			"RHOSTS": map[string]interface{}{
+				"type": "string", "required": true, "desc": "The target address range",
+			},
+			"RPORT": map[string]interface{}{
+				"type": "integer", "required": false, "desc": "The target port",
+			},
+		}, nil
 	})
 	var mu sync.Mutex
 	var executed []hailLaunch
@@ -183,6 +189,56 @@ func TestHailMaryPacesFailedLaunchesToo(t *testing.T) {
 	}
 	if gap := got[1].Sub(got[0]); gap < hailMaryPace {
 		t.Fatalf("failed launches ran back-to-back (%v apart, want >= %v)", gap, hailMaryPace)
+	}
+}
+
+func TestHailMarySendsTheDiscoveredPort(t *testing.T) {
+	fake, _ := hailFake(t)
+	// SMB living on a non-standard port: the matcher must strike on 1445 and
+	// the launch must attack 1445, not the module's 445 default
+	fake.set(gomsf.DbServices, func(args ...interface{}) (interface{}, error) {
+		return map[string]interface{}{"services": []interface{}{
+			map[string]interface{}{"host": "10.0.0.5", "port": 1445, "proto": "tcp", "name": "smb"},
+			map[string]interface{}{"host": "10.0.0.6", "port": 2222, "proto": "tcp", "name": "ssh"},
+		}}, nil
+	})
+	var mu sync.Mutex
+	var executed []hailLaunch
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		mu.Lock()
+		executed = append(executed, hailLaunch{name: args[1].(string), options: args[2].(map[string]interface{})})
+		mu.Unlock()
+		return map[string]interface{}{"job_id": 1, "uuid": "u"}, nil
+	})
+	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
+		OutputInterval: time.Hour, RefreshInterval: time.Hour, RouteInterval: time.Hour})
+	t.Cleanup(e.Shutdown)
+	sub := e.Subscribe()
+	defer sub.Stop()
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("connect: %+v", err)
+	}
+
+	if _, errBody := e.Exec(context.Background(), "", "campaign.hail_mary",
+		json.RawMessage(`{"hosts":["10.0.0.5","10.0.0.6"],"maxPerHost":1}`)); errBody != nil {
+		t.Fatalf("hail mary: %+v", errBody)
+	}
+	waitEvent(t, sub, "hail mary finished: 2 of 2 planned launches")
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(executed) != 2 {
+		t.Fatalf("executed %d launches, want 2: %+v", len(executed), executed)
+	}
+	for _, l := range executed {
+		want := 1445
+		if strings.Contains(l.name, "ssh") {
+			want = 2222
+		}
+		got, ok := l.options["RPORT"].(int)
+		if !ok || got != want {
+			t.Fatalf("launch of %s carried RPORT %v (%T), want %d: %+v", l.name, l.options["RPORT"], l.options["RPORT"], want, l.options)
+		}
 	}
 }
 
