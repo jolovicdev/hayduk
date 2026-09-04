@@ -2,7 +2,7 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import { buildModuleTree, filterTree, visibleChildren, type TreeNode } from "./tree";
 import { rankChip } from "./rank";
 import { campaignState } from "../stores/store";
-import { openContextMenu } from "./contextmenu";
+import { openContextMenuFor } from "./contextmenu";
 
 export function ModuleTree(props: { onLaunch: (type: string, path: string) => void }) {
   const [query, setQuery] = createSignal("");
@@ -31,9 +31,7 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
   }
 
   function nodeMenu(e: MouseEvent, node: TreeNode, type: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    openContextMenu(e.clientX, e.clientY, [
+    openContextMenuFor(e, [
       { head: node.name, sub: node.path },
       { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(type, node.path) },
       { sep: true },

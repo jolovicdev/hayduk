@@ -1,6 +1,6 @@
 import { DataTable } from "../components/DataTable";
 import { campaignState } from "../stores/store";
-import { openContextMenu } from "../components/contextmenu";
+import { openContextMenuFor } from "../components/contextmenu";
 import type { ServiceState } from "../protocol/types";
 
 export function ServicesView(props: { onInspect: (addr: string) => void }) {
@@ -13,8 +13,7 @@ export function ServicesView(props: { onInspect: (addr: string) => void }) {
         rowKey={(r) => `${r.host}:${r.port}:${r.proto}`}
         onRowClick={(r) => props.onInspect(r.host)}
         onRowContextMenu={(r, e) => {
-          e.preventDefault();
-          openContextMenu(e.clientX, e.clientY, [
+          openContextMenuFor(e, [
             { head: `${r.host}:${r.port}`, sub: `${r.proto} ${r.name}` },
             { icon: "info", label: "Inspect host", fn: () => props.onInspect(r.host) },
             { icon: "copy", label: "Copy address", hint: r.host, fn: () => navigator.clipboard.writeText(r.host) },

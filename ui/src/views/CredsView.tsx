@@ -1,5 +1,5 @@
 import { DataTable } from "../components/DataTable";
-import { openContextMenu } from "../components/contextmenu";
+import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import type { CredState } from "../protocol/types";
 
@@ -11,8 +11,7 @@ export function CredsView() {
       rows={rows()}
       rowKey={(r) => `${r.host}:${r.port}:${r.user}:${r.pass}`}
       onRowContextMenu={(r, e) => {
-        e.preventDefault();
-        openContextMenu(e.clientX, e.clientY, [
+        openContextMenuFor(e, [
           { head: r.user || "(no user)", sub: `recovered credential on ${r.host}` },
           { sep: true },
           { icon: "copy", label: "Copy value", fn: () => navigator.clipboard.writeText(r.pass) },

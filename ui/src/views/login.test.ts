@@ -18,6 +18,13 @@ describe("loginOptions", () => {
     expect(loginOptions([{ port: 22, name: "" }]).map(m => m.label)).toEqual(["SSH"]);
   });
 
+  it("carries the matched port along, including SMB on 139", () => {
+    const smb = loginOptions([{ port: 139, name: "netbios-ssn" }]);
+    expect(smb[0]!.port).toBe(139);
+    const ssh = loginOptions([{ port: 2222, name: "ssh" }]);
+    expect(ssh[0]!.port).toBe(2222);
+  });
+
   it("offers nothing for unrelated services", () => {
     expect(loginOptions([{ port: 80, name: "http" }])).toEqual([]);
   });

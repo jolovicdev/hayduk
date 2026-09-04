@@ -35,6 +35,9 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
     setBusy(true);
     setError("");
     const opts: Record<string, unknown> = { RHOSTS: props.host };
+    // attack the port the service was actually found on - even 139, which
+    // smb_login does not default to
+    if (m.port !== undefined) opts.RPORT = m.port;
     if (user().trim()) opts[m.userKey] = user().trim();
     if (pass()) opts[m.passKey] = pass();
     try {

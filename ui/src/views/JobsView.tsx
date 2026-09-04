@@ -1,5 +1,5 @@
 import { DataTable } from "../components/DataTable";
-import { openContextMenu } from "../components/contextmenu";
+import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ageOf } from "./format";
@@ -16,8 +16,7 @@ export function JobsView() {
       rowKey={(r) => r.id}
       empty="No jobs running. Exploit handlers and long-running modules appear here the moment msf starts them."
       onRowContextMenu={(r, e) => {
-        e.preventDefault();
-        openContextMenu(e.clientX, e.clientY, [
+        openContextMenuFor(e, [
           { head: `Job ${r.id}`, sub: r.module },
           { icon: "copy", label: "Copy module path", fn: () => navigator.clipboard.writeText(r.module) },
           { sep: true },
