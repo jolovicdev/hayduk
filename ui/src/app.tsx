@@ -1,4 +1,4 @@
-import { For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
 import ConnectDialog from "./views/ConnectDialog";
 import { ContextMenuRoot, closeContextMenu, openContextMenu } from "./components/contextmenu";
 import { Dropdown, MenuItemButton } from "./components/dropdown";
@@ -118,8 +118,12 @@ export default function App() {
   };
 
   function openInteract(sid: string) {
-    void attach(sid);
-    setTab("interact");
+    // the tab switches only once the engine confirms the attach; otherwise
+    // the operator lands on an empty console with no clue why
+    attach(sid).then(
+      () => setTab("interact"),
+      (e: any) => flash(e?.message ?? `could not attach to session ${sid}`),
+    );
   }
 
   function fit() {
@@ -159,6 +163,11 @@ export default function App() {
     onSwitched: () => setSelectedHost(undefined),
     flash,
   });
+
+  // the old workspace's hosts do not exist in the new one, so the selection
+  // must die with the workspace change itself - not with the command's
+  // success: a switch whose reload then fails still changed the workspace
+  createEffect(on(() => conn().workspace, () => setSelectedHost(undefined), { defer: true }));
 
   function commitOperator() {
     const name = operatorDraft().trim();
@@ -374,7 +383,7 @@ export default function App() {
         <div class="nbbody">
           <div class="nbpane" hidden={tab() !== "console"}>
             <ConsoleView output={consoleOutput} prompt={consolePrompt()} busy={consoleBusy()}
-              write={(cmd) => void write(cmd)}
+              write={(cmd) => void write(cmd).catch((e: any) => flash(e?.message ?? "console write failed"))}
               tabComplete={(line) => consoleTabs(line).catch(() => [])} />
           </div>
           <div class="nbpane" hidden={tab() !== "interact"}><InteractView /></div>

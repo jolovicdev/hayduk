@@ -4,6 +4,7 @@ import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
+import { flash } from "../statusflash";
 import { PivotDialog } from "./PivotDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
 import { ageOf } from "./format";
@@ -38,7 +39,8 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
   }
 
   function kill(sid: string) {
-    void ws.command("session.stop", { sid });
+    ws.command("session.stop", { sid })
+      .catch((e: any) => flash(e?.message ?? `could not stop session ${sid}`));
   }
 
   function pivotType(sid: string | undefined) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { LOGIN_MODULES, loginOptions, rankCreds } from "./login";
+import { serviceOpen } from "./serviceState";
 
 describe("loginOptions", () => {
   it("offers smb and ssh for a host running both", () => {
@@ -52,5 +53,35 @@ describe("LOGIN_MODULES option keys", () => {
     expect(smb.userKey).toBe("SMBUser");
     const ssh = LOGIN_MODULES.find(m => m.label === "SSH")!;
     expect(ssh.userKey).toBe("USERNAME");
+  });
+});
+
+describe("closed services", () => {
+  it("excludes closed ports from login options", () => {
+    expect(loginOptions([{ port: 445, name: "smb", state: "closed" }])).toEqual([]);
+    expect(loginOptions([{ port: 22, name: "ssh", state: "filtered" }])).toEqual([]);
+  });
+  it("keeps services whose state is empty or open", () => {
+    expect(loginOptions([{ port: 445, name: "smb", state: "" }]).map(m => m.label)).toEqual(["SMB"]);
+    expect(loginOptions([{ port: 445, name: "smb", state: "open" }]).map(m => m.label)).toEqual(["SMB"]);
+    expect(loginOptions([{ port: 445, name: "smb" }]).map(m => m.label)).toEqual(["SMB"]);
+  });
+  it("falls back to an open service when another is closed", () => {
+    const out = loginOptions([
+      { port: 139, name: "netbios-ssn", state: "closed" },
+      { port: 1445, name: "smb", state: "open" },
+    ]);
+    expect(out.map(m => m.label)).toEqual(["SMB"]);
+    expect(out[0]!.port).toBe(1445);
+  });
+});
+
+describe("serviceOpen", () => {
+  it("counts empty and open states, nothing else", () => {
+    expect(serviceOpen({ state: "" })).toBe(true);
+    expect(serviceOpen({})).toBe(true);
+    expect(serviceOpen({ state: "open" })).toBe(true);
+    expect(serviceOpen({ state: "closed" })).toBe(false);
+    expect(serviceOpen({ state: "filtered" })).toBe(false);
   });
 });
