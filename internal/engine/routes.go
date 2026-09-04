@@ -171,8 +171,8 @@ func (e *Engine) pollRoutes(ctx context.Context, monitor *gomsf.EventMonitor, co
 		}
 	}
 	e.routes = routes
-	e.mu.Unlock()
 	e.bus.send(protocol.RoutesUpdate(routes))
+	e.mu.Unlock()
 }
 
 func sameRoutes(a, b []*protocol.RouteState) bool {

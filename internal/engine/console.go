@@ -52,11 +52,10 @@ func (e *Engine) consoleRead(console *gomsf.MsfConsole, result *gomsf.ConsoleRea
 	}
 	e.consolePrompt = prompt
 	output := string(e.consoleOut)
-	e.mu.Unlock()
-
 	if replaced {
 		e.bus.send(protocol.ConsoleUpdate(&protocol.ConsoleState{Output: output}))
 	} else if stream != "" {
 		e.bus.send(protocol.ConsoleOutputMsg{Type: protocol.KindConsoleOutput, Data: stream})
 	}
+	e.mu.Unlock()
 }

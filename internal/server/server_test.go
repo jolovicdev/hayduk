@@ -65,6 +65,59 @@ func TestWSRequiresToken(t *testing.T) {
 	}
 }
 
+// The socket handshake must be seamless: whatever the snapshot already
+// carries (events 1..S here) can never be replayed down the stream, and
+// everything after it arrives in order with nothing lost in between.
+func TestWSHandshakeStreamStartsAfterSnapshot(t *testing.T) {
+	s, _, wsURL := testServer(t)
+
+	const joins = 20
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < joins; i++ {
+			s.engine.OperatorJoin(fmt.Sprintf("op%02d", i))
+			time.Sleep(time.Millisecond) // overlap the dial and handshake
+		}
+	}()
+
+	c := dialWS(t, wsURL, "testtoken")
+	hello := readMsg(t, c)
+	if hello["type"] != "hello" {
+		t.Fatalf("hello %+v", hello)
+	}
+	snap := readMsg(t, c)
+	if snap["type"] != "snapshot" {
+		t.Fatalf("snapshot %+v", snap)
+	}
+	snapSeq := int64(0)
+	for _, ev := range snap["state"].(map[string]any)["events"].([]any) {
+		if seq := int64(ev.(map[string]any)["seq"].(float64)); seq > snapSeq {
+			snapSeq = seq
+		}
+	}
+	<-done
+
+	// every join logs an event; the ones the snapshot already holds (seq ≤
+	// snapSeq) must never come down the wire, the rest must all arrive
+	streamed := 0
+	for int64(streamed) < int64(joins)-snapSeq {
+		c.UnderlyingConn().SetReadDeadline(time.Now().Add(5 * time.Second))
+		m := readMsg(t, c)
+		if m["type"] != "event" {
+			continue // operators updates ride along; only events are ordered
+		}
+		seq := int64(m["seq"].(float64))
+		if seq <= snapSeq {
+			t.Fatalf("event %d replayed after a snapshot that already holds it", seq)
+		}
+		if want := snapSeq + int64(streamed) + 1; seq != want {
+			t.Fatalf("event %d out of order or lost (want %d)", seq, want)
+		}
+		streamed++
+	}
+}
+
 func TestWSHelloThenSnapshot(t *testing.T) {
 	_, _, wsURL := testServer(t)
 	c := dialWS(t, wsURL, "testtoken")

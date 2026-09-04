@@ -118,10 +118,8 @@ func (e *Engine) refreshDB(ctx context.Context) error {
 	if credDelta > 0 {
 		e.logf(protocol.LevelSuccess, "%d new credentials", credDelta)
 	}
-	e.mu.Unlock()
-
 	if wsChanged {
-		e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
+		e.bus.send(protocol.ConnectionUpdate(e.conn))
 	}
 	if hostsChanged {
 		e.bus.send(protocol.HostsUpdate(newHosts))
@@ -135,6 +133,7 @@ func (e *Engine) refreshDB(ctx context.Context) error {
 	if lootChanged {
 		e.bus.send(protocol.LootUpdate(newLoot))
 	}
+	e.mu.Unlock()
 	return nil
 }
 

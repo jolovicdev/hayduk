@@ -41,6 +41,8 @@ func (e *Engine) reconnect() {
 	}
 	e.conn.Status = "reconnecting"
 	e.logf(protocol.LevelWarn, "connection lost; reconnecting to %s:%d", p.Host, p.Port)
+	e.bus.send(protocol.ConnectionUpdate(e.conn))
+	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	e.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -48,8 +50,6 @@ func (e *Engine) reconnect() {
 	// the daemon is likely the reason we are here; release is bounded and
 	// async so a stalled one cannot slow the retry loop
 	go release(dropRPC, dropConsoleID, dropRouteCID)
-	e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 
 	backoff := time.Second
 	const maxBackoff = 10 * time.Second
@@ -72,11 +72,11 @@ func (e *Engine) reconnect() {
 			e.password = p.Password
 			e.errStreak = 0
 			e.logf(protocol.LevelSuccess, "reconnected to %s:%d", p.Host, p.Port)
-			e.mu.Unlock()
-			e.bus.send(protocol.ConnectionUpdate(e.snapshotConn()))
+			e.bus.send(protocol.ConnectionUpdate(e.conn))
 			// bootstrap swapped the whole campaign; browsers that stayed
 			// attached through the blip need the full state again
-			e.bus.send(protocol.NewSnapshot(e.State()))
+			e.bus.send(protocol.NewSnapshot(e.stateLocked()))
+			e.mu.Unlock()
 			return
 		}
 		if errors.Is(err, errSuperseded) {

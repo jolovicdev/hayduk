@@ -149,10 +149,34 @@ func (e *Engine) Subscribe() *Subscription {
 	return &Subscription{ch: ch, id: id, bus: e.bus}
 }
 
+// SubscribeSnapshot subscribes and takes the state snapshot inside one
+// engine-lock hold, which is the atomic handshake a reconnecting client
+// needs: every broadcast already reflected in the returned state is
+// suppressed for the new subscriber (the bus skips messages queued up to
+// the subscription point), and every later broadcast is delivered, so no
+// update that lands mid-handshake can be lost and none that predates the
+// snapshot can be replayed over it.
+//
+// The guarantee rests on senders broadcasting while still holding e.mu: the
+// bus cutoff read here then cannot fall between a state change and its
+// message.
+func (e *Engine) SubscribeSnapshot() (*Subscription, protocol.CampaignState) {
+	e.mu.Lock()
+	id, ch := e.bus.subscribe()
+	s := e.stateLocked()
+	e.mu.Unlock()
+	return &Subscription{ch: ch, id: id, bus: e.bus}, s
+}
+
 // State returns a deep copy safe to hand to another goroutine.
 func (e *Engine) State() protocol.CampaignState {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	return e.stateLocked()
+}
+
+// stateLocked is State for callers already holding e.mu.
+func (e *Engine) stateLocked() protocol.CampaignState {
 	s := protocol.CampaignState{
 		Connection:  e.conn,
 		Modules:     e.modules,
@@ -294,10 +318,10 @@ func (e *Engine) operatorDelta(name string, delta int) {
 		}
 	}
 	list := e.operatorListLocked()
-	e.mu.Unlock()
 	if changed {
 		e.bus.send(protocol.OperatorsUpdate(list))
 	}
+	e.mu.Unlock()
 }
 
 func (e *Engine) operatorListLocked() []string {

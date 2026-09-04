@@ -76,8 +76,8 @@ func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
 		for k, v := range out {
 			e.moduleRanks[k] = v
 		}
-		e.mu.Unlock()
 		e.bus.send(protocol.ModuleRanksUpdate(out))
+		e.mu.Unlock()
 	}
 
 	work := make(chan rankTarget)
