@@ -3,7 +3,7 @@ import type { HostState } from "../protocol/types";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { osBadge } from "../views/os";
-import { openContextMenu } from "./contextmenu";
+import { openContextMenuFor } from "./contextmenu";
 import {
   GROUP_INSET,
   NH,
@@ -239,29 +239,23 @@ export function TopologyGraph(props: {
   }
 
   function edgeMenu(edge: RouteEdge, event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
-    openContextMenu(event.clientX, event.clientY,
+    openContextMenuFor(event,
       removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute));
   }
 
   // a routed-network card stands for one subnet; offer every session routing
   // it, since several pivots can cover the same network
   function ghostMenu(key: string, event: MouseEvent) {
-    event.preventDefault();
-    event.stopPropagation();
     const routes = campaignState().routes
       .filter(r => !!r && subnetKey(r.subnet.split("/")[0] ?? "") === key)
       .map(r => ({ subnet: r!.subnet, sessionId: r!.sessionId }));
-    openContextMenu(event.clientX, event.clientY, removeRouteItems(routes, removeRoute));
+    openContextMenuFor(event, removeRouteItems(routes, removeRoute));
   }
 
   function nodeMenu(address: string, event: MouseEvent) {
-    event.preventDefault();
-    event.stopImmediatePropagation();
     props.onSelect(address);
     const hostAccess = access()(address);
-    const items: Parameters<typeof openContextMenu>[2] = [{ head: address, sub: "host" }];
+    const items: Parameters<typeof openContextMenuFor>[1] = [{ head: address, sub: "host" }];
     for (const session of hostAccess.sessions) {
       items.push({
         icon: "terminal-window",
@@ -275,7 +269,7 @@ export function TopologyGraph(props: {
       { sep: true },
       { icon: "copy", label: "Copy address", hint: address, fn: () => navigator.clipboard.writeText(address) },
     );
-    openContextMenu(event.clientX, event.clientY, items);
+    openContextMenuFor(event, items);
   }
 
   interface PanState { startX: number; startY: number; viewX: number; viewY: number; moved: boolean }

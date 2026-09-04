@@ -1,4 +1,4 @@
-import { onMount } from "solid-js";
+import { onCleanup, onMount } from "solid-js";
 
 export type MenuItem = {
   head?: string;
@@ -55,6 +55,17 @@ export function placeMenu(x: number, y: number, w: number, h: number, vw: number
   };
 }
 
+// The entry point for contextmenu events. The event must die here: Solid
+// delegates contextmenu to document, where the close listener registered
+// below also sits, and only the immediate variant stops another listener on
+// that same node — plain stopPropagation (or nothing at all) lets that
+// listener close the freshly opened menu in the same tick.
+export function openContextMenuFor(e: MouseEvent, items: MenuItem[]) {
+  e.preventDefault();
+  e.stopImmediatePropagation();
+  openContextMenu(e.clientX, e.clientY, items);
+}
+
 export function openContextMenu(x: number, y: number, items: MenuItem[]) {
   if (!menuEl) return;
   menuEl.innerHTML = buildMenuHTML(items);
@@ -75,14 +86,21 @@ export function ContextMenuRoot() {
   let el!: HTMLDivElement;
   onMount(() => {
     menuEl = el;
-    document.addEventListener("click", e => {
+    const closeIfOutside = (e: Event) => {
       if (!(e.target as HTMLElement).closest("#ctx")) closeContextMenu();
-    });
-    document.addEventListener("contextmenu", e => {
-      if (!(e.target as HTMLElement).closest("#ctx")) closeContextMenu();
-    });
+    };
+    document.addEventListener("click", closeIfOutside);
+    document.addEventListener("contextmenu", closeIfOutside);
     window.addEventListener("blur", closeContextMenu);
     window.addEventListener("resize", closeContextMenu);
+    // the root remounts during HMR and some tests; piled-up listeners would
+    // keep closing menus forever
+    onCleanup(() => {
+      document.removeEventListener("click", closeIfOutside);
+      document.removeEventListener("contextmenu", closeIfOutside);
+      window.removeEventListener("blur", closeContextMenu);
+      window.removeEventListener("resize", closeContextMenu);
+    });
   });
   return <div class="ctx" ref={el} id="ctx" role="menu"></div>;
 }

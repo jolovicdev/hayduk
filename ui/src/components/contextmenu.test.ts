@@ -1,5 +1,29 @@
-import { describe, expect, it } from "vitest";
-import { buildMenuHTML, placeMenu, type MenuItem } from "./contextmenu";
+import { describe, expect, it, vi } from "vitest";
+import { buildMenuHTML, openContextMenuFor, placeMenu, type MenuItem } from "./contextmenu";
+
+describe("openContextMenuFor", () => {
+  it("silences the event before the menu opens", () => {
+    // the close listener shares Solid's delegated document node; without
+    // the immediate stop it would close the freshly opened menu itself.
+    // Opening itself is unobservable here: the menu element only exists
+    // once ContextMenuRoot mounts, which this node-env suite lacks.
+    const preventDefault = vi.fn();
+    const stopImmediatePropagation = vi.fn();
+    const e = {
+      clientX: 10,
+      clientY: 20,
+      preventDefault,
+      stopImmediatePropagation,
+    } as unknown as MouseEvent;
+    openContextMenuFor(e, [{ label: "Copy", fn: () => {} }]);
+    expect(preventDefault).toHaveBeenCalledOnce();
+    expect(stopImmediatePropagation).toHaveBeenCalledOnce();
+    // silence lands in the written order, before the module opens anything
+    expect(preventDefault.mock.invocationCallOrder[0]!).toBeLessThan(
+      stopImmediatePropagation.mock.invocationCallOrder[0]!,
+    );
+  });
+});
 
 describe("menu items", () => {
   it("separates and labels items", () => {

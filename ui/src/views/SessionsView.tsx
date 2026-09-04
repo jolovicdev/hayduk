@@ -1,6 +1,6 @@
 import { Show, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
-import { openContextMenu } from "../components/contextmenu";
+import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
@@ -21,8 +21,7 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       .sort((a, b) => Number(a.id) - Number(b.id));
 
   function menu(row: SessionState, e: MouseEvent) {
-    e.preventDefault();
-    const items: Parameters<typeof openContextMenu>[2] = [
+    const items: Parameters<typeof openContextMenuFor>[1] = [
       { head: `Session ${row.id}`, sub: row.username || row.info || row.targetHost },
       { icon: "terminal-window", label: "Interact", fn: () => props.onInteract(row.id) },
     ];
@@ -35,7 +34,7 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       { sep: true },
       { icon: "copy", label: "Copy user", fn: () => navigator.clipboard.writeText(row.username ?? "") },
     );
-    openContextMenu(e.clientX, e.clientY, items);
+    openContextMenuFor(e, items);
   }
 
   function kill(sid: string) {
