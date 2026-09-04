@@ -26,3 +26,27 @@ func TestLoopbackOnly(t *testing.T) {
 		}
 	}
 }
+
+// Team mode must also refuse wildcard binds: the advertised link carries the
+// listen host, and [::] or 0.0.0.0 is not an address a remote operator can
+// open.
+func TestWildcardHost(t *testing.T) {
+	cases := []struct {
+		host string
+		want bool
+	}{
+		{"", true},          // ":8787" binds every interface
+		{"0.0.0.0", true},
+		{"::", true},
+		{"::ffff:0.0.0.0", true}, // mapped unspecified
+		{"127.0.0.1", false},
+		{"::1", false},
+		{"192.168.1.10", false},
+		{"localhost", false}, // a name, not an address; Listen resolves it
+	}
+	for _, c := range cases {
+		if got := wildcardHost(c.host); got != c.want {
+			t.Errorf("wildcardHost(%q) = %v, want %v", c.host, got, c.want)
+		}
+	}
+}

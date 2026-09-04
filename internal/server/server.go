@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"net/netip"
 	"net/url"
 	"path"
 	"strings"
@@ -73,7 +74,23 @@ func (s *Server) Listen(addr string) (string, error) {
 	}
 	s.ln = ln
 	go http.Serve(ln, s.Handler())
-	return "http://" + ln.Addr().String(), nil
+	return "http://" + advertiseAddr(ln.Addr().String()), nil
+}
+
+// advertiseAddr rewrites an unspecified bind (0.0.0.0, [::]) into the
+// loopback address a browser can actually open: a wildcard is not a
+// destination, and printing one hands the operator a dead URL. A specific
+// address is advertised verbatim. (An IPv6 wildcard listener is dual-stack,
+// so the IPv4 loopback reaches it.)
+func advertiseAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	if ip, err := netip.ParseAddr(host); err == nil && ip.Unmap().IsUnspecified() {
+		return net.JoinHostPort("127.0.0.1", port)
+	}
+	return addr
 }
 
 func (s *Server) Close() {
