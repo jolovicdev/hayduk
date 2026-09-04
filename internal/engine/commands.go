@@ -193,11 +193,44 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.Name == "" {
 			return nil, badParam("name is required")
 		}
+		e.mu.Lock()
+		startGen := e.gen
+		e.mu.Unlock()
 		if err := gomsf.NewDbManager(rpc).SetWorkspace(ctx, p.Name); err != nil {
 			return nil, mapErr(err)
 		}
-		e.eventfOp(operator, protocol.LevelInfo, "switched to workspace %s", p.Name)
-		e.refreshDB(ctx)
+		// refreshMu spans the whole transition: a periodic refresh that
+		// already read the old workspace must not commit its stale rows
+		// after the clear below
+		e.refreshMu.Lock()
+		defer e.refreshMu.Unlock()
+		// msf already switched: the connection says so and the old
+		// workspace's data must not survive a refresh that fails halfway.
+		// The generation guard keeps a link that was replaced mid-switch
+		// from having its fresh state cleared by this stale command.
+		e.mu.Lock()
+		if e.gen != startGen {
+			e.mu.Unlock()
+			return nil, notConnected()
+		}
+		e.conn.Workspace = p.Name
+		e.hosts = nil
+		e.services = nil
+		e.creds = nil
+		e.loot = nil
+		e.logfOp(operator, protocol.LevelInfo, "switched to workspace %s", p.Name)
+		e.bus.send(protocol.ConnectionUpdate(e.conn))
+		e.bus.send(protocol.HostsUpdate(nil))
+		e.bus.send(protocol.ServicesUpdate(nil))
+		e.bus.send(protocol.CredsUpdate(nil))
+		e.bus.send(protocol.LootUpdate(nil))
+		e.mu.Unlock()
+		// sessions, jobs and routes belong to the framework instance, not
+		// the workspace, and stay; a superseded refresh means the link died
+		// mid-switch and the teardown rebuilds state on its own
+		if err := e.refreshDBLocked(ctx); err != nil && !errors.Is(err, errSuperseded) {
+			return nil, mapErr(err)
+		}
 		return nil, nil
 
 	case protocol.MethodDBRefresh:

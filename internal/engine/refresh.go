@@ -41,6 +41,13 @@ var errNotConnected = errors.New("not connected to msfrpcd")
 func (e *Engine) refreshDB(ctx context.Context) error {
 	e.refreshMu.Lock()
 	defer e.refreshMu.Unlock()
+	return e.refreshDBLocked(ctx)
+}
+
+// refreshDBLocked is refreshDB for callers already holding refreshMu -
+// workspace.set uses it so its clear-plus-reload transition cannot be
+// interleaved with a periodic refresh that still read the old workspace.
+func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	e.mu.Lock()
 	rpc := e.rpc
 	gen := e.gen
