@@ -83,16 +83,21 @@ func serviceOpen(s *protocol.ServiceState) bool {
 }
 
 func matchAttacks(exploits []string, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
-	tokens := make(map[string]bool)
+	// tokenPorts maps every service token to the port it was struck on; a
+	// token's presence is the match set, and the lowest port wins so the
+	// choice never depends on database row order (0 = token without a port).
+	tokenPorts := make(map[string]int)
 	for _, s := range services {
 		if s == nil || !serviceOpen(s) {
 			continue
 		}
 		if t := serviceToken(s.Name, s.Port); t != "" {
-			tokens[t] = true
+			if prev, ok := tokenPorts[t]; !ok || (s.Port > 0 && (prev == 0 || s.Port < prev)) {
+				tokenPorts[t] = s.Port
+			}
 		}
 	}
-	if len(tokens) == 0 {
+	if len(tokenPorts) == 0 {
 		return nil
 	}
 	prefix := osPathPrefix(osName)
@@ -104,18 +109,16 @@ func matchAttacks(exploits []string, services []*protocol.ServiceState, osName s
 	var found []ranked
 	for _, name := range exploits {
 		lower := strings.ToLower(name)
-		for t := range tokens {
-			if !strings.Contains(lower, t) {
-				continue
-			}
-			reason := "service " + t
-			osFirst := prefix != "" && strings.HasPrefix(lower, prefix+"/")
-			if osFirst {
-				reason += " · " + prefix
-			}
-			found = append(found, ranked{protocol.AttackMatch{Name: name, Reason: reason}, osFirst})
-			break
+		token := matchToken(lower, tokenPorts)
+		if token == "" {
+			continue
 		}
+		reason := "service " + token
+		osFirst := prefix != "" && strings.HasPrefix(lower, prefix+"/")
+		if osFirst {
+			reason += " · " + prefix
+		}
+		found = append(found, ranked{protocol.AttackMatch{Name: name, Reason: reason, Port: tokenPorts[token]}, osFirst})
 	}
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].osFirst != found[j].osFirst {
@@ -131,6 +134,26 @@ func matchAttacks(exploits []string, services []*protocol.ServiceState, osName s
 		matches = matches[:attackMatchCap]
 	}
 	return matches
+}
+
+// matchToken picks the service token an exploit refname matches on. A token
+// that IS one of the path segments wins - linux/http/x is an http module
+// even when "ssh" appears later in its name - and the lexicographically
+// first substring match otherwise, so the same module never resolves to a
+// different service between runs.
+func matchToken(lower string, tokenPorts map[string]int) string {
+	for _, seg := range strings.Split(lower, "/") {
+		if _, ok := tokenPorts[seg]; ok {
+			return seg
+		}
+	}
+	best := ""
+	for t := range tokenPorts {
+		if strings.Contains(lower, t) && (best == "" || t < best) {
+			best = t
+		}
+	}
+	return best
 }
 
 func (e *Engine) attacksFind(host string) (json.RawMessage, *protocol.ErrorBody) {

@@ -518,6 +518,12 @@ export interface ExecPayload {
 export interface AttackMatch {
   name: string;
   reason: string;
+  /**
+   * Port is the service port the match was struck on; 0 when the matcher
+   * had no port to attribute. Hail Mary forwards it as RPORT so modules
+   * hit the port the service was actually found on.
+   */
+  port: number /* int */;
 }
 export interface AttacksPayload {
   host: string;

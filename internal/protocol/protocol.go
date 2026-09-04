@@ -463,8 +463,12 @@ type ExecPayload struct {
 }
 
 type AttackMatch struct {
-	Name   string `json:"name"`
+	Name string `json:"name"`
 	Reason string `json:"reason"`
+	// Port is the service port the match was struck on; 0 when the matcher
+	// had no port to attribute. Hail Mary forwards it as RPORT so modules
+	// hit the port the service was actually found on.
+	Port int `json:"port"`
 }
 
 type AttacksPayload struct {

@@ -145,3 +145,47 @@ func TestAttacksFindCommand(t *testing.T) {
 		t.Fatalf("unknown host should be bad_params, got %+v", eb)
 	}
 }
+
+// A module whose refname contains several service tokens must resolve to
+// one of them the same way every run and in both service-row orders: the
+// segment token wins (sourcegraph_gitserver_sshcmd is an http module), and
+// the port must be the one belonging to that service.
+func TestMatchAttacksResolvesMultiTokenModulesDeterministically(t *testing.T) {
+	exploits := []string{
+		"linux/http/sourcegraph_gitserver_sshcmd",
+		"linux/ssh/libssh_auth_bypass",
+	}
+	orders := [][]*protocol.ServiceState{
+		{
+			{Host: "h", Port: 8080, Proto: "tcp", Name: "http"},
+			{Host: "h", Port: 2222, Proto: "tcp", Name: "ssh"},
+		},
+		{
+			{Host: "h", Port: 2222, Proto: "tcp", Name: "ssh"},
+			{Host: "h", Port: 8080, Proto: "tcp", Name: "http"},
+		},
+	}
+	for _, services := range orders {
+		for i := 0; i < 50; i++ { // map iteration order must not leak into the pick
+			matches := matchAttacks(exploits, services, "")
+			byName := map[string]protocol.AttackMatch{}
+			for _, m := range matches {
+				byName[m.Name] = m
+			}
+			sshcmd, ok := byName["linux/http/sourcegraph_gitserver_sshcmd"]
+			if !ok {
+				t.Fatalf("sshcmd module not matched: %+v", matches)
+			}
+			if sshcmd.Reason != "service http" || sshcmd.Port != 8080 {
+				t.Fatalf("sshcmd resolved to %q port %d, want service http port 8080", sshcmd.Reason, sshcmd.Port)
+			}
+			ssh, ok := byName["linux/ssh/libssh_auth_bypass"]
+			if !ok {
+				t.Fatalf("ssh module not matched: %+v", matches)
+			}
+			if ssh.Reason != "service ssh" || ssh.Port != 2222 {
+				t.Fatalf("ssh resolved to %q port %d, want service ssh port 2222", ssh.Reason, ssh.Port)
+			}
+		}
+	}
+}
