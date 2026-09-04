@@ -65,6 +65,33 @@ func TestWSRequiresToken(t *testing.T) {
 	}
 }
 
+// A wildcard bind must not be advertised as [::] or 0.0.0.0: the printed URL
+// is what operators type, and those addresses are not destinations.
+func TestListenAdvertisesReachableURL(t *testing.T) {
+	for _, bind := range []string{"0.0.0.0:0", ":0", "127.0.0.1:0"} {
+		e := engine.New(engine.Config{})
+		t.Cleanup(e.Shutdown)
+		s := New(e, "testtoken", Options{Version: "test"})
+		url, err := s.Listen(bind)
+		if err != nil {
+			t.Fatalf("bind %q: %v", bind, err)
+		}
+		if strings.Contains(url, "0.0.0.0") || strings.Contains(url, "[::]") {
+			s.Close()
+			t.Fatalf("bind %q advertised an unreachable URL: %q", bind, url)
+		}
+		resp, err := http.Get(url)
+		s.Close()
+		if err != nil {
+			t.Fatalf("bind %q: advertised URL %q did not answer: %v", bind, url, err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusForbidden {
+			t.Fatalf("bind %q: URL %q answered %d, want the token guard's 403", bind, url, resp.StatusCode)
+		}
+	}
+}
+
 // The socket handshake must be seamless: whatever the snapshot already
 // carries (events 1..S here) can never be replayed down the stream, and
 // everything after it arrives in order with nothing lost in between.

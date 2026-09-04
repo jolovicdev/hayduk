@@ -41,12 +41,20 @@ func main() {
 	})
 	if *team {
 		if !listenSet {
-			fmt.Fprintln(os.Stderr, "hayduk: --team needs an explicit --listen bind, e.g. --listen 0.0.0.0:8787")
+			fmt.Fprintln(os.Stderr, "hayduk: --team needs an explicit --listen bind, e.g. --listen 192.168.1.10:8787")
 			os.Exit(1)
 		}
-		if host, _, err := net.SplitHostPort(*listen); err == nil && loopbackOnly(host) {
-			fmt.Fprintln(os.Stderr, "hayduk: --team needs a non-loopback --listen bind; operators connect from other machines")
-			os.Exit(1)
+		if host, _, err := net.SplitHostPort(*listen); err == nil {
+			if wildcardHost(host) {
+				// a wildcard cannot be advertised: remote operators would be
+				// handed an unusable http://[::]:port link
+				fmt.Fprintln(os.Stderr, "hayduk: --team needs a specific interface address, not a wildcard bind; find one with `ip addr`, e.g. --listen 192.168.1.10:8787")
+				os.Exit(1)
+			}
+			if loopbackOnly(host) {
+				fmt.Fprintln(os.Stderr, "hayduk: --team needs a non-loopback --listen bind; operators connect from other machines")
+				os.Exit(1)
+			}
 		}
 	}
 
@@ -86,6 +94,19 @@ func main() {
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
 	srv.Close()
+}
+
+// wildcardHost reports whether a --listen host binds every interface: the
+// empty host (":port"), 0.0.0.0, or ::. Hostnames are left alone - they name
+// one machine, and net.Listen reports anything unresolvable itself.
+func wildcardHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return ip.Unmap().IsUnspecified() // "::ffff:0.0.0.0" is the mapped unspecified
+	}
+	return false
 }
 
 // loopbackOnly reports whether a --listen host can serve nothing but this
