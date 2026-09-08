@@ -17,7 +17,7 @@ import (
 	"github.com/jolovicdev/hayduk/internal/server"
 )
 
-var version = "0.1.3"
+var version = "0.1.4"
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:0", "host:port to bind")
