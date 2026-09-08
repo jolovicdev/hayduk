@@ -79,14 +79,32 @@ type Engine struct {
 	moduleRanks   map[string]string
 	consoleOut    []byte
 	consolePrompt string
-	interactSID   string
-	interactOut   []byte
+	// consoleWritePending marks a written command whose completion no read
+	// has confirmed yet: readiness is restored to browsers only after a read
+	// reports the console idle, never straight off the write. Reads and
+	// writes race on the daemon, so consoleWriteGen separates reads issued
+	// before a write (which describe the old console) from reads issued
+	// after it - only the latter may acknowledge completion.
+	consoleWritePending bool
+	consoleWriteGen     uint64
+	interactSID         string
+	interactOut         []byte
+	// sessionTags remembers the workspace each live session was opened
+	// under, keyed by session id and validated by uuid: ids are per-daemon
+	// counters and get reused, so attribution carries across a reconnect
+	// only when the session is the same one. Survives disconnects.
+	sessionTags map[string]sessionTag
 	events        []*protocol.EventEntry
 	operators     map[string]int
 	seq           int64
 	errStreak     int
 
 	connecting bool
+	// connectSeq names the connection attempt that owns the connecting slot;
+	// connectCancel kills a bootstrap still unwinding after Disconnect freed
+	// the slot for the next attempt. Both guarded by mu.
+	connectSeq    uint64
+	connectCancel context.CancelFunc
 	// refreshMu serializes db refreshes: the loop's periodic sweep and
 	// command-driven ones can overlap, and a stalled read committing after
 	// a newer refresh would revert it
@@ -262,13 +280,23 @@ func (e *Engine) logf(level, format string, args ...any) {
 
 // logfOp is logf with operator attribution (team mode). Callers must hold e.mu.
 func (e *Engine) logfOp(operator, level, format string, args ...any) {
+	e.logfIn(e.conn.Workspace, operator, level, format, args...)
+}
+
+// logfIn is logfOp with an explicit originating workspace: a command that
+// started in one workspace keeps its events there even when the operator
+// switches before the command's RPC returns. Callers must hold e.mu.
+func (e *Engine) logfIn(ws, operator, level, format string, args ...any) {
 	e.seq++
 	entry := &protocol.EventEntry{
 		Seq:      e.seq,
 		Time:     time.Now().UTC(),
 		Level:    level,
 		Operator: operator,
-		Text:     fmt.Sprintf(format, args...),
+		// the workspace the event belongs to; empty for framework-wide
+		// events. Reports filter on it.
+		Workspace: ws,
+		Text:      fmt.Sprintf(format, args...),
 	}
 	e.events = append(e.events, entry)
 	if len(e.events) > eventRingCap {
@@ -285,6 +313,14 @@ func (e *Engine) eventf(level, format string, args ...any) {
 func (e *Engine) eventfOp(operator, level, format string, args ...any) {
 	e.mu.Lock()
 	e.logfOp(operator, level, format, args...)
+	e.mu.Unlock()
+}
+
+// eventfOpIn is eventfOp with an explicit originating workspace, for command
+// results that land after RPC round trips.
+func (e *Engine) eventfOpIn(ws, operator, level, format string, args ...any) {
+	e.mu.Lock()
+	e.logfIn(ws, operator, level, format, args...)
 	e.mu.Unlock()
 }
 
@@ -404,6 +440,40 @@ func (e *Engine) connectedRPC() gomsf.RPCCaller {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.rpc
+}
+
+// sessionTag is the remembered attribution of one session id.
+type sessionTag struct {
+	workspace string
+	uuid      string
+}
+
+// restoreTag returns the remembered workspace when the uuid matches the
+// live session's. A reused id (different uuid) or a missing uuid on either
+// side restores nothing: the host-membership fallback decides.
+func restoreTag(tag sessionTag, uuid string) string {
+	if tag.uuid == "" || uuid == "" || tag.uuid != uuid {
+		return ""
+	}
+	return tag.workspace
+}
+
+// dispatchScope captures the rpc handle together with the workspace a command
+// starts in: the workspace rides with the command's events so a result
+// landing after a workspace switch cannot be re-attributed to the new one.
+func (e *Engine) dispatchScope() (gomsf.RPCCaller, string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.rpc, e.conn.Workspace
+}
+
+// consoleGeneration snapshots the write generation for a read about to be
+// issued: the read may acknowledge a pending write only when the generation
+// still matches, i.e. no write landed after the read was issued.
+func (e *Engine) consoleGeneration() uint64 {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.consoleWriteGen
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)

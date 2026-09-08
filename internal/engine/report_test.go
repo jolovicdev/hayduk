@@ -1,11 +1,13 @@
 package engine
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
 
@@ -59,5 +61,75 @@ func TestReportCommandWorksDisconnected(t *testing.T) {
 	}
 	if !strings.Contains(payload.HTML, "No hosts recorded") {
 		t.Fatal("empty campaign should still render a document")
+	}
+}
+
+func TestReportRetainsOperator(t *testing.T) {
+	e := testEngine(t)
+	e.eventfOp("operator-47", protocol.LevelInfo, "campaign event")
+	doc, err := e.reportDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(doc, "operator-47") {
+		t.Fatal("report dropped operator attribution")
+	}
+}
+
+// A report for one workspace excludes another workspace's events.
+func TestReportWorkspaceIsolation(t *testing.T) {
+	f := stdFake()
+	f.set(gomsf.DbSetWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	f.set(gomsf.DbCurrentWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"workspace": "client-beta"}, nil
+	})
+	e := testEngine(t)
+	e.rpc = f
+	e.conn.Workspace = "client-alpha"
+	e.eventf(protocol.LevelInfo, "discovered host CLIENT_ALPHA_PRIVATE_HOST")
+	if _, err := e.Exec(context.Background(), "", protocol.MethodWorkspaceSet, json.RawMessage(`{"name":"client-beta"}`)); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := e.reportDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(doc, "CLIENT_ALPHA_PRIVATE_HOST") {
+		t.Fatal("client-beta report carries a client-alpha event")
+	}
+}
+
+// Sessions are framework-wide; the report keeps the ones opened under the
+// exported workspace. Untagged sessions fall back to host membership.
+func TestReportSessionsScopedToWorkspace(t *testing.T) {
+	e := testEngine(t)
+	e.conn.Workspace = "client-beta"
+	e.hosts = []*protocol.HostState{{Address: "10.0.0.9"}}
+	e.sessions = map[string]*protocol.SessionState{
+		// opened under client-alpha: excluded even though the same host
+		// exists in both workspaces
+		"1": {ID: "1", Type: "shell", TargetHost: "10.0.0.9", Workspace: "client-alpha",
+			Username: "alpha-user", ViaExploit: "exploit/multi/alpha"},
+		"2": {ID: "2", Type: "shell", TargetHost: "10.0.0.9", Workspace: "client-beta",
+			Username: "beta-user"},
+		// no workspace tag: host membership decides
+		"3": {ID: "3", Type: "shell", TargetHost: "10.0.0.9", Username: "legacy-user"},
+		"4": {ID: "4", Type: "shell", TargetHost: "10.0.0.1", Username: "outsider"},
+	}
+	doc, err := e.reportDocument()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"beta-user", "legacy-user"} {
+		if !strings.Contains(doc, want) {
+			t.Fatalf("session %s missing from its own workspace report", want)
+		}
+	}
+	for _, leak := range []string{"alpha-user", "exploit/multi/alpha", "outsider"} {
+		if strings.Contains(doc, leak) {
+			t.Fatalf("report leaks a session from another workspace: %s", leak)
+		}
 	}
 }

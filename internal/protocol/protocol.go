@@ -131,7 +131,10 @@ type SessionState struct {
 	TargetHost  string    `json:"targetHost,omitempty"`
 	SessionHost string    `json:"sessionHost,omitempty"`
 	UUID        string    `json:"uuid,omitempty"`
-	OpenedAt    time.Time `json:"openedAt,omitzero"`
+	// Workspace is the msf workspace active when the session opened; empty
+	// for sessions picked up without one. Reports scope sessions on it.
+	Workspace string    `json:"workspace,omitempty"`
+	OpenedAt  time.Time `json:"openedAt,omitzero"`
 }
 
 type JobState struct {
@@ -190,6 +193,9 @@ type EventEntry struct {
 	Level    string    `json:"level"`
 	Text     string    `json:"text"`
 	Operator string    `json:"operator,omitempty"`
+	// Workspace is the msf workspace active when the event was recorded;
+	// empty for framework-wide events. Reports filter events on it.
+	Workspace string `json:"workspace,omitempty"`
 }
 
 type CampaignState struct {
@@ -360,6 +366,7 @@ const (
 	MethodSessionUpgrade = "session.upgrade"
 	MethodWorkspaceList  = "workspace.list"
 	MethodWorkspaceSet   = "workspace.set"
+	MethodOperatorJoin   = "operator.join"
 	MethodDBRefresh      = "db.refresh"
 	MethodAttacksFind    = "attacks.find"
 	MethodReportHTML     = "report.html"
@@ -463,7 +470,7 @@ type ExecPayload struct {
 }
 
 type AttackMatch struct {
-	Name string `json:"name"`
+	Name   string `json:"name"`
 	Reason string `json:"reason"`
 	// Port is the service port the match was struck on; 0 when the matcher
 	// had no port to attribute. Hail Mary forwards it as RPORT so modules
