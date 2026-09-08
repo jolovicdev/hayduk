@@ -35,11 +35,11 @@ func testServer(t *testing.T) (*Server, *httptest.Server, string) {
 	return s, ts, wsURL
 }
 
-func dialWS(t *testing.T, url, cookie string) *websocket.Conn {
+func dialWS(t *testing.T, s *Server, url, token string) *websocket.Conn {
 	t.Helper()
 	h := map[string][]string{"Origin": {strings.Replace(strings.Replace(url, "ws", "http", 1), "/ws", "", 1)}}
-	if cookie != "" {
-		h["Cookie"] = []string{"hayduk=" + cookie}
+	if token != "" {
+		h["Cookie"] = []string{s.cookieName + "=" + token}
 	}
 	c, _, err := websocket.DefaultDialer.Dial(url, h)
 	if err != nil {
@@ -108,7 +108,7 @@ func TestWSHandshakeStreamStartsAfterSnapshot(t *testing.T) {
 		}
 	}()
 
-	c := dialWS(t, wsURL, "testtoken")
+	c := dialWS(t, s, wsURL, "testtoken")
 	hello := readMsg(t, c)
 	if hello["type"] != "hello" {
 		t.Fatalf("hello %+v", hello)
@@ -146,8 +146,8 @@ func TestWSHandshakeStreamStartsAfterSnapshot(t *testing.T) {
 }
 
 func TestWSHelloThenSnapshot(t *testing.T) {
-	_, _, wsURL := testServer(t)
-	c := dialWS(t, wsURL, "testtoken")
+	s, _, wsURL := testServer(t)
+	c := dialWS(t, s, wsURL, "testtoken")
 
 	hello := readMsg(t, c)
 	if hello["type"] != "hello" || hello["version"] != "test" {
@@ -168,8 +168,8 @@ func TestWSHelloThenSnapshot(t *testing.T) {
 }
 
 func TestWSCommandResponse(t *testing.T) {
-	_, _, wsURL := testServer(t)
-	c := dialWS(t, wsURL, "testtoken")
+	s, _, wsURL := testServer(t)
+	c := dialWS(t, s, wsURL, "testtoken")
 	readMsg(t, c) // hello
 	readMsg(t, c) // snapshot
 
@@ -320,7 +320,7 @@ func TestWSCommandCancelledWhenSocketDies(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
-	c := dialWS(t, wsURL, "testtoken")
+	c := dialWS(t, s, wsURL, "testtoken")
 	readMsg(t, c) // hello
 	readMsg(t, c) // snapshot
 
@@ -355,7 +355,7 @@ func (b *blockingRPC) Call(ctx context.Context, method gomsf.MsfRpcMethod, args 
 
 func TestOperatorRenameOverWS(t *testing.T) {
 	s, _, wsURL := testServer(t)
-	c := dialWS(t, wsURL, "testtoken")
+	c := dialWS(t, s, wsURL, "testtoken")
 	readMsg(t, c) // hello
 	readMsg(t, c) // snapshot
 
@@ -400,11 +400,11 @@ func TestOperatorRenameOverWS(t *testing.T) {
 }
 
 func TestKeepaliveGoroutineExitsAfterClose(t *testing.T) {
-	_, _, wsURL := testServer(t)
+	s, _, wsURL := testServer(t)
 	time.Sleep(50 * time.Millisecond) // let the server's own setup settle
 	before := runtime.NumGoroutine()
 	for i := 0; i < 3; i++ {
-		c := dialWS(t, wsURL, "testtoken")
+		c := dialWS(t, s, wsURL, "testtoken")
 		readMsg(t, c) // hello
 		readMsg(t, c) // snapshot
 		c.Close()
@@ -517,7 +517,7 @@ func TestKeepaliveFailureCancelsStuckCommands(t *testing.T) {
 	ts := httptest.NewServer(s.Handler())
 	t.Cleanup(ts.Close)
 	wsURL := "ws" + strings.TrimPrefix(ts.URL, "http") + "/ws"
-	c := dialWS(t, wsURL, "testtoken")
+	c := dialWS(t, s, wsURL, "testtoken")
 	readMsg(t, c) // hello
 	readMsg(t, c) // snapshot
 
@@ -571,7 +571,7 @@ func TestKeepaliveFailureCancelsStuckCommands(t *testing.T) {
 
 func TestOperatorJoinOverWS(t *testing.T) {
 	s, _, wsURL := testServer(t)
-	c := dialWS(t, wsURL, "testtoken")
+	c := dialWS(t, s, wsURL, "testtoken")
 	readMsg(t, c) // hello
 	readMsg(t, c) // snapshot
 
@@ -601,5 +601,95 @@ func TestOperatorJoinOverWS(t *testing.T) {
 		case <-deadline:
 			t.Fatal("operator never left after disconnect")
 		}
+	}
+}
+// Cookies are not partitioned by port: two instances on one host need
+// distinct cookie names, or the second login invalidates the first.
+func TestInstancesDoNotOverwriteAuthCookies(t *testing.T) {
+	e := engine.New(engine.Config{})
+	t.Cleanup(e.Shutdown)
+	one := httptest.NewServer(New(e, "token-one", Options{}).Handler())
+	two := httptest.NewServer(New(e, "token-two", Options{}).Handler())
+	defer one.Close()
+	defer two.Close()
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	for _, addr := range []string{one.URL + "/?token=token-one", two.URL + "/?token=token-two"} {
+		res, err := client.Get(addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+		if res.StatusCode != 200 {
+			t.Fatalf("login returned %d", res.StatusCode)
+		}
+	}
+	res, err := client.Get(one.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		t.Fatalf("second instance invalidated the first: HTTP %d", res.StatusCode)
+	}
+}
+
+// operator.join registers presence without a preceding campaign command;
+// a rename moves the entry instead of adding one.
+func TestOperatorJoinCommandRegistersPresence(t *testing.T) {
+	s, _, wsURL := testServer(t)
+	c := dialWS(t, s, wsURL, "testtoken")
+	readMsg(t, c) // hello
+	readMsg(t, c) // snapshot
+
+	send := func(id int64, operator string) {
+		if err := c.WriteJSON(protocol.ClientMessage{
+			Type: protocol.KindCommand, ID: id, Method: protocol.MethodOperatorJoin, Operator: operator,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	waitForOperators := func(want string) {
+		deadline := time.After(5 * time.Second)
+		for {
+			ops := s.engine.State().Operators
+			if len(ops) == 1 && ops[0] == want {
+				return
+			}
+			select {
+			case <-time.After(10 * time.Millisecond):
+			case <-deadline:
+				t.Fatalf("operators never became [%s]: %+v", want, ops)
+			}
+		}
+	}
+
+	send(1, "alice")
+	if m := readUntilResponse(t, c, 1); m["ok"] != true {
+		t.Fatalf("operator.join response: %+v", m)
+	}
+	waitForOperators("alice")
+
+	send(2, "bojan")
+	readUntilResponse(t, c, 2)
+	waitForOperators("bojan")
+}
+
+// readUntilResponse skips engine broadcasts, which can precede the response.
+func readUntilResponse(t *testing.T, c *websocket.Conn, wantID int64) map[string]any {
+	t.Helper()
+	for {
+		c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		m := readMsg(t, c)
+		c.SetReadDeadline(time.Time{})
+		if m["type"] != "response" {
+			continue
+		}
+		id, _ := m["id"].(float64)
+		if int64(id) != wantID {
+			t.Fatalf("response id %v, want %d", m["id"], wantID)
+		}
+		return m
 	}
 }
