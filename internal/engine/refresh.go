@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -17,12 +18,14 @@ import (
 // a newer connection's context.
 func (e *Engine) refreshLoop(ctx context.Context) {
 	e.refreshDB(ctx)
+	e.reconcileSessions(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(e.cfg.RefreshInterval):
 			e.refreshDB(ctx)
+			e.reconcileSessions(ctx)
 		}
 	}
 }
@@ -44,6 +47,40 @@ func (e *Engine) refreshDB(ctx context.Context) error {
 	return e.refreshDBLocked(ctx)
 }
 
+const (
+	// dbPageSize bounds one db.* RPC read. msf caps unpaged reads at its own
+	// default limit of 100 rows, so one naked call silently truncates every
+	// collection of a larger workspace.
+	dbPageSize = 200
+	// dbMaxPages bounds the page walk so a daemon answering every page full
+	// (or ignoring offset entirely) cannot loop forever: 200 x 500 = 100k
+	// rows per collection.
+	dbMaxPages = 500
+)
+
+// fetchAllPages walks a db collection's limit/offset pages until a short page
+// arrives, pinning the workspace into every request. All pages of one
+// collection are fetched or none are committed: callers get an error, never a
+// silently partial collection.
+func fetchAllPages[T any](ctx context.Context, workspace string, fetch func(ctx context.Context, opts map[string]interface{}) ([]*T, error)) ([]*T, error) {
+	var out []*T
+	for page := 0; page < dbMaxPages; page++ {
+		rows, err := fetch(ctx, map[string]interface{}{
+			"workspace": workspace,
+			"limit":     dbPageSize,
+			"offset":    page * dbPageSize,
+		})
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rows...)
+		if len(rows) < dbPageSize {
+			return out, nil
+		}
+	}
+	return nil, fmt.Errorf("db collection exceeds %d rows", dbMaxPages*dbPageSize)
+}
+
 // refreshDBLocked is refreshDB for callers already holding refreshMu -
 // workspace.set uses it so its clear-plus-reload transition cannot be
 // interleaved with a periodic refresh that still read the old workspace.
@@ -51,33 +88,40 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	e.mu.Lock()
 	rpc := e.rpc
 	gen := e.gen
+	pinned := e.conn.Workspace
 	e.mu.Unlock()
 	if rpc == nil {
 		return errNotConnected
 	}
 
 	db := gomsf.NewDbManager(rpc)
-	hosts, err := db.Hosts(ctx, nil)
+	// The workspace is read once and pinned into every collection page: an
+	// operator switching workspaces in the raw msf console mid-refresh must
+	// not mix one refresh's rows across two workspaces.
+	if current, _ := db.CurrentWorkspace(ctx); current != "" {
+		pinned = current
+	}
+	hosts, err := fetchAllPages(ctx, pinned, db.Hosts)
 	if err != nil {
-		e.eventf(protocol.LevelWarn, "db refresh failed: %v", err)
+		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err
 	}
-	services, err := db.Services(ctx, nil)
+	services, err := fetchAllPages(ctx, pinned, db.Services)
 	if err != nil {
-		e.eventf(protocol.LevelWarn, "db refresh failed: %v", err)
+		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err
 	}
-	creds, err := db.Creds(ctx, nil)
+	creds, err := fetchAllPages(ctx, pinned, db.Creds)
 	if err != nil {
-		e.eventf(protocol.LevelWarn, "db refresh failed: %v", err)
+		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err
 	}
-	loots, err := db.Loots(ctx, nil)
+	loots, err := fetchAllPages(ctx, pinned, db.Loots)
 	if err != nil {
-		e.eventf(protocol.LevelWarn, "db refresh failed: %v", err)
+		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err
 	}
-	workspace, _ := db.CurrentWorkspace(ctx)
+	workspace := pinned
 
 	newHosts := hostStates(hosts)
 	newServices := serviceStates(services)
@@ -119,11 +163,13 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 		e.conn.Workspace = workspace
 		e.logf(protocol.LevelInfo, "workspace changed to %s", workspace)
 	}
+	// discovered rows belong to the workspace this refresh pinned, not to
+	// whatever the connection says by the time the commit lands
 	for _, h := range discovered {
-		e.logf(protocol.LevelInfo, "discovered host %s (%s)", h.Address, hostLabel(h.Name))
+		e.logfIn(workspace, "", protocol.LevelInfo, "discovered host %s (%s)", h.Address, hostLabel(h.Name))
 	}
 	if credDelta > 0 {
-		e.logf(protocol.LevelSuccess, "%d new credentials", credDelta)
+		e.logfIn(workspace, "", protocol.LevelSuccess, "%d new credentials", credDelta)
 	}
 	if wsChanged {
 		e.bus.send(protocol.ConnectionUpdate(e.conn))

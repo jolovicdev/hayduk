@@ -218,6 +218,11 @@ export interface SessionState {
   targetHost?: string;
   sessionHost?: string;
   uuid?: string;
+  /**
+   * Workspace is the msf workspace active when the session opened; empty
+   * for sessions picked up without one. Reports scope sessions on it.
+   */
+  workspace?: string;
   openedAt?: string;
 }
 export interface JobState {
@@ -273,6 +278,11 @@ export interface EventEntry {
   level: string;
   text: string;
   operator?: string;
+  /**
+   * Workspace is the msf workspace active when the event was recorded;
+   * empty for framework-wide events. Reports filter events on it.
+   */
+  workspace?: string;
 }
 export interface CampaignState {
   connection: ConnectionState;
@@ -422,6 +432,10 @@ export const MethodWorkspaceList = "workspace.list";
  * Command methods.
  */
 export const MethodWorkspaceSet = "workspace.set";
+/**
+ * Command methods.
+ */
+export const MethodOperatorJoin = "operator.join";
 /**
  * Command methods.
  */

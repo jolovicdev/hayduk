@@ -132,10 +132,11 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
   <h2>Event log</h2>
   <div class="card">
     {{if .Events}}<table>
-      <tr><th>Time</th><th></th><th>Event</th></tr>
+      <tr><th>Time</th><th></th><th>Operator</th><th>Event</th></tr>
       {{range .Events}}<tr>
         <td class="m">{{.Time}}</td>
         <td class="lvl-{{.Level}}">{{.Level}}</td>
+        <td>{{.Operator}}</td>
         <td>{{.Text}}</td>
       </tr>{{end}}
     </table>{{else}}<p class="meta">No events recorded.</p>{{end}}
@@ -177,19 +178,19 @@ type reportLoot struct {
 }
 
 type reportEvent struct {
-	Time, Level, Text string
+	Time, Level, Operator, Text string
 }
 
 type reportData struct {
-	Generated, Workspace, MSFVersion                 string
-	HostCount, ServiceCount, SessionCount            int
-	CredCount, LootCount                             int
-	Hosts                                            []reportHost
-	Services                                         []reportService
-	Sessions                                         []reportSession
-	Creds                                            []reportCred
-	Loot                                             []reportLoot
-	Events                                           []reportEvent
+	Generated, Workspace, MSFVersion      string
+	HostCount, ServiceCount, SessionCount int
+	CredCount, LootCount                  int
+	Hosts                                 []reportHost
+	Services                              []reportService
+	Sessions                              []reportSession
+	Creds                                 []reportCred
+	Loot                                  []reportLoot
+	Events                                []reportEvent
 }
 
 func (e *Engine) reportDocument() (string, *protocol.ErrorBody) {
@@ -220,14 +221,14 @@ func (e *Engine) reportDocument() (string, *protocol.ErrorBody) {
 	}
 
 	data := reportData{
-		Generated:     time.Now().UTC().Format(time.RFC3339),
-		Workspace:     s.Connection.Workspace,
-		MSFVersion:    s.Connection.MSFVersion,
-		HostCount:     len(s.Hosts),
-		ServiceCount:  len(s.Services),
-		SessionCount:  len(s.Sessions),
-		CredCount:     len(s.Creds),
-		LootCount:     len(s.Loot),
+		Generated:    time.Now().UTC().Format(time.RFC3339),
+		Workspace:    s.Connection.Workspace,
+		MSFVersion:   s.Connection.MSFVersion,
+		HostCount:    len(s.Hosts),
+		ServiceCount: len(s.Services),
+		SessionCount: len(s.Sessions),
+		CredCount:    len(s.Creds),
+		LootCount:    len(s.Loot),
 	}
 	for _, h := range s.Hosts {
 		if h == nil {
@@ -254,12 +255,34 @@ func (e *Engine) reportDocument() (string, *protocol.ErrorBody) {
 		}
 		return data.Services[i].Port < data.Services[j].Port
 	})
-	sessions := make([]*protocol.SessionState, 0, len(s.Sessions))
-	for _, v := range s.Sessions {
-		if v != nil {
-			sessions = append(sessions, v)
+	// Sessions are framework-wide: each is scoped to the workspace it was
+	// opened under. Sessions with no workspace tag (picked up before any
+	// attribution) fall back to host membership.
+	hostSet := make(map[string]bool, len(s.Hosts))
+	for _, h := range s.Hosts {
+		if h != nil {
+			hostSet[h.Address] = true
 		}
 	}
+	sessions := make([]*protocol.SessionState, 0, len(s.Sessions))
+	for _, v := range s.Sessions {
+		if v == nil {
+			continue
+		}
+		switch {
+		case v.Workspace != "":
+			if v.Workspace != s.Connection.Workspace {
+				continue
+			}
+		default:
+			host := firstNonEmpty(v.TargetHost, v.SessionHost)
+			if host == "" || !hostSet[host] {
+				continue
+			}
+		}
+		sessions = append(sessions, v)
+	}
+	data.SessionCount = len(sessions)
 	sort.Slice(sessions, func(i, j int) bool { return sessions[i].ID < sessions[j].ID })
 	for _, v := range sessions {
 		data.Sessions = append(data.Sessions, reportSession{
@@ -284,7 +307,16 @@ func (e *Engine) reportDocument() (string, *protocol.ErrorBody) {
 		if v == nil {
 			continue
 		}
-		data.Events = append(data.Events, reportEvent{Time: formatReportTime(v.Time), Level: v.Level, Text: v.Text})
+		// events inherit the workspace they were recorded under: one
+		// client's history must never ride into another client's report.
+		// Untagged entries are framework-wide and pre-connection ones.
+		if v.Workspace != "" && v.Workspace != s.Connection.Workspace {
+			continue
+		}
+		data.Events = append(data.Events, reportEvent{
+			Time: formatReportTime(v.Time), Level: v.Level,
+			Operator: v.Operator, Text: v.Text,
+		})
 	}
 
 	var buf bytes.Buffer

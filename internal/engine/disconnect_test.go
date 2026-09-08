@@ -1,6 +1,9 @@
 package engine
 
 import (
+	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -117,5 +120,33 @@ func TestStaleMonitorEventsDoNotResurrectClearedState(t *testing.T) {
 	}
 	if len(st.Jobs) != 0 {
 		t.Fatalf("stale monitor event resurrected job: %+v", st.Jobs)
+	}
+}
+
+// Disconnect frees the connection slot while the old bootstrap unwinds.
+func TestDisconnectAllowsFreshConnect(t *testing.T) {
+	f := stdFake()
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var calls int32
+	f.set(gomsf.CoreVersion, func(...interface{}) (interface{}, error) {
+		if atomic.AddInt32(&calls, 1) == 1 {
+			close(entered)
+			<-release
+			return nil, errors.New("old connection failed")
+		}
+		return map[string]interface{}{"version": "6.5.2"}, nil
+	})
+	e := New(Config{RPC: f})
+	t.Cleanup(e.Shutdown)
+	done := make(chan struct{})
+	go func() { e.Connect(context.Background(), protocol.ConnectParams{Host: "old"}); close(done) }()
+	<-entered
+	e.Disconnect()
+	err := e.Connect(context.Background(), protocol.ConnectParams{Host: "new"})
+	close(release)
+	<-done
+	if err != nil {
+		t.Fatalf("fresh connect after disconnect rejected: %+v", err)
 	}
 }

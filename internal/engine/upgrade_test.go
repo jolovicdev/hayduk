@@ -33,7 +33,7 @@ func TestSessionUpgrade(t *testing.T) {
 	}
 	waitFor(t, func() bool { return len(e.State().Sessions) == 2 })
 
-	if eb := e.sessionUpgrade(context.Background(), "dana", protocol.SessionUpgradeParams{SID: "1", LHOST: "10.0.0.99", LPORT: 4444}); eb != nil {
+	if eb := e.sessionUpgrade(context.Background(), "dana", "", protocol.SessionUpgradeParams{SID: "1", LHOST: "10.0.0.99", LPORT: 4444}); eb != nil {
 		t.Fatalf("upgrade: %+v", eb)
 	}
 	select {
@@ -46,10 +46,10 @@ func TestSessionUpgrade(t *testing.T) {
 	}
 	waitEvent(t, sub, "session 1 upgrading to meterpreter via 10.0.0.99:4444")
 
-	if eb := e.sessionUpgrade(context.Background(), "dana", protocol.SessionUpgradeParams{SID: "2", LHOST: "h", LPORT: 1}); eb == nil || eb.Code != protocol.CodeBadParams {
+	if eb := e.sessionUpgrade(context.Background(), "dana", "", protocol.SessionUpgradeParams{SID: "2", LHOST: "h", LPORT: 1}); eb == nil || eb.Code != protocol.CodeBadParams {
 		t.Fatalf("meterpreter sessions must not upgrade, got %+v", eb)
 	}
-	if eb := e.sessionUpgrade(context.Background(), "dana", protocol.SessionUpgradeParams{SID: "9", LHOST: "h", LPORT: 1}); eb == nil || eb.Code != protocol.CodeSessionNotFound {
+	if eb := e.sessionUpgrade(context.Background(), "dana", "", protocol.SessionUpgradeParams{SID: "9", LHOST: "h", LPORT: 1}); eb == nil || eb.Code != protocol.CodeSessionNotFound {
 		t.Fatalf("missing session, got %+v", eb)
 	}
 }

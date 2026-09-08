@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,7 +19,7 @@ func TestModuleExecuteAfterDisconnectIsAnErrorNotACrash(t *testing.T) {
 	e := connectedEngine(t, stdFake())
 	e.Disconnect()
 
-	_, eb := e.moduleExecute(context.Background(), e.connectedRPC(), "dana",
+	_, eb := e.moduleExecute(context.Background(), e.connectedRPC(), "dana", "",
 		protocol.ModuleExecuteParams{Type: "exploit", Name: "windows/smb/a"})
 	if eb == nil || eb.Code != protocol.CodeNotConnected {
 		t.Fatalf("want not_connected after disconnect, got %+v", eb)
@@ -200,5 +201,106 @@ func TestWorkspaceSetSerializesWithInFlightRefresh(t *testing.T) {
 	}
 	if len(st.Hosts) != 0 {
 		t.Fatalf("stale rows from the old workspace survived the switch: %d hosts", len(st.Hosts))
+	}
+}
+
+// Reattaching the open session keeps the transcript, and the broadcast
+// carries it so browsers keep their copy too.
+func TestReattachPreservesTranscript(t *testing.T) {
+	e := testEngine(t)
+	e.sessions["1"] = &protocol.SessionState{ID: "1", Type: "shell"}
+	if err := e.attach("1"); err != nil {
+		t.Fatal(err)
+	}
+	e.sessionOutput(nil, gomsf.Event{SessionID: "1", Data: "shared transcript\n"})
+	sub := e.Subscribe()
+	defer sub.Stop()
+	if err := e.attach("1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := e.State().Interact.Output; got != "shared transcript\n" {
+		t.Fatalf("transcript after reattach: %q", got)
+	}
+	select {
+	case m := <-sub.C():
+		up, ok := m.(protocol.ResourceUpdate)
+		if !ok || up.Resource != protocol.ResInteract || up.Interact == nil {
+			t.Fatalf("reattach broadcast %+v", m)
+		}
+		if up.Interact.Output != "shared transcript\n" {
+			t.Fatalf("reattach broadcast carried %q", up.Interact.Output)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("reattach never broadcast")
+	}
+}
+
+// workspace.set must not touch the remote workspace while a refresh is
+// mid-fetch, and the state after the switch must be the new workspace's.
+func TestWorkspaceSwitchWaitsForInFlightRefresh(t *testing.T) {
+	e := testEngine(t)
+	f := stdFake()
+	e.rpc = f
+	e.conn.Workspace = "alpha"
+
+	var ws atomic.Value
+	ws.Store("alpha")
+	setWorkspaceEntered := make(chan struct{})
+	var setOnce sync.Once
+	f.set(gomsf.DbSetWorkspace, func(args ...interface{}) (interface{}, error) {
+		ws.Store(args[0].(string))
+		setOnce.Do(func() { close(setWorkspaceEntered) })
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	f.set(gomsf.DbCurrentWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"workspace": ws.Load().(string)}, nil
+	})
+	hostRead := make(chan struct{}, 1)
+	release := make(chan struct{})
+	var once sync.Once
+	f.set(gomsf.DbHosts, func(args ...interface{}) (interface{}, error) {
+		once.Do(func() { hostRead <- struct{}{} })
+		<-release
+		return map[string]interface{}{"hosts": []interface{}{
+			map[string]interface{}{"address": args[0].(map[string]interface{})["workspace"].(string) + "-host"},
+		}}, nil
+	})
+	f.set(gomsf.DbServices, func(args ...interface{}) (interface{}, error) {
+		return map[string]interface{}{"services": []interface{}{
+			map[string]interface{}{"host": args[0].(map[string]interface{})["workspace"].(string) + "-host", "port": 80},
+		}}, nil
+	})
+
+	refreshDone := make(chan error, 1)
+	go func() { refreshDone <- e.refreshDB(context.Background()) }()
+	<-hostRead
+
+	switchDone := make(chan struct{})
+	go func() {
+		_, _ = e.Exec(context.Background(), "", protocol.MethodWorkspaceSet, json.RawMessage(`{"name":"beta"}`))
+		close(switchDone)
+	}()
+
+	select {
+	case <-setWorkspaceEntered:
+		t.Fatal("workspace.set ran during an in-flight refresh")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(release)
+	if err := <-refreshDone; err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-switchDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("workspace.set never finished")
+	}
+	st := e.State()
+	if st.Connection.Workspace != "beta" {
+		t.Fatalf("workspace %q", st.Connection.Workspace)
+	}
+	if len(st.Hosts) != 1 || st.Hosts[0].Address != "beta-host" {
+		t.Fatalf("hosts after switch: %+v", st.Hosts)
 	}
 }

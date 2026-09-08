@@ -15,7 +15,9 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 	if !knownMethod(method) {
 		return nil, &protocol.ErrorBody{Code: protocol.CodeUnknownMethod, Message: "no such method: " + method}
 	}
-	rpc := e.connectedRPC()
+	// the workspace the command starts in rides with its events: switching
+	// workspaces mid-RPC must not re-attribute the result
+	rpc, ws := e.dispatchScope()
 	if rpc == nil {
 		return nil, notConnected()
 	}
@@ -36,6 +38,16 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if err := con.Write(ctx, p.Command); err != nil {
 			return nil, mapErr(err)
 		}
+		// Readiness is restored only when a read issued after this write
+		// reports the console idle (consoleRead checks the generation):
+		// the buffered prompt must not go out here, or browsers accept
+		// input while msf still runs the command.
+		e.mu.Lock()
+		if e.console != nil {
+			e.consoleWritePending = true
+			e.consoleWriteGen++
+		}
+		e.mu.Unlock()
 		return nil, nil
 
 	case protocol.MethodConsoleTabs:
@@ -111,7 +123,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		return e.moduleExecute(ctx, rpc, operator, p)
+		return e.moduleExecute(ctx, rpc, operator, ws, p)
 
 	case protocol.MethodSessionAttach:
 		var p protocol.SessionRefParams
@@ -173,7 +185,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if !validPort(p.LPORT) {
 			return nil, badParam("lport must be between 1 and 65535")
 		}
-		if eb := e.sessionUpgrade(ctx, operator, p); eb != nil {
+		if eb := e.sessionUpgrade(ctx, operator, ws, p); eb != nil {
 			return nil, eb
 		}
 		return nil, nil
@@ -193,17 +205,18 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.Name == "" {
 			return nil, badParam("name is required")
 		}
+		// refreshMu spans the whole transition including the workspace RPC:
+		// a periodic refresh that already read the old workspace must not
+		// commit its stale rows after the clear below, nor interleave its
+		// old-workspace page reads with the new workspace's
+		e.refreshMu.Lock()
+		defer e.refreshMu.Unlock()
 		e.mu.Lock()
 		startGen := e.gen
 		e.mu.Unlock()
 		if err := gomsf.NewDbManager(rpc).SetWorkspace(ctx, p.Name); err != nil {
 			return nil, mapErr(err)
 		}
-		// refreshMu spans the whole transition: a periodic refresh that
-		// already read the old workspace must not commit its stale rows
-		// after the clear below
-		e.refreshMu.Lock()
-		defer e.refreshMu.Unlock()
 		// msf already switched: the connection says so and the old
 		// workspace's data must not survive a refresh that fails halfway.
 		// The generation guard keeps a link that was replaced mid-switch
@@ -254,12 +267,12 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := parseParams(params, &p); eb != nil {
 			return nil, eb
 		}
-		return e.hailMary(ctx, operator, p)
+		return e.hailMary(ctx, operator, ws, p)
 	}
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
 
-func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operator string, p protocol.ModuleExecuteParams) (json.RawMessage, *protocol.ErrorBody) {
+func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operator, ws string, p protocol.ModuleExecuteParams) (json.RawMessage, *protocol.ErrorBody) {
 	if rpc == nil {
 		return nil, notConnected()
 	}
@@ -294,15 +307,15 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 		res, err = mod.Execute(ctx)
 	}
 	if err != nil {
-		e.eventfOp(operator, protocol.LevelError, "%s/%s failed: %v", p.Type, p.Name, err)
+		e.eventfOpIn(ws, operator, protocol.LevelError, "%s/%s failed: %v", p.Type, p.Name, err)
 		return nil, mapErr(err)
 	}
 	// msf answers job 0 when the module runs inline and finishes at once -
 	// there is no job to watch then, and saying "job 0" just confuses
 	if res.JobID > 0 {
-		e.eventfOp(operator, protocol.LevelSuccess, "%s/%s launched as job %d", p.Type, p.Name, res.JobID)
+		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "%s/%s launched as job %d", p.Type, p.Name, res.JobID)
 	} else {
-		e.eventfOp(operator, protocol.LevelSuccess, "%s/%s ran inline", p.Type, p.Name)
+		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "%s/%s ran inline", p.Type, p.Name)
 	}
 	return mustJSON(protocol.ExecPayload{JobID: res.JobID, UUID: res.UUID}), nil
 }
@@ -348,9 +361,19 @@ func (e *Engine) attach(sid string) *protocol.ErrorBody {
 	}
 	previous := e.interactSID
 	e.interactSID = sid
-	e.interactOut = nil
+	if previous != sid {
+		// attachment is idempotent: reopening the already-attached session
+		// must not erase the transcript every connected operator is reading;
+		// that output is already consumed from the RPC stream and cannot be
+		// polled back
+		e.interactOut = nil
+	}
 	mon := e.monitor
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{SID: sid}))
+	// the update carries the buffered transcript: browsers replace their
+	// local copy on every interact update and would blank it without this
+	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{
+		SID: sid, Output: string(e.interactOut),
+	}))
 	e.mu.Unlock()
 	if mon != nil {
 		if previous != "" && previous != sid {
@@ -400,7 +423,7 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 	return mapErr(gomsf.NewShellSession(rpc, p.SID).Write(ctx, data))
 }
 
-func (e *Engine) sessionUpgrade(ctx context.Context, operator string, p protocol.SessionUpgradeParams) *protocol.ErrorBody {
+func (e *Engine) sessionUpgrade(ctx context.Context, operator, ws string, p protocol.SessionUpgradeParams) *protocol.ErrorBody {
 	e.mu.Lock()
 	rpc := e.rpc
 	session := e.sessions[p.SID]
@@ -417,7 +440,7 @@ func (e *Engine) sessionUpgrade(ctx context.Context, operator string, p protocol
 	if err := gomsf.NewShellSession(rpc, p.SID).Upgrade(ctx, p.LHOST, p.LPORT); err != nil {
 		return mapErr(err)
 	}
-	e.eventfOp(operator, protocol.LevelSuccess, "session %s upgrading to meterpreter via %s:%d", p.SID, p.LHOST, p.LPORT)
+	e.eventfOpIn(ws, operator, protocol.LevelSuccess, "session %s upgrading to meterpreter via %s:%d", p.SID, p.LHOST, p.LPORT)
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -42,10 +43,31 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 		e.mu.Unlock()
 		return
 	}
-	s := ev.Session
+	// a session the monitor reports new belongs to the campaign that
+	// opened it; later workspace switches must not re-attribute it.
+	// Sessions seeded by bootstrap (existing at connect) never take this
+	// path, so they keep their original - or no - attribution.
+	st := sessionState(ev.SessionID, ev.Session, e.conn.Workspace)
+	if e.sessionTags == nil {
+		e.sessionTags = make(map[string]sessionTag)
+	}
+	e.sessionTags[ev.SessionID] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
+	e.sessions[ev.SessionID] = st
+	sessions := copyMap(e.sessions)
+	host := hostLabel(st.TargetHost)
+	e.logf(protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
+		ev.SessionID, st.Type, host, st.ViaExploit)
+	e.bus.send(protocol.SessionsUpdate(sessions))
+	e.mu.Unlock()
+}
+
+// sessionState maps a daemon session to engine state; ws is the workspace
+// the session was opened under, empty when unknown.
+func sessionState(id string, s *gomsf.Session, ws string) *protocol.SessionState {
 	st := &protocol.SessionState{
-		ID:       ev.SessionID,
-		OpenedAt: time.Now().UTC(),
+		ID:        id,
+		OpenedAt:  time.Now().UTC(),
+		Workspace: ws,
 	}
 	if s != nil {
 		st.Type = s.Type
@@ -58,13 +80,7 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 		st.SessionHost = s.SessionHost
 		st.UUID = s.UUID
 	}
-	e.sessions[ev.SessionID] = st
-	sessions := copyMap(e.sessions)
-	host := hostLabel(st.TargetHost)
-	e.logf(protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
-		ev.SessionID, st.Type, host, st.ViaExploit)
-	e.bus.send(protocol.SessionsUpdate(sessions))
-	e.mu.Unlock()
+	return st
 }
 
 func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
@@ -77,7 +93,7 @@ func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 		e.mu.Unlock()
 		return
 	}
-	delete(e.sessions, ev.SessionID)
+	e.removeSessionLocked(ev.SessionID)
 	sessions := copyMap(e.sessions)
 	e.logf(protocol.LevelWarn, "session %s closed", ev.SessionID)
 	if e.interactSID == ev.SessionID {
@@ -87,6 +103,48 @@ func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 	}
 	e.bus.send(protocol.SessionsUpdate(sessions))
 	e.mu.Unlock()
+}
+
+// reconcileSessions drops sessions the daemon no longer lists. The monitor
+// reports closes only for sessions it observed itself, so a session seeded
+// by bootstrap that dies before the monitor's first poll would stay visible
+// forever. Additions stay the monitor's job: its open events carry
+// attribution.
+func (e *Engine) reconcileSessions(ctx context.Context) {
+	rpc := e.connectedRPC()
+	if rpc == nil {
+		return
+	}
+	// a session opened after this instant may be absent from the snapshot
+	// legitimately and is left alone this round
+	snapshotAt := time.Now()
+	live, err := gomsf.NewSessionManager(rpc).List(ctx)
+	if err != nil {
+		return
+	}
+	e.mu.Lock()
+	if e.rpc != rpc {
+		e.mu.Unlock()
+		return
+	}
+	changed := false
+	for sid, st := range e.sessions {
+		if _, listed := live[sid]; !listed && !st.OpenedAt.After(snapshotAt) {
+			e.removeSessionLocked(sid)
+			e.logf(protocol.LevelWarn, "session %s closed", sid)
+			changed = true
+		}
+	}
+	if changed {
+		e.bus.send(protocol.SessionsUpdate(copyMap(e.sessions)))
+	}
+	e.mu.Unlock()
+}
+
+// removeSessionLocked drops a session and its attribution. Callers hold e.mu.
+func (e *Engine) removeSessionLocked(sid string) {
+	delete(e.sessions, sid)
+	delete(e.sessionTags, sid)
 }
 
 func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {

@@ -26,6 +26,13 @@ type rankTarget struct {
 	modType gomsf.ModuleType
 }
 
+// rankKey namespaces a rank-cache entry by module type: the exploit and
+// auxiliary catalogs can contain the same relative refname, and the bare
+// name would collapse both into one entry.
+func rankKey(modType gomsf.ModuleType, name string) string {
+	return string(modType) + "/" + name
+}
+
 func (e *Engine) rankTargets() []rankTarget {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -47,12 +54,13 @@ func (e *Engine) rankTargets() []rankTarget {
 }
 
 func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
-	// snapshot the cached names: the live map keeps mutating under flush,
+	// snapshot the cached keys: the live map keeps mutating under flush,
 	// and reading it here without the lock would race
 	cached := make(map[string]bool)
 	e.mu.Lock()
-	for name := range e.moduleRanks {
-		cached[name] = true
+	gen := e.gen
+	for key := range e.moduleRanks {
+		cached[key] = true
 	}
 	e.mu.Unlock()
 
@@ -70,6 +78,12 @@ func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
 		batch = map[string]string{}
 		mu.Unlock()
 		e.mu.Lock()
+		if e.gen != gen {
+			// the link this crawl belongs to was torn down or replaced;
+			// committing would clobber the newer connection's cache
+			e.mu.Unlock()
+			return
+		}
 		if e.moduleRanks == nil {
 			e.moduleRanks = make(map[string]string, len(cached)+len(out))
 		}
@@ -95,7 +109,7 @@ func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
 					continue // uncached; a later connect retries
 				}
 				mu.Lock()
-				batch[t.name] = info.Rank
+				batch[rankKey(t.modType, t.name)] = info.Rank
 				full := len(batch) >= rankFlushSize
 				mu.Unlock()
 				if full {
@@ -114,7 +128,7 @@ func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
 		if ctx.Err() != nil {
 			break
 		}
-		if cached[t.name] {
+		if cached[rankKey(t.modType, t.name)] {
 			continue
 		}
 		select {

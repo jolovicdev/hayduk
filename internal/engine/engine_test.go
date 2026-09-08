@@ -1381,3 +1381,248 @@ func TestRefreshBroadcastsContentChanges(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// console.write restores readiness only after a read reports the console
+// idle; a silent command would otherwise leave browsers without a prompt.
+func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
+	e := connectedEngine(t, stdFake())
+	sub := e.Subscribe()
+	defer sub.Stop()
+
+	e.mu.Lock()
+	con := e.console
+	e.mu.Unlock()
+	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	// consume the seed read's consoleOutput first; bus delivery is async
+	select {
+	case m := <-sub.C():
+		out, ok := m.(protocol.ConsoleOutputMsg)
+		if !ok || out.Data != "msf > " {
+			t.Fatalf("seed read broadcast %+v", m)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("seed prompt never arrived")
+	}
+
+	write := func() {
+		if _, err := e.Exec(context.Background(), "", protocol.MethodConsoleWrite,
+			json.RawMessage(`{"command":"silent-command\n"}`)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expectQuiet := func() {
+		select {
+		case m := <-sub.C():
+			t.Fatalf("console.write broadcast %+v before an idle post-write read", m)
+		default:
+		}
+	}
+	expectRestore := func() {
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case m := <-sub.C():
+				up, ok := m.(protocol.ResourceUpdate)
+				if ok && up.Resource == protocol.ResConsole && up.Console != nil &&
+					strings.HasSuffix(up.Console.Output, "msf > ") {
+					return
+				}
+			case <-deadline:
+				t.Fatal("no console update after the idle read")
+			}
+		}
+	}
+
+	write()
+	expectQuiet()
+	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	expectRestore()
+
+	// a read issued before the write describes the old console. With
+	// background output on it, its update must still not carry a prompt:
+	// browsers would read one as ready while the command runs
+	staleGen := e.consoleGeneration()
+	write()
+	e.consoleRead(con, &gomsf.ConsoleReadResult{Data: "background output\n", Prompt: "msf > ", Busy: false}, staleGen)
+	deadline := time.After(5 * time.Second)
+	for {
+		var sawUpdate bool
+		for {
+			select {
+			case m := <-sub.C():
+				switch up := m.(type) {
+				case protocol.ResourceUpdate:
+					if up.Resource != protocol.ResConsole || up.Console == nil {
+						continue
+					}
+					sawUpdate = true
+					if strings.HasSuffix(up.Console.Output, "msf > ") {
+						t.Fatalf("stale read restored a ready prompt: %q", up.Console.Output)
+					}
+				case protocol.ConsoleOutputMsg:
+					if strings.HasSuffix(up.Data, "msf > ") {
+						t.Fatalf("stale read streamed a ready prompt: %q", up.Data)
+					}
+				}
+			case <-time.After(200 * time.Millisecond):
+				goto drained
+			}
+		}
+	drained:
+		if sawUpdate {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("stale read's background output never arrived")
+		default:
+		}
+	}
+	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	expectRestore()
+}
+
+// Sessions live in msfrpcd across reconnects: a reconnect under another
+// workspace must not re-tag them, and sessions first seen at connect stay
+// untagged so the report's host fallback decides.
+func TestReconnectKeepsSessionAttribution(t *testing.T) {
+	f := stdFake()
+	var daemonSessions atomic.Value // map[string]interface{}
+	daemonSessions.Store(map[string]interface{}{})
+	f.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
+		return daemonSessions.Load().(interface{}), nil
+	})
+	f.set(gomsf.DbCurrentWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"workspace": "client-alpha"}, nil
+	})
+
+	e := connectedEngine(t, f)
+	// sessions 1 and 2 open while client-alpha is active
+	e.mu.Lock()
+	mon := e.monitor
+	e.mu.Unlock()
+	for _, sid := range []string{"1", "2"} {
+		e.sessionOpened(mon, gomsf.Event{SessionID: sid,
+			Session: &gomsf.Session{Type: "shell", UUID: "uuid-" + sid}})
+	}
+	waitFor(t, func() bool { return len(e.State().Sessions) == 2 })
+	for _, sid := range []string{"1", "2"} {
+		if ws := e.State().Sessions[sid].Workspace; ws != "client-alpha" {
+			t.Fatalf("session %s tagged %q, want client-alpha", sid, ws)
+		}
+	}
+
+	// the link drops; session 2 dies, session 9 appears elsewhere, and the
+	// operator reconnects under another workspace
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "target_host": "10.0.0.1", "uuid": "uuid-1"},
+		"9": map[string]interface{}{"type": "meterpreter"},
+	})
+	f.set(gomsf.DbCurrentWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"workspace": "client-beta"}, nil
+	})
+	e.Disconnect()
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("reconnect: %+v", err)
+	}
+	waitFor(t, func() bool { return len(e.State().Sessions) == 2 })
+	sessions := e.State().Sessions
+	if ws := sessions["1"].Workspace; ws != "client-alpha" {
+		t.Fatalf("reconnect re-tagged session 1 to %q", ws)
+	}
+	if ws := sessions["9"].Workspace; ws != "" {
+		t.Fatalf("reconnect tagged picked-up session 9 as %q", ws)
+	}
+}
+
+// Session ids are per-daemon counters: attribution carries across a
+// reconnect only when the uuid proves the session is the same one.
+func TestSessionAttributionValidatesUUID(t *testing.T) {
+	f := stdFake()
+	var daemonSessions atomic.Value
+	daemonSessions.Store(map[string]interface{}{})
+	f.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
+		return daemonSessions.Load().(interface{}), nil
+	})
+	f.set(gomsf.DbCurrentWorkspace, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{"workspace": "client-alpha"}, nil
+	})
+
+	e := connectedEngine(t, f)
+	e.mu.Lock()
+	mon := e.monitor
+	e.mu.Unlock()
+	e.sessionOpened(mon, gomsf.Event{SessionID: "1",
+		Session: &gomsf.Session{Type: "shell", UUID: "uuid-old"}})
+
+	// same daemon, same session: the uuid matches, attribution restores
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "uuid": "uuid-old"},
+	})
+	e.Disconnect()
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("reconnect: %+v", err)
+	}
+	if ws := e.State().Sessions["1"].Workspace; ws != "client-alpha" {
+		t.Fatalf("same-uuid reconnect returned tag %q, want client-alpha", ws)
+	}
+
+	// another daemon reused the id: different uuid, no attribution
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "uuid": "uuid-new"},
+	})
+	e.Disconnect()
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("reconnect to reused id: %+v", err)
+	}
+	if ws := e.State().Sessions["1"].Workspace; ws != "" {
+		t.Fatalf("reused session id inherited another session's workspace %q", ws)
+	}
+}
+
+// The monitor reports closes only for sessions it observed; sessions seeded
+// at connect that die before the monitor's first poll are dropped by the
+// reconciler. A session opened after the reconcile snapshot must survive its
+// absence from that snapshot.
+func TestReconcileSessionsDropsUnlistedSessions(t *testing.T) {
+	f := stdFake()
+	var daemonSessions atomic.Value
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "uuid": "uuid-1"},
+	})
+	var e *Engine
+	var listCalls int32
+	f.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
+		// second listing is the first reconcile: the daemon has lost
+		// session 1, and session 7 opens while the snapshot is taken
+		if atomic.AddInt32(&listCalls, 1) == 2 {
+			daemonSessions.Store(map[string]interface{}{
+				"7": map[string]interface{}{"type": "shell", "uuid": "uuid-7"},
+			})
+			e.mu.Lock()
+			mon := e.monitor
+			e.mu.Unlock()
+			e.sessionOpened(mon, gomsf.Event{SessionID: "7",
+				Session: &gomsf.Session{Type: "shell", UUID: "uuid-7"}})
+			return map[string]interface{}{}, nil
+		}
+		return daemonSessions.Load().(interface{}), nil
+	})
+	e = connectedEngine(t, f)
+	waitFor(t, func() bool { return len(e.State().Sessions) == 1 })
+
+	e.reconcileSessions(context.Background())
+	sessions := e.State().Sessions
+	if _, dead := sessions["1"]; dead {
+		t.Fatal("session that died before the monitor's first poll survived")
+	}
+	if _, young := sessions["7"]; !young {
+		t.Fatal("session opened after the reconcile snapshot was dropped")
+	}
+
+	// the next sweep sees session 7 listed and keeps it
+	e.reconcileSessions(context.Background())
+	if _, kept := e.State().Sessions["7"]; !kept {
+		t.Fatal("listed session dropped by reconciliation")
+	}
+}

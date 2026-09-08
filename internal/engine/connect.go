@@ -40,7 +40,14 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 		return &protocol.ErrorBody{Code: protocol.CodeBusy, Message: "already connecting or connected"}
 	}
 	e.connecting = true
+	// connectSeq names this attempt as the slot owner: a bootstrap canceled
+	// by Disconnect may still be unwinding when the next connect starts, and
+	// only the current owner may touch connecting/connectCancel
+	e.connectSeq++
+	attempt := e.connectSeq
 	gen := e.gen
+	attemptCtx, cancelAttempt := context.WithCancel(ctx)
+	e.connectCancel = cancelAttempt
 	e.conn = protocol.ConnectionState{
 		Status: "connecting", Host: p.Host, Port: p.Port,
 		SSL: p.SSL, Username: p.Username,
@@ -48,10 +55,13 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	e.mu.Unlock()
 
-	err := e.bootstrap(ctx, p, gen)
+	err := e.bootstrap(attemptCtx, p, gen)
 
 	e.mu.Lock()
-	e.connecting = false
+	if e.connectSeq == attempt {
+		e.connecting = false
+		e.connectCancel = nil
+	}
 	ownsState := e.gen == gen
 	if err != nil {
 		if ownsState { // a disconnect or newer connect already owns the state
@@ -60,10 +70,12 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 			e.bus.send(protocol.ConnectionUpdate(e.conn))
 		}
 		e.mu.Unlock()
+		cancelAttempt()
 		return &protocol.ErrorBody{Code: protocol.CodeConnectFailed, Message: err.Error()}
 	}
 	if e.gen != gen+1 { // bootstrap committed, then something tore the link down
 		e.mu.Unlock()
+		cancelAttempt()
 		return &protocol.ErrorBody{Code: protocol.CodeConnectFailed, Message: "connection attempt superseded"}
 	}
 	e.conn.Status = "connected"
@@ -76,6 +88,7 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 	// that carries modules and db state to already-connected browsers
 	e.bus.send(protocol.NewSnapshot(e.stateLocked()))
 	e.mu.Unlock()
+	cancelAttempt()
 	return nil
 }
 
@@ -145,23 +158,26 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	}
 
 	db := gomsf.NewDbManager(rpc)
-	hosts, err := db.Hosts(ctx, nil)
-	if err != nil {
-		return err
-	}
-	services, err := db.Services(ctx, nil)
-	if err != nil {
-		return err
-	}
-	creds, err := db.Creds(ctx, nil)
-	if err != nil {
-		return err
-	}
-	loots, err := db.Loots(ctx, nil)
-	if err != nil {
-		return err
-	}
 	workspace, _ := db.CurrentWorkspace(ctx) // "" when no db; not fatal
+	// pages are pinned to the workspace read above for the same reason the
+	// refresh pins its own: a console workspace switch mid-load must not mix
+	// collections, and msf's unpaged reads truncate at 100 rows
+	hosts, err := fetchAllPages(ctx, workspace, db.Hosts)
+	if err != nil {
+		return err
+	}
+	services, err := fetchAllPages(ctx, workspace, db.Services)
+	if err != nil {
+		return err
+	}
+	creds, err := fetchAllPages(ctx, workspace, db.Creds)
+	if err != nil {
+		return err
+	}
+	loots, err := fetchAllPages(ctx, workspace, db.Loots)
+	if err != nil {
+		return err
+	}
 
 	e.eventf(protocol.LevelInfo, "loaded %d modules, reading database", len(modules.Exploits)+len(modules.Auxiliary)+len(modules.Post)+len(modules.Payloads)+len(modules.Encoders)+len(modules.Nops)+len(modules.Evasion))
 
@@ -181,6 +197,26 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	}
 	e.eventf(protocol.LevelInfo, "console ready, %d hosts and %d services in workspace", len(hosts), len(services))
 
+	// Seed the daemon's live sessions before the monitor's first sync can
+	// report them as opened: sessions that already existed must not be
+	// re-tagged with the workspace active at (re)connect. Known
+	// attributions survive in sessionTags when the uuid proves the session
+	// is the same one - ids are reused across daemons and restarts.
+	// Sessions first seen now stay untagged and the report's host-membership
+	// fallback decides. A failed list is non-fatal: the monitor then picks
+	// them up tagged with the current workspace.
+	liveSessions, _ := gomsf.NewSessionManager(rpc).List(ctx)
+	e.mu.Lock()
+	prevTags := make(map[string]sessionTag, len(e.sessionTags))
+	for sid, tag := range e.sessionTags {
+		prevTags[sid] = tag
+	}
+	e.mu.Unlock()
+	seedSessions := make(map[string]*protocol.SessionState, len(liveSessions))
+	for sid, s := range liveSessions {
+		seedSessions[sid] = sessionState(sid, s, restoreTag(prevTags[sid], s.UUID))
+	}
+
 	runCtx, cancel := context.WithCancel(context.Background())
 	monitor := gomsf.NewEventMonitor(runCtx, rpc,
 		gomsf.WithEventSessionInterval(e.cfg.SessionInterval),
@@ -195,7 +231,7 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.mu.Lock()
 	if e.gen != gen {
 		e.mu.Unlock()
-		cancel() // our monitor's ctx; nobody else owns it
+		cancel()             // our monitor's ctx; nobody else owns it
 		return errSuperseded // the defer releases this attempt's consoles
 	}
 	oldCancel := e.runCancel
@@ -213,6 +249,7 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.consoleID = con.ID
 	e.consoleOut = nil
 	e.consolePrompt = ""
+	e.consoleWritePending = false
 	e.routeConsole = routeCon
 	e.routes = nil
 	e.conn.MSFVersion = version.Version
@@ -223,7 +260,23 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.services = serviceStates(services)
 	e.creds = credStates(creds)
 	e.loot = lootStates(loots)
-	e.sessions = make(map[string]*protocol.SessionState)
+	e.sessions = seedSessions
+	// attribution survives the reconnect; tags of sessions that died while
+	// offline go with them
+	for sid := range e.sessionTags {
+		if _, live := seedSessions[sid]; !live {
+			delete(e.sessionTags, sid)
+		}
+	}
+	for sid, st := range seedSessions {
+		if st.Workspace == "" && st.UUID == "" {
+			continue
+		}
+		if e.sessionTags == nil {
+			e.sessionTags = make(map[string]sessionTag)
+		}
+		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
+	}
 	e.jobs = make(map[string]*protocol.JobState)
 	e.errStreak = 0
 	e.gen = gen + 1
@@ -254,6 +307,16 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 func (e *Engine) Disconnect() {
 	e.mu.Lock()
 	e.gen++ // invalidates any bootstrap or refresh still in flight
+	if e.connecting {
+		// Free the connection slot at once: the canceled bootstrap unwinds
+		// on its own schedule and must not lock out a fresh connect. It
+		// cannot clobber the next attempt either - slot ownership is by
+		// connectSeq, and the old attempt fails on its canceled context.
+		if e.connectCancel != nil {
+			e.connectCancel()
+		}
+		e.connecting = false
+	}
 	cancel := e.runCancel
 	dropRPC := e.rpc
 	dropConsoleID := e.consoleID
@@ -267,6 +330,7 @@ func (e *Engine) Disconnect() {
 	e.console = nil
 	e.consoleID = ""
 	e.consolePrompt = ""
+	e.consoleWritePending = false
 	e.routeConsole = nil
 	hadRoutes := len(e.routes) > 0
 	e.routes = nil

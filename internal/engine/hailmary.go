@@ -24,7 +24,7 @@ type hailMaryTarget struct {
 	matches []protocol.AttackMatch
 }
 
-func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailMaryParams) (json.RawMessage, *protocol.ErrorBody) {
+func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.HailMaryParams) (json.RawMessage, *protocol.ErrorBody) {
 	if len(p.Hosts) == 0 {
 		return nil, &protocol.ErrorBody{Code: protocol.CodeBadParams, Message: "no hosts given"}
 	}
@@ -77,13 +77,13 @@ func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailM
 		launched := 0
 		for _, t := range targets {
 			if len(t.matches) == 0 {
-				e.eventfOp(operator, protocol.LevelWarn, "hail mary: no matching exploits for %s", t.host.Address)
+				e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary: no matching exploits for %s", t.host.Address)
 				continue
 			}
-			e.eventfOp(operator, protocol.LevelInfo, "hail mary on %s: launching %d exploits", t.host.Address, len(t.matches))
+			e.eventfOpIn(ws, operator, protocol.LevelInfo, "hail mary on %s: launching %d exploits", t.host.Address, len(t.matches))
 			for _, m := range t.matches {
 				if runCtx.Err() != nil {
-					e.eventfOp(operator, protocol.LevelWarn, "hail mary aborted after %d launches: connection ended", launched)
+					e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary aborted after %d launches: connection ended", launched)
 					return
 				}
 				options := map[string]interface{}{"RHOSTS": t.host.Address}
@@ -92,7 +92,7 @@ func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailM
 				if m.Port > 0 {
 					options["RPORT"] = m.Port
 				}
-				if _, eb := e.moduleExecute(runCtx, e.connectedRPC(), operator, protocol.ModuleExecuteParams{
+				if _, eb := e.moduleExecute(runCtx, e.connectedRPC(), operator, ws, protocol.ModuleExecuteParams{
 					Type: "exploit", Name: m.Name,
 					Options: options,
 				}); eb == nil {
@@ -104,7 +104,7 @@ func (e *Engine) hailMary(ctx context.Context, operator string, p protocol.HailM
 				}
 			}
 		}
-		e.eventfOp(operator, protocol.LevelSuccess, "hail mary finished: %d of %d planned launches", launched, planned)
+		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "hail mary finished: %d of %d planned launches", launched, planned)
 	}()
 
 	return mustJSON(protocol.HailMaryPayload{Planned: planned}), nil
