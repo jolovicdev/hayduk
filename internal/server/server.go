@@ -4,6 +4,8 @@ package server
 import (
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net"
 	"net/http"
@@ -20,8 +22,6 @@ import (
 	"github.com/jolovicdev/hayduk/internal/engine"
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
-
-const cookieName = "hayduk"
 
 type Options struct {
 	Version string
@@ -49,8 +49,12 @@ const maxConcurrentCommands = 8
 type Server struct {
 	engine engineInterface
 	token  string
-	opts   Options
-	ln     net.Listener
+	// cookieName is derived from the token: browser cookies are not
+	// partitioned by port, so two instances on one host with the shared
+	// name "hayduk" would keep overwriting each other's authentication.
+	cookieName string
+	opts       Options
+	ln         net.Listener
 }
 
 // engineInterface is the engine surface the server needs; *engine.Engine
@@ -64,7 +68,11 @@ type engineInterface interface {
 }
 
 func New(e *engine.Engine, token string, opts Options) *Server {
-	return &Server{engine: e, token: token, opts: opts}
+	sum := sha256.Sum256([]byte(token))
+	return &Server{
+		engine: e, token: token, opts: opts,
+		cookieName: "hayduk-" + hex.EncodeToString(sum[:6]),
+	}
 }
 
 func (s *Server) Listen(addr string) (string, error) {
@@ -116,7 +124,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		if token := r.URL.Query().Get("token"); token != "" && token == s.token {
 			http.SetCookie(w, &http.Cookie{
-				Name: cookieName, Value: s.token, Path: "/",
+				Name: s.cookieName, Value: s.token, Path: "/",
 				HttpOnly: true, SameSite: http.SameSiteLaxMode,
 			})
 			http.Redirect(w, r, "/", http.StatusFound)
@@ -127,7 +135,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 }
 
 func (s *Server) authorized(r *http.Request) bool {
-	ck, err := r.Cookie(cookieName)
+	ck, err := r.Cookie(s.cookieName)
 	return err == nil && ck.Value == s.token
 }
 
@@ -368,6 +376,19 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 			}
 			conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 			if msg.Type != protocol.KindCommand {
+				continue
+			}
+			if msg.Method == protocol.MethodOperatorJoin {
+				// explicit presence registration; a join or rename must
+				// not wait for the next command to carry the name
+				if msg.Operator != "" && msg.Operator != operator {
+					if operator != "" {
+						s.engine.OperatorLeave(operator)
+					}
+					operator = msg.Operator
+					s.engine.OperatorJoin(operator)
+				}
+				c.send(protocol.OKResponse(msg.ID, nil))
 				continue
 			}
 			if msg.Operator != "" && msg.Operator != operator {
