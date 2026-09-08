@@ -37,20 +37,20 @@ describe("recallHistory", () => {
 });
 
 describe("applyCompletion", () => {
-  // msf's console.tabs returns full replacements for the last token
-  it("single option replaces the token", () => {
-    expect(applyCompletion("use windows/smb/ms", ["windows/smb/ms17_010_eternalblue"], "ms"))
-      .toBe("use windows/smb/ms17_010_eternalblue");
+  // msf's console.tabs returns completed command lines, not last tokens
+  it("single option replaces the whole line", () => {
+    expect(applyCompletion("set RHO", ["set RHOSTS"])).toBe("set RHOSTS");
   });
 
-  it("multiple options extend to the longest common token prefix", () => {
+  it("multiple options extend to the longest common line prefix", () => {
     expect(applyCompletion("use scanner/ssh/ssh_lo",
-      ["scanner/ssh/ssh_login", "scanner/ssh/ssh_login_pubkey"], "ssh_lo"))
+      ["use scanner/ssh/ssh_login", "use scanner/ssh/ssh_login_pubkey"]))
       .toBe("use scanner/ssh/ssh_login");
   });
 
-  it("returns null when nothing extends the token", () => {
-    expect(applyCompletion("vulns", ["vulns"], "vulns")).toBeNull();
-    expect(applyCompletion("zz", [], "zz")).toBeNull();
+  it("returns null when nothing extends the line", () => {
+    expect(applyCompletion("vulns", ["vulns"])).toBeNull();
+    expect(applyCompletion("zz", [])).toBeNull();
+    expect(applyCompletion("set RHO", ["set RHO", "set RHOSTS"])).not.toBe("set set RHOSTS");
   });
 });

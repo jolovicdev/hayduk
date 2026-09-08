@@ -4,6 +4,7 @@ import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/st
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { osBadge } from "../views/os";
 import { flash } from "../statusflash";
+import { copyWithFeedback } from "../clipboard";
 import { openContextMenuFor } from "./contextmenu";
 import {
   GROUP_INSET,
@@ -296,7 +297,7 @@ export function TopologyGraph(props: {
       { icon: "rocket-launch", label: "Run exploit…", fn: () => props.onLaunch(address) },
       { icon: "key", label: "Login as…", fn: () => props.onLogin(address) },
       { sep: true },
-      { icon: "copy", label: "Copy address", hint: address, fn: () => navigator.clipboard.writeText(address) },
+      { icon: "copy", label: "Copy address", hint: address, fn: () => copyWithFeedback(address) },
     );
     openContextMenuFor(event, items);
   }

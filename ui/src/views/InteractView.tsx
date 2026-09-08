@@ -27,7 +27,9 @@ export function InteractView() {
       </div>
       <ConsoleView output={interactOutput}
         prompt={interactPrompt(session()?.type, interactSID())} busy={false}
-        write={(cmd) => void write(cmd).catch((e: any) => flash(e?.message ?? "session write failed"))}
+        target={interactSID}
+        write={(cmd, target) => void write(cmd, target ?? interactSID())
+          .catch((e: any) => flash(e?.message ?? "session write failed"))}
         tabComplete={async () => []} />
     </Show>
   );

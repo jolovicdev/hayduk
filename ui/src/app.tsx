@@ -79,7 +79,7 @@ export default function App() {
   const [tab, setTab] = createSignal("console");
   const [stage, setStage] = createSignal<"topo" | "svc">("topo");
   const [selectedHost, setSelectedHost] = createSignal<string | undefined>(undefined);
-  const [launch, setLaunch] = createSignal<{ type: string; path: string; host?: string } | null>(null);
+  const [launch, setLaunch] = createSignal<{ type: string; path: string; host?: string; port?: number } | null>(null);
   const [scan, setScan] = createSignal<"discovery" | "services" | null>(null);
   const [loginHost, setLoginHost] = createSignal<string | undefined>(undefined);
   const [findOpen, setFindOpen] = createSignal(false);
@@ -174,6 +174,8 @@ export default function App() {
     if (!name) return;
     saveOperator(name);
     setOperatorName(name);
+    // register presence at once instead of waiting for the next command
+    void ws.command("operator.join").catch(() => {});
   }
 
   function disconnect() {
@@ -215,11 +217,12 @@ export default function App() {
   });
 
   return (
-    <div class="app" style={{
-      "--w-left": `${panels().left}px`,
-      "--w-right": `${panels().right}px`,
-      "--h-nb": `${panels().nb}px`,
-    }}>
+    <>
+      <div class="app" style={{
+        "--w-left": `${panels().left}px`,
+        "--w-right": `${panels().right}px`,
+        "--h-nb": `${panels().nb}px`,
+      }}>
       <header class="menubar card">
         <div class="brand">
           <HaydukMark size={21} />
@@ -391,7 +394,11 @@ export default function App() {
             <SessionsView onInteract={openInteract} />
           </div>
           <div class="nbpane" hidden={tab() !== "jobs"}>
-            <JobsView />
+            <JobsView onOpenModule={(module) => {
+              setTab("console");
+              void write(`use ${module}`)
+                .catch((e: any) => flash(e?.message ?? "console write failed"));
+            }} />
           </div>
           <div class="nbpane" hidden={tab() !== "creds"}><CredsView /></div>
           <div class="nbpane" hidden={tab() !== "loot"}><LootView /></div>
@@ -424,10 +431,10 @@ export default function App() {
 
       <Show when={findOpen()}>
         <FindAttacksDialog host={selectedHost()}
-          onLaunch={(path, host) => {
+          onLaunch={(path, host, port) => {
             setFindOpen(false);
             setSelectedHost(host);
-            setLaunch({ type: "exploit", path, host });
+            setLaunch({ type: "exploit", path, host, port });
           }}
           onClose={() => setFindOpen(false)} />
       </Show>
@@ -448,7 +455,8 @@ export default function App() {
       </Show>
 
       <Show when={launch()}>
-        {(l) => <LaunchDialog type={l().type} path={l().path} prefillHost={l().host} onClose={() => setLaunch(null)} />}
+        {(l) => <LaunchDialog type={l().type} path={l().path} prefillHost={l().host} prefillPort={l().port}
+          onClose={() => setLaunch(null)} />}
       </Show>
 
       <Show when={conn().status === "disconnected" || conn().status === "connecting"}>
@@ -534,7 +542,9 @@ export default function App() {
       <Splitter area="nsp" onDelta={resizeNotebook} onEnd={savePanels} />
 
       <ContextMenuRoot />
+      </div>
 
+      {/* outside .app: the narrow-viewport media rule hides that container */}
       <div class="narrownote">
         <div>
           <b>Hayduk needs a desktop window.</b><br />
@@ -542,6 +552,6 @@ export default function App() {
           wider than 960px, ideally 1280px or more.
         </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -1,11 +1,12 @@
 import { DataTable } from "../components/DataTable";
 import { openContextMenuFor } from "../components/contextmenu";
+import { copyWithFeedback } from "../clipboard";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ageOf } from "./format";
 import { jobRows } from "./jobs";
 
-export function JobsView() {
+export function JobsView(props: { onOpenModule?: (module: string) => void }) {
   // job ages must tick even while the jobs map itself is quiet
   const now = createNowSignal(10_000);
   const rows = () => jobRows(campaignState().jobs);
@@ -18,10 +19,10 @@ export function JobsView() {
       onRowContextMenu={(r, e) => {
         openContextMenuFor(e, [
           { head: `Job ${r.id}`, sub: r.module },
-          { icon: "copy", label: "Copy module path", fn: () => navigator.clipboard.writeText(r.module) },
+          { icon: "copy", label: "Copy module path", fn: () => copyWithFeedback(r.module) },
           { sep: true },
-          { icon: "terminal-window", label: "Open module in console", hint: "use", fn: () =>
-            navigator.clipboard.writeText(`use ${r.module}`) },
+          { icon: "terminal-window", label: "Open module in console", hint: "use",
+            fn: () => props.onOpenModule?.(r.module) },
         ]);
       }}
       columns={[

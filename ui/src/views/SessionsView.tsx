@@ -5,6 +5,7 @@ import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
+import { copyWithFeedback } from "../clipboard";
 import { PivotDialog } from "./PivotDialog";
 import { UpgradeDialog } from "./UpgradeDialog";
 import { ageOf } from "./format";
@@ -33,7 +34,7 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       { icon: "signpost", label: "Pivot network…", fn: () => setPivoting(row.id) },
       { icon: "x", label: "Kill session", danger: true, fn: () => void kill(row.id) },
       { sep: true },
-      { icon: "copy", label: "Copy user", fn: () => navigator.clipboard.writeText(row.username ?? "") },
+      { icon: "copy", label: "Copy user", fn: () => copyWithFeedback(row.username ?? "") },
     );
     openContextMenuFor(e, items);
   }

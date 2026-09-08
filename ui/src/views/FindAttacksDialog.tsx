@@ -7,7 +7,7 @@ import type { AttacksPayload } from "../protocol/types";
 
 export function FindAttacksDialog(props: {
   host?: string;
-  onLaunch: (path: string, host: string) => void;
+  onLaunch: (path: string, host: string, port: number) => void;
   onClose: () => void;
 }) {
   const hosts = () => campaignState().hosts.filter(h => !!h).map(h => h!.address);
@@ -59,7 +59,7 @@ export function FindAttacksDialog(props: {
                       <span class="fmreason">{m.reason}</span>
                     </div>
                     <button class="abtn" style="flex:none"
-                      onClick={() => props.onLaunch(m.name, r().host)}>
+                      onClick={() => props.onLaunch(m.name, r().host, m.port)}>
                       <i class="ph ph-rocket-launch"></i>Launch
                     </button>
                   </div>

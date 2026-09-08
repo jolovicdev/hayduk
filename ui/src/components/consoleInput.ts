@@ -21,21 +21,18 @@ export function recallHistory(
   return { idx: next, text: next === -1 ? "" : (history[history.length - 1 - next] ?? "") };
 }
 
-// applyCompletion rewrites the last word of `line` from the completion
-// options; null when the options add nothing beyond what was typed.
-export function applyCompletion(line: string, options: string[], fragment: string): string | null {
+// applyCompletion rewrites the whole input from the completion options;
+// msf's console.tabs answers completed command lines (["set RHOSTS"] for
+// "set RHO"), not last tokens. null when the options add nothing beyond
+// what was typed.
+export function applyCompletion(line: string, options: string[]): string | null {
   if (options.length === 0) return null;
-  const parts = line.split(/\s+/);
   if (options.length === 1) {
-    if (options[0] === parts[parts.length - 1]) return null;
-    parts[parts.length - 1] = options[0]!;
-    return parts.join(" ");
+    return options[0] === line ? null : options[0]!;
   }
   let prefix = options[0]!;
   for (const o of options.slice(1)) {
     while (!o.startsWith(prefix)) prefix = prefix.slice(0, -1);
   }
-  if (prefix.length <= fragment.length) return null;
-  parts[parts.length - 1] = prefix;
-  return parts.join(" ");
+  return prefix.length > line.length ? prefix : null;
 }

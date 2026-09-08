@@ -61,6 +61,10 @@ export function LaunchDialog(props: {
   type: string;
   path: string;
   prefillHost?: string;
+  // prefillPort is the service port a Find-attacks match was struck on; it
+  // seeds RPORT so the exploit points at the port that matched, not the
+  // module default. It stays visible and editable as a normal option.
+  prefillPort?: number;
   onClose: () => void;
 }) {
   const [info] = createResource(async () =>
@@ -93,6 +97,7 @@ export function LaunchDialog(props: {
   function resolved(): Record<string, unknown> {
     const base = defaultsFor(optsMap());
     if (props.prefillHost && !base.RHOSTS) base.RHOSTS = props.prefillHost;
+    if (props.prefillPort && optsMap().RPORT) base.RPORT = String(props.prefillPort);
     return { ...base, ...values() };
   }
 
