@@ -1,6 +1,7 @@
 import { createMemo, createRoot, createSignal } from "solid-js";
 import type { CampaignState } from "../protocol/types";
 import { applyResource, credsByHost, emptyState, normalizeState, sessionsByHost } from "./campaign";
+import { currentOperator } from "../ws/client";
 import { ws } from "../ws/singleton";
 
 const [state, setState] = createSignal<CampaignState>(emptyState());
@@ -13,6 +14,9 @@ createRoot(() => {
   ws.on("hello", (m) => {
     setTeam(!!m.team);
     setServerVersion(typeof m.version === "string" ? m.version : "");
+    // the server learns presence from commands; a reconnect (or server
+    // restart) starts with a blank operator list, so announce again
+    if (m.team && currentOperator()) void ws.command("operator.join").catch(() => {});
   });
   ws.on("snapshot", (m) => setState(normalizeState(m.state)));
   ws.on("resource", (m) => setState(prev => {

@@ -1,6 +1,7 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { buildModuleTree, filterTree, visibleChildren, type TreeNode } from "./tree";
 import { rankChip } from "./rank";
+import { copyWithFeedback } from "../clipboard";
 import { campaignState } from "../stores/store";
 import { openContextMenuFor } from "./contextmenu";
 
@@ -43,7 +44,7 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
     }
     items.push(
       { sep: true },
-      { icon: "copy", label: "Copy path", fn: () => navigator.clipboard.writeText(node.path) },
+      { icon: "copy", label: "Copy path", fn: () => copyWithFeedback(node.path) },
     );
     openContextMenuFor(e, items);
   }
@@ -86,6 +87,11 @@ function Branch(props: {
   const expanded = () =>
     props.query ? props.keep.has(props.node.path) : props.open().has(props.node.path);
   const visible = () => !props.query || props.keep.has(props.node.path);
+  // leaves consult the keep-set too: an expanded matching folder must not
+  // drag its nonmatching siblings into the filtered view
+  const shown = () =>
+    visibleChildren(props.node.children, expanded())
+      .filter(c => !props.query || props.keep.has(c.path));
   return (
     <Show when={visible()}>
       <li>
@@ -100,7 +106,7 @@ function Branch(props: {
           </Show>
         </button>
         <ul classList={{ open: expanded() }}>
-          <For each={visibleChildren(props.node.children, expanded())}>{(child) =>
+          <For each={shown()}>{(child) =>
             child.children.length === 0 ? (
               <li>
                 <button class="trow leaf" title={child.path}
@@ -108,7 +114,7 @@ function Branch(props: {
                   onContextMenu={(e) => props.onMenu(e, child, props.type)}>
                   <i class="ph ph-file-code mfil"></i>
                   <span class="tlabel">{child.name}</span>
-                  <Show when={rankChip(campaignState().moduleRanks?.[child.path])}>
+                  <Show when={rankChip(campaignState().moduleRanks?.[`${props.type}/${child.path}`])}>
                     {(chip) => <span class={`rankchip${chip().hot ? " hot" : ""}`}>{chip().label}</span>}
                   </Show>
                 </button>

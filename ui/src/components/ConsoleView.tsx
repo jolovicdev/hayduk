@@ -1,12 +1,16 @@
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, on } from "solid-js";
 import { applyCompletion, pushHistory, recallHistory } from "./consoleInput";
 
 export function ConsoleView(props: {
   output: () => string;
   prompt: string;
   busy: boolean;
-  write: (cmd: string) => void;
+  write: (cmd: string, target?: string) => void;
   tabComplete: (line: string) => Promise<string[]>;
+  // target names what the input is bound to (a session id, or undefined
+  // for the framework console). When it changes, the draft and its history
+  // are cleared instead of silently retargeting.
+  target?: () => string;
 }) {
   const [input, setInput] = createSignal("");
   const [history, setHistory] = createSignal<string[]>([]);
@@ -21,6 +25,12 @@ export function ConsoleView(props: {
     if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
   });
 
+  createEffect(on(() => props.target?.() ?? "", () => {
+    setInput("");
+    setHistory([]);
+    setHistIdx(-1);
+  }, { defer: true }));
+
   function submit() {
     if (props.busy) return;
     const cmd = input();
@@ -28,7 +38,7 @@ export function ConsoleView(props: {
       setInput("");
       return;
     }
-    props.write(cmd);
+    props.write(cmd, props.target?.());
     setHistory(h => pushHistory(h, cmd));
     setHistIdx(-1);
     setInput("");
@@ -50,7 +60,7 @@ export function ConsoleView(props: {
         // the operator may have kept typing while the answer was in
         // flight; applying a completion for stale text clobbers their input
         if (input() !== line) return;
-        const completed = applyCompletion(line, options, fragment);
+        const completed = applyCompletion(line, options);
         if (completed !== null) setInput(completed);
       } catch {
         // completion is best-effort

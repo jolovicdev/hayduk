@@ -35,8 +35,11 @@ export function detach() {
   return ws.command("session.detach");
 }
 
-export function write(data: string) {
-  return ws.command("session.write", { sid: sid(), data });
+export function write(data: string, targetSid?: string) {
+  // targetSid binds the write to the session the draft was typed for: an
+  // attachment that moved underneath the draft fails server-side instead of
+  // silently retargeting the command at the new session.
+  return ws.command("session.write", { sid: targetSid ?? sid(), data });
 }
 
 export { sid as interactSID, output as interactOutput };

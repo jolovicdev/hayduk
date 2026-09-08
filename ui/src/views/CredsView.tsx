@@ -1,5 +1,6 @@
 import { DataTable } from "../components/DataTable";
 import { openContextMenuFor } from "../components/contextmenu";
+import { copyWithFeedback } from "../clipboard";
 import { campaignState } from "../stores/store";
 import type { CredState } from "../protocol/types";
 
@@ -14,8 +15,8 @@ export function CredsView() {
         openContextMenuFor(e, [
           { head: r.user || "(no user)", sub: `recovered credential on ${r.host}` },
           { sep: true },
-          { icon: "copy", label: "Copy value", fn: () => navigator.clipboard.writeText(r.pass) },
-          { icon: "copy", label: "Copy user", fn: () => navigator.clipboard.writeText(r.user) },
+          { icon: "copy", label: "Copy value", fn: () => copyWithFeedback(r.pass) },
+          { icon: "copy", label: "Copy user", fn: () => copyWithFeedback(r.user) },
         ]);
       }}
       columns={[

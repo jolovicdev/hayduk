@@ -1,6 +1,7 @@
 import { DataTable } from "../components/DataTable";
 import { campaignState } from "../stores/store";
 import { openContextMenuFor } from "../components/contextmenu";
+import { copyWithFeedback } from "../clipboard";
 import type { ServiceState } from "../protocol/types";
 
 export function ServicesView(props: { onInspect: (addr: string) => void }) {
@@ -16,7 +17,7 @@ export function ServicesView(props: { onInspect: (addr: string) => void }) {
           openContextMenuFor(e, [
             { head: `${r.host}:${r.port}`, sub: `${r.proto} ${r.name}` },
             { icon: "info", label: "Inspect host", fn: () => props.onInspect(r.host) },
-            { icon: "copy", label: "Copy address", hint: r.host, fn: () => navigator.clipboard.writeText(r.host) },
+            { icon: "copy", label: "Copy address", hint: r.host, fn: () => copyWithFeedback(r.host) },
           ]);
         }}
         columns={[
