@@ -12,6 +12,7 @@ export function ServicesView(props: { onInspect: (addr: string) => void }) {
       <DataTable
         rows={rows()}
         rowKey={(r) => `${r.host}:${r.port}:${r.proto}`}
+        empty="No services discovered yet; run a services scan or open a host in the inspector."
         onRowClick={(r) => props.onInspect(r.host)}
         onRowContextMenu={(r, e) => {
           openContextMenuFor(e, [

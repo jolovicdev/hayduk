@@ -56,6 +56,7 @@
 .ph.ph-crosshair:before { content: "\e1d6"; }
 .ph-fill.ph-crosshair:before { content: "\e1d6"; }
 .ph.ph-dots-nine:before { content: "\e1fc"; }
+.ph.ph-dots-three:before { content: "\e1fe"; }
 .ph-fill.ph-dots-nine:before { content: "\e1fc"; }
 .ph.ph-download-simple:before { content: "\e20c"; }
 .ph-fill.ph-download-simple:before { content: "\e20c"; }

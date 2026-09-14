@@ -1,9 +1,10 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
+import { FilterSelect } from "../components/FilterSelect";
 import { ws } from "../ws/singleton";
 import { CommandError } from "../ws/client";
 import {
-  collectOptions, compatiblePayloadsParams, defaultText, launchDisabled, missingLaunchOptions, optionKind,
+  collectOptions, compatiblePayloadsParams, defaultText, launchDisabled, missingLaunchOptions, optionKind, payloadGroup,
 } from "./launchOptions";
 import type { ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
 
@@ -151,8 +152,17 @@ export function LaunchDialog(props: {
         </>}
       </Show>
 
-      <Show when={!options.loading && !options.error && options.latest}>
-        <div style="margin-top:16px; display:grid; gap:10px; max-height:300px; overflow:auto; padding-right:6px">
+      <Show when={!options.loading && !options.error && options.latest} fallback={
+        // Reserve space to keep the dialog height stable while options load.
+        <Show when={options.loading}>
+          <div class="opt-skeleton" aria-hidden="true">
+            <div class="skel"></div>
+            <div class="skel"></div>
+            <div class="skel short"></div>
+          </div>
+        </Show>
+      }>
+        <div style="margin-top:16px; display:grid; gap:10px; max-height:300px; min-height:170px; overflow:auto; padding-right:6px">
           <For each={ordered()}>{(name) =>
             <Show when={optsMap()[name]}>
               {(def) => <OptionField name={name} def={def()}
@@ -174,13 +184,13 @@ export function LaunchDialog(props: {
       </Show>
 
       <Show when={!payloads.loading && (payloads.latest?.length ?? 0) > 0}>
-        <label style="margin-top:12px; display:grid; gap:4px">
+        <div style="margin-top:12px; display:grid; gap:4px">
           <span style="font:500 11px var(--sans); color:var(--tx1)">PAYLOAD</span>
-          <select value={payload()} onChange={(e) => { setPayload(e.currentTarget.value); setPayloadValues({}); }}>
-            <option value="">(default)</option>
-            <For each={payloads.latest ?? []}>{(p) => <option value={p}>{p}</option>}</For>
-          </select>
-        </label>
+          <FilterSelect
+            options={(payloads.latest ?? []).map(p => ({ value: p, group: payloadGroup(p) }))}
+            value={payload()} label="payloads" blankLabel="(default)"
+            onChange={(p) => { setPayload(p); setPayloadValues({}); }} />
+        </div>
         <Show when={payload() && !payloadOptions.loading && Object.keys(payMap()).length > 0}>
           <div style="margin-top:10px; display:grid; gap:10px; max-height:180px; overflow:auto; padding-right:6px">
             <For each={Object.keys(payMap())}>{(name) =>

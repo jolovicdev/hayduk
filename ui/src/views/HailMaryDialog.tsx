@@ -52,9 +52,9 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
   return (
     <Modal title="Hail Mary" onClose={props.onClose} width="520px">
       <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
-        Fire every exploit the attack matcher offers at the chosen hosts, one after another, and
-        see what lands. It is loud and intrusive by design. Matching is the same honest-and-dumb
-        heuristic as Find attacks: module paths naming a service the host runs. Expect duds.
+        Run every matching exploit against the selected hosts in sequence. This can disrupt
+        target services. Matches use the same service names and OS family as Find attacks;
+        versions and patch levels are not checked.
       </p>
       <div style="margin-top:14px; display:flex; align-items:center; gap:8px">
         <button class="abtn" style="flex:none" onClick={toggleAll}>

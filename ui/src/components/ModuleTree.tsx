@@ -51,12 +51,12 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
 
   return (
     <Show when={root()} fallback={
-      <nav class="tree"><div class="noresult">{total() === 0 ? "Not connected." : "No modules."}</div></nav>
+      <nav class="tree"><div class="module-empty">{total() === 0 ? "Connect to Metasploit to browse available modules." : "No modules."}</div></nav>
     }>
       {(r) => (
         <nav class="tree" classList={{ filtered: !!query() && keep().size === 0 }}>
           <div class="filterbox">
-            <i class="ph ph-magnifying-glass"></i>
+            <i aria-hidden="true" class="ph ph-magnifying-glass"></i>
             <input placeholder="Filter modules" value={query()}
               onInput={(e) => setQuery(e.currentTarget.value)} autocomplete="off" spellcheck={false}
               aria-label="Filter modules" />
@@ -98,8 +98,8 @@ function Branch(props: {
         <button class="trow branch" classList={{ expanded: expanded() }} aria-expanded={expanded()}
           onClick={() => props.toggle(props.node.path)}
           onContextMenu={(e) => props.onMenu(e, props.node, props.type)}>
-          <i class={`ph ${expanded() ? "ph-caret-down" : "ph-caret-right"} caret`}></i>
-          <i class={`ph ph-folder${expanded() ? "-open" : ""} fic`}></i>
+          <i aria-hidden="true" class={`ph ${expanded() ? "ph-caret-down" : "ph-caret-right"} caret`}></i>
+          <i aria-hidden="true" class={`ph ph-folder${expanded() ? "-open" : ""} fic`}></i>
           <span class="tlabel">{props.node.name}/</span>
           <Show when={props.node.count > 0}>
             <span class="cnt">{props.node.count.toLocaleString()}</span>
@@ -110,9 +110,9 @@ function Branch(props: {
             child.children.length === 0 ? (
               <li>
                 <button class="trow leaf" title={child.path}
-                  onDblClick={() => props.onLaunch(props.type, child.path)}
+                  onClick={() => props.onLaunch(props.type, child.path)}
                   onContextMenu={(e) => props.onMenu(e, child, props.type)}>
-                  <i class="ph ph-file-code mfil"></i>
+                  <i aria-hidden="true" class="ph ph-file-code mfil"></i>
                   <span class="tlabel">{child.name}</span>
                   <Show when={rankChip(campaignState().moduleRanks?.[`${props.type}/${child.path}`])}>
                     {(chip) => <span class={`rankchip${chip().hot ? " hot" : ""}`}>{chip().label}</span>}

@@ -1,6 +1,6 @@
 import { Show, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
-import { openContextMenuFor } from "../components/contextmenu";
+import { openContextMenu, openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
@@ -22,7 +22,7 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       .filter((s): s is SessionState => !!s)
       .sort((a, b) => Number(a.id) - Number(b.id));
 
-  function menu(row: SessionState, e: MouseEvent) {
+  function menuItems(row: SessionState): Parameters<typeof openContextMenuFor>[1] {
     const items: Parameters<typeof openContextMenuFor>[1] = [
       { head: `Session ${row.id}`, sub: row.username || row.info || row.targetHost },
       { icon: "terminal-window", label: "Interact", fn: () => props.onInteract(row.id) },
@@ -36,7 +36,20 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       { sep: true },
       { icon: "copy", label: "Copy user", fn: () => copyWithFeedback(row.username ?? "") },
     );
-    openContextMenuFor(e, items);
+    return items;
+  }
+
+  function menu(row: SessionState, e: MouseEvent) {
+    openContextMenuFor(e, menuItems(row));
+  }
+
+  // The button provides menu access for touch and keyboard input.
+  function rowMenuButton(row: SessionState, e: MouseEvent) {
+    // Block both the row's Interact handler and the document listener
+    // that would close the menu on this click.
+    e.stopImmediatePropagation();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    openContextMenu(rect.left, rect.bottom + 4, menuItems(row));
   }
 
   function kill(sid: string) {
@@ -58,11 +71,22 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
         onRowContextMenu={menu}
         columns={[
           { key: "id", label: "ID", mono: true, width: "48px" },
-          { key: "type", label: "TYPE", render: (r) => <><b>{r.type}</b>{r.info ? ` ${r.info}` : ""}</> },
+          { key: "type", label: "TYPE", render: (r) => r.info
+            ? <><b>{r.type}</b> <span class="row-info" title={r.info}>{r.info}</span></>
+            : <b>{r.type}</b> },
           { key: "username", label: "USER" },
           { key: "targetHost", label: "HOST", mono: true },
           { key: "viaExploit", label: "VIA", mono: true, render: (r) => <span class="dim">{r.viaExploit}</span> },
           { key: "openedAt", label: "OPENED", mono: true, render: (r) => ageOf(r.openedAt, now()) },
+          {
+            key: "actions", label: "", width: "44px",
+            render: (r) => (
+              <button class="rowmenu" aria-label={`Actions for session ${r.id}`} title="Session actions"
+                onClick={(e) => rowMenuButton(r, e)}>
+                <i aria-hidden="true" class="ph ph-dots-three"></i>
+              </button>
+            ),
+          },
         ]}
       />
       <Show when={upgrading()}>

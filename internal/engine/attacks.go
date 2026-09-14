@@ -8,10 +8,8 @@ import (
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
 
-// The matcher is deliberately honest and dumb: an exploit is offered when its
-// refname contains the path token of a service the host runs (windows/smb/...
-// for smb). It knows nothing about versions or patch levels; the dialog copy
-// says as much.
+// Matches use service tokens in module paths, such as windows/smb/ for SMB.
+// Versions and patch levels are not checked.
 
 const attackMatchCap = 200
 

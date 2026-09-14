@@ -20,6 +20,7 @@ ws.on("snapshot", (m) => {
   setOutput(m.state?.interact?.output ?? "");
 });
 
+// The engine includes command echoes in the stream and re-attach buffer.
 function appendChunk(data: string) {
   setOutput(prev => {
     const next = prev + data;

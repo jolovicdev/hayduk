@@ -1,6 +1,6 @@
 export type PanelSizes = { left: number; right: number; nb: number };
 
-export const DEFAULT_PANELS: PanelSizes = { left: 274, right: 314, nb: 214 };
+export const DEFAULT_PANELS: PanelSizes = { left: 248, right: 292, nb: 190 };
 
 const LEFT_LIMITS = [200, 560] as const;
 const RIGHT_LIMITS = [250, 640] as const;

@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -44,6 +45,15 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		// input while msf still runs the command.
 		e.mu.Lock()
 		if e.console != nil {
+			// msfrpcd's web consoles do not echo commands. Store the echo
+			// in the engine buffer so every browser receives it on replay.
+			// Reuse the trailing idle prompt to avoid displaying it twice.
+			echo := e.consolePrompt + strings.TrimRight(p.Command, "\n") + "\n"
+			if e.consolePrompt != "" && bytes.HasSuffix(e.consoleOut, []byte(e.consolePrompt)) {
+				e.consoleOut = e.consoleOut[:len(e.consoleOut)-len(e.consolePrompt)]
+			}
+			e.consoleOut = appendCapped(e.consoleOut, []byte(echo))
+			e.bus.send(protocol.ConsoleOutputMsg{Type: protocol.KindConsoleOutput, Data: echo})
 			e.consoleWritePending = true
 			e.consoleWriteGen++
 		}
@@ -291,14 +301,26 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 		}
 	}
 
+	// Register before the RPC so sessions and job events that arrive
+	// before its response can be attributed to this launch.
+	var runKey string
+	if p.Type == string(gomsf.ExploitModuleType) {
+		runKey = e.beginExploitRun(p.Type+"/"+p.Name, ws, operator)
+	}
 	var res *gomsf.ModuleExecuteResult
 	if p.Payload != "" {
 		payload, perr := gomsf.NewModuleWithContext(ctx, rpc, gomsf.PayloadModuleType, p.Payload)
 		if perr != nil {
+			if runKey != "" {
+				e.forgetExploitRun(runKey)
+			}
 			return nil, mapErr(perr)
 		}
 		for k, v := range p.PayloadOptions {
 			if err := payload.SetOption(k, v); err != nil {
+				if runKey != "" {
+					e.forgetExploitRun(runKey)
+				}
 				return nil, mapErr(err)
 			}
 		}
@@ -307,6 +329,9 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 		res, err = mod.Execute(ctx)
 	}
 	if err != nil {
+		if runKey != "" {
+			e.forgetExploitRun(runKey)
+		}
 		e.eventfOpIn(ws, operator, protocol.LevelError, "%s/%s failed: %v", p.Type, p.Name, err)
 		return nil, mapErr(err)
 	}
@@ -316,6 +341,9 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "%s/%s launched as job %d", p.Type, p.Name, res.JobID)
 	} else {
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "%s/%s ran inline", p.Type, p.Name)
+	}
+	if runKey != "" {
+		e.armExploitRun(runKey, res.UUID, res.JobID)
 	}
 	return mustJSON(protocol.ExecPayload{JobID: res.JobID, UUID: res.UUID}), nil
 }
@@ -417,10 +445,31 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 		return &protocol.ErrorBody{Code: protocol.CodeBusy, Message: "session " + p.SID + " is not attached; attach first"}
 	}
 	data := strings.TrimSuffix(p.Data, "\n") + "\n"
+	var err error
 	if session.Type == "meterpreter" {
-		return mapErr(gomsf.NewMeterpreterSession(rpc, p.SID).Write(ctx, data))
+		err = gomsf.NewMeterpreterSession(rpc, p.SID).Write(ctx, data)
+	} else {
+		err = gomsf.NewShellSession(rpc, p.SID).Write(ctx, data)
 	}
-	return mapErr(gomsf.NewShellSession(rpc, p.SID).Write(ctx, data))
+	if err != nil {
+		return mapErr(err)
+	}
+	// Session streams do not echo commands. Store the echo in the engine
+	// transcript for re-attach and other operators, using the browser's
+	// prompt format. An in-flight monitor read may deliver command output
+	// before the write RPC returns and the echo is appended.
+	prompt := p.SID + " sh > "
+	if session.Type == "meterpreter" {
+		prompt = "meterpreter " + p.SID + " > "
+	}
+	echo := prompt + strings.TrimSuffix(p.Data, "\n") + "\n"
+	e.mu.Lock()
+	if e.interactSID == p.SID {
+		e.interactOut = appendCapped(e.interactOut, []byte(echo))
+		e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: p.SID, Data: echo})
+	}
+	e.mu.Unlock()
+	return nil
 }
 
 func (e *Engine) sessionUpgrade(ctx context.Context, operator, ws string, p protocol.SessionUpgradeParams) *protocol.ErrorBody {
@@ -473,6 +522,8 @@ func mapErr(err error) *protocol.ErrorBody {
 	case errors.Is(err, gomsf.ErrRPC):
 		return &protocol.ErrorBody{Code: protocol.CodeRPC, Message: err.Error()}
 	case errors.Is(err, gomsf.ErrUnexpectedResponse):
+		return &protocol.ErrorBody{Code: protocol.CodeUnexpected, Message: err.Error()}
+	case errors.Is(err, gomsf.ErrConsoleNotFound):
 		return &protocol.ErrorBody{Code: protocol.CodeUnexpected, Message: err.Error()}
 	case errors.Is(err, gomsf.ErrCommandTimeout):
 		return &protocol.ErrorBody{Code: protocol.CodeTimeout, Message: err.Error()}

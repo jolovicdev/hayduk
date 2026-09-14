@@ -94,6 +94,11 @@ type Engine struct {
 	// counters and get reused, so attribution carries across a reconnect
 	// only when the session is the same one. Survives disconnects.
 	sessionTags map[string]sessionTag
+	// exploitRuns is keyed by daemon job id or a synthetic inline key.
+	// earlySessions holds sessions awaiting a run's execution UUID.
+	// Both are cleared on disconnect.
+	exploitRuns   map[string]*exploitRun
+	earlySessions []earlySession
 	events        []*protocol.EventEntry
 	operators     map[string]int
 	seq           int64

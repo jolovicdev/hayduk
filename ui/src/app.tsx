@@ -87,7 +87,7 @@ export default function App() {
   const [showAbout, setShowAbout] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [grid, setGrid] = createSignal(true);
-  const [tip, setTip] = createSignal(true);
+  const [graphFocus, setGraphFocus] = createSignal(false);
   const [workspaces, setWorkspaces] = createSignal<string[]>([]);
   const [panels, setPanels] = createSignal(loadPanels());
   // a stored name must ride on commands again without re-prompting
@@ -121,7 +121,7 @@ export default function App() {
     // the tab switches only once the engine confirms the attach; otherwise
     // the operator lands on an empty console with no clue why
     attach(sid).then(
-      () => setTab("interact"),
+      () => { setGraphFocus(false); setTab("interact"); },
       (e: any) => flash(e?.message ?? `could not attach to session ${sid}`),
     );
   }
@@ -218,7 +218,7 @@ export default function App() {
 
   return (
     <>
-      <div class="app" style={{
+      <div class="app" classList={{ "graph-focused": graphFocus() }} style={{
         "--w-left": `${panels().left}px`,
         "--w-right": `${panels().right}px`,
         "--h-nb": `${panels().nb}px`,
@@ -226,7 +226,8 @@ export default function App() {
       <header class="menubar card">
         <div class="brand">
           <HaydukMark size={21} />
-          <span class="word">HAYDUK</span>
+          <span class="word">hayduk<span class="brand-dot">.</span></span>
+          <span class="brand-caption">SECURITY WORKSPACE</span>
         </div>
 
         <Dropdown id="m-file" label="File">
@@ -281,59 +282,83 @@ export default function App() {
               setOperatorName("");
               setOperatorDraft(previous); // prefill the old name to edit
             }}>
-            <i class="ph ph-users-three"></i>
+            <i aria-hidden="true" class="ph ph-users-three"></i>
             <b>{operatorName() || "unnamed"}</b> · {(campaignState().operators ?? []).length} live
           </span>
         </Show>
-        <span class="chip" title="Active workspace: click to switch"
+        <button class="chip workspace-chip" disabled={conn().status !== "connected"} title="Active workspace: click to switch"
           onClick={(e) => void openWorkspaceMenu(e.currentTarget as HTMLElement)}>
-          workspace <b>{conn().workspace || "-"}</b>
-        </span>
+          <i aria-hidden="true" class="ph ph-stack"></i> workspace <b>{conn().workspace || "Not connected"}</b><i aria-hidden="true" class="ph ph-caret-down"></i>
+        </button>
       </header>
 
-      <div class="toolbar card">
-        <button class="tbtn" disabled={conn().status !== "connected"} title="Pick a module and run it"
-          onClick={() => flash("right-click a module in the tree to launch it")}>
-          <i class="ph ph-rocket-launch"></i>Launch attack
-        </button>
-        <button class="tbtn" disabled={liveCount() === 0} title="Open the sessions notebook"
-          onClick={() => setTab("sessions")}>
-          <i class="ph ph-broadcast"></i>Sessions
-          <Show when={liveCount() > 0}><span class="badge">{liveCount()}</span></Show>
-        </button>
-        <span class="spacer"></span>
-        <div class="sumchips" title="Campaign at a glance">
-          <span class="schip"><i class="ph ph-crosshair"></i><b>{campaignState().hosts.length}</b> hosts</span>
-          <span class="schip"><i class="ph ph-key"></i><b>{campaignState().creds.length}</b> creds</span>
-          <span class="schip"><i class="ph ph-pulse"></i><b class="grn">{liveCount()}</b> live sessions</span>
+      <div class="toolbar">
+        <div class="campaign-heading">
+          <div class="eyebrow">METASPLOIT / OPERATIONS</div>
+          <h1>Campaign overview<span class="heading-dot">.</span></h1>
+          <p>Discover hosts, scan services, and manage sessions.</p>
         </div>
+        <span class="spacer"></span>
+        <button class="tbtn" disabled={conn().status !== "connected"} onClick={() => void exportReport()}>
+          <i aria-hidden="true" class="ph ph-download-simple"></i>Export report
+        </button>
+        <button class="tbtn" disabled={conn().status !== "connected"} onClick={() => setScan("services")}>
+          <i aria-hidden="true" class="ph ph-wifi-high"></i>Scan services
+        </button>
+        <button class="tbtn primary" disabled={conn().status !== "connected"} onClick={() => setScan("discovery")}>
+          <i aria-hidden="true" class="ph ph-plus"></i>Discover hosts
+        </button>
       </div>
 
+      <section class="overview" aria-label="Campaign summary">
+        <button class="metric" onClick={() => setStage("topo")}>
+          <span class="metric-icon"><i aria-hidden="true" class="ph ph-graph"></i></span>
+          <span class="metric-label">Discovered hosts</span><strong>{campaignState().hosts.length}</strong>
+        </button>
+        <button class="metric" onClick={() => setStage("svc")}>
+          <span class="metric-icon"><i aria-hidden="true" class="ph ph-stack"></i></span>
+          <span class="metric-label">Services</span><strong>{campaignState().services.length}</strong>
+        </button>
+        <button class="metric" classList={{ live: liveCount() > 0 }} onClick={() => setTab("sessions")}>
+          <span class="metric-icon"><i aria-hidden="true" class="ph ph-broadcast"></i></span>
+          <span class="metric-label">Live sessions</span><strong>{liveCount()}</strong>
+        </button>
+        <button class="metric" onClick={() => setTab("creds")}>
+          <span class="metric-icon"><i aria-hidden="true" class="ph ph-key"></i></span>
+          <span class="metric-label">Credentials</span><strong>{campaignState().creds.length}</strong>
+        </button>
+      </section>
+
       <aside class="left card">
-        <div class="panelhead"><i class="ph ph-stack"></i><span class="pt">Modules</span>
+        <div class="panelhead"><i aria-hidden="true" class="ph ph-stack"></i><span class="pt">Module library</span>
           <span class="pc">{totalModules().toLocaleString()}</span>
         </div>
+        <p class="panel-description">Select a module to configure its options.</p>
         <ModuleTree onLaunch={(type, path) => setLaunch({ type, path, host: selectedHost() })} />
       </aside>
 
       <main class="stage card">
         <div class="stagehead">
+          <span class="stage-title">Network map</span>
           <div class="seg">
-            <button classList={{ on: stage() === "topo" }} onClick={() => setStage("topo")}>
-              <i class="ph ph-graph"></i>Topology
+            <button aria-pressed={stage() === "topo"} classList={{ on: stage() === "topo" }} onClick={() => setStage("topo")}>
+              <i aria-hidden="true" class="ph ph-graph"></i>Topology
             </button>
-            <button classList={{ on: stage() === "svc" }} onClick={() => setStage("svc")}>
-              <i class="ph ph-table"></i>Services
+            <button aria-pressed={stage() === "svc"} classList={{ on: stage() === "svc" }} onClick={() => setStage("svc")}>
+              <i aria-hidden="true" class="ph ph-table"></i>Services
             </button>
           </div>
           <span class="spacer"></span>
           <Show when={stage() === "topo"}>
             <div class="zoomui">
-              <button class="zbtn" aria-label="Zoom out" onClick={() => zoom(-1)}><i class="ph ph-minus"></i></button>
-              <button class="zbtn" aria-label="Zoom in" onClick={() => zoom(1)}><i class="ph ph-plus"></i></button>
-              <button class="zbtn" aria-label="Fit to view" onClick={fit} title="Fit graph to view (F)"><i class="ph ph-corners-out"></i></button>
+              <button class="zbtn" aria-label="Zoom out" onClick={() => zoom(-1)}><i aria-hidden="true" class="ph ph-minus"></i></button>
+              <button class="zbtn" aria-label="Zoom in" onClick={() => zoom(1)}><i aria-hidden="true" class="ph ph-plus"></i></button>
+              <button class="zbtn" aria-label="Fit to view" onClick={fit} title="Fit graph to view (F)"><i aria-hidden="true" class="ph ph-corners-out"></i></button>
             </div>
           </Show>
+          <button class="graph-focus" aria-pressed={graphFocus()} onClick={() => setGraphFocus(!graphFocus())} title={graphFocus() ? "Return to campaign overview" : "Expand the map and inspector"}>
+            <i aria-hidden="true" class="ph ph-arrows-out-simple"></i>{graphFocus() ? "Exit focus" : "Focus"}
+          </button>
         </div>
         <div class="stagebody" classList={{ gridbg: stage() === "topo" && grid() }}>
           <div class="view" id="view-topo" hidden={stage() !== "topo"}>
@@ -344,18 +369,21 @@ export default function App() {
                 flash(`host ${host} selected; right-click a module in the tree to launch against it`);
               }}
               onLogin={(host) => { setSelectedHost(host); setLoginHost(host); }} />
-            <Show when={tip()}>
-              <div class="tipbar" id="tipbar">
-                <i class="ph ph-info info"></i>
-                <span>Click a host to inspect it. <b>Right-click</b> for actions.</span>
-                <button aria-label="Dismiss tip" onClick={() => setTip(false)}><i class="ph ph-x"></i></button>
+            <Show when={campaignState().hosts.length === 0}>
+              <div class="map-empty">
+                <div class="empty-symbol"><i aria-hidden="true" class="ph ph-graph"></i></div>
+                <h2>No hosts discovered</h2>
+                <p>Discover hosts to map services, sessions, and routes.</p>
+                <button class="tbtn primary" disabled={conn().status !== "connected"} onClick={() => setScan("discovery")}>
+                  <i aria-hidden="true" class="ph ph-plus"></i>Discover hosts
+                </button>
               </div>
             </Show>
             <div class="legend">
-              <span><i class="sw strip"></i>access obtained</span>
-              <span><i class="sw dot"></i>live session</span>
-              <span><i class="sw sq"></i>login possible</span>
-              <span><i class="sw dash"></i>pivot route</span>
+              <span><i class="sw neutral"></i>Discovered</span>
+              <span><i class="sw dot"></i>Live session</span>
+              <span><i class="sw sq"></i>Login available</span>
+              <span><i class="sw dash"></i>Pivot route</span>
             </div>
           </div>
           <div class="view" hidden={stage() !== "svc"}>
@@ -365,15 +393,15 @@ export default function App() {
       </main>
 
       <aside class="right card">
-        <div class="panelhead"><i class="ph ph-target"></i><span class="pt">Host details</span></div>
+        <div class="panelhead"><i aria-hidden="true" class="ph ph-target"></i><span class="pt">Host details</span><span class="panel-kicker">INSPECTOR</span></div>
         <Inspector addr={selectedHost} onInteract={openInteract} onLogin={setLoginHost} />
       </aside>
 
       <section class="nb card">
         <div class="nbtabs">
           <For each={notebookTabs}>{([id, icon, label]) => (
-            <button class="nbtab" classList={{ on: tab() === id }} onClick={() => setTab(id)}>
-              <i class={`ph ph-${icon}`}></i>{label}
+            <button class="nbtab" aria-pressed={tab() === id} classList={{ on: tab() === id }} onClick={() => setTab(id)}>
+              <i aria-hidden="true" class={`ph ph-${icon}`}></i>{label}
               <Show when={id === "sessions" && liveCount() > 0}>
                 <span class="badge">{liveCount()}</span>
               </Show>
@@ -407,7 +435,7 @@ export default function App() {
       </section>
 
       <footer class="status card">
-        <i class={`ph ${conn().status === "connected" ? "ph-wifi-high wifi" : "ph-wifi-slash"}`}
+        <i aria-hidden="true" class={`ph ${conn().status === "connected" ? "ph-wifi-high wifi" : "ph-wifi-slash"}`}
            title="RPC link to the framework"></i>
         <span>
           {conn().status === "connected"
@@ -468,10 +496,9 @@ export default function App() {
           <div style="margin-top:10px; display:flex; align-items:center; gap:14px">
             <HaydukMark size={44} tile />
             <div>
-              <p style="margin:0; font:600 10.5px var(--sans); letter-spacing:.13em; color:var(--red-br)">METASPLOIT OPERATIONS, MAPPED.</p>
               <p style="margin:2px 0 0; font:400 12px/1.55 var(--sans); color:var(--tx1)">
-                Graphical attack management console for Metasploit: the lineage of Armitage,
-                rebuilt as a single Go binary with a browser UI. For authorized security testing only.
+                Graphical attack management console for Metasploit. Runs as a single Go binary
+                with a browser UI. For authorized security testing only.
               </p>
             </div>
           </div>
@@ -544,14 +571,6 @@ export default function App() {
       <ContextMenuRoot />
       </div>
 
-      {/* outside .app: the narrow-viewport media rule hides that container */}
-      <div class="narrownote">
-        <div>
-          <b>Hayduk needs a desktop window.</b><br />
-          This is a dense operator console. Open it in a viewport<br />
-          wider than 960px, ideally 1280px or more.
-        </div>
-      </div>
     </>
   );
 }

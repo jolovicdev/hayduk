@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { loadConnectDefaults, parsePort } from "./connectForm";
+import { friendlyConnectError, loadConnectDefaults, parsePort } from "./connectForm";
 
 describe("parsePort", () => {
   it("accepts real ports", () => {
@@ -32,5 +32,33 @@ describe("loadConnectDefaults", () => {
     const d = loadConnectDefaults(storage);
     expect(d.port).toBe(55553);
     expect(d.ssl).toBe(false);
+  });
+});
+
+describe("friendlyConnectError", () => {
+  it("translates the Ruby login failure", () => {
+    expect(friendlyConnectError("Msf::RPC::Exception: Login Failed")).toEqual({
+      primary: "Login failed - msfrpcd rejected the username or password.",
+      detail: "Msf::RPC::Exception: Login Failed",
+    });
+  });
+
+  it("translates refused and timed-out dials", () => {
+    expect(friendlyConnectError("dial tcp 127.0.0.1:55553: connect: connection refused").primary)
+      .toContain("Connection refused");
+    expect(friendlyConnectError("context deadline exceeded").primary)
+      .toContain("Timed out");
+  });
+
+  it("suggests the SSL toggle on protocol mismatch", () => {
+    expect(friendlyConnectError("http: server gave HTTP response to HTTPS client").primary)
+      .toContain("SSL");
+  });
+
+  it("keeps unknown errors verbatim with no detail line", () => {
+    expect(friendlyConnectError("something novel")).toEqual({
+      primary: "something novel",
+      detail: "",
+    });
   });
 });

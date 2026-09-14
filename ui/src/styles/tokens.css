@@ -1,23 +1,17 @@
-/* ============================================================
-   HAYDUK design tokens
-   Type:    IBM Plex Sans (UI) / IBM Plex Mono (data), self-hosted
-   Icons:   Phosphor web font (regular + fill)
-   Palette: gunmetal neutrals, one oxide-red brand accent,
-            green / amber reserved for semantic state
-   Radius:  10 cards · 6 controls · 4 chips and tags
-   ============================================================ */
-
 :root {
-  --bg0:#0a0c0f;            /* page canvas */
-  --bg1:#12151b;            /* cards */
-  --bg2:#181d26;            /* hover, elevated */
-  --bg3:#20262f;            /* active */
-  --well:#0d1015;           /* inset wells: graph, note, search */
-  --cardline:#1e2430;
-  --line:#262d3a;
-  --tx0:#e2e7ee;
-  --tx1:#9aa4b2;
-  --tx2:#7e8896;
+  color-scheme:dark;
+  --accent:#c4edac;
+  --accent-dim:rgba(196,237,172,.10);
+  --bg0:#101516;            /* page canvas */
+  --bg1:#191f21;            /* cards */
+  --bg2:#242d30;            /* hover, elevated */
+  --bg3:#303c3f;            /* active */
+  --well:#12191b;           /* inset wells: graph, note, search */
+  --cardline:#2d393c;
+  --line:#3a484c;
+  --tx0:#edf2ee;
+  --tx1:#afbfbe;
+  --tx2:#8b9e9e;
   --red:#c9404a;
   --red-hi:#d54954;
   --red-br:#e2666b;
@@ -25,7 +19,9 @@
   --grn:#3fa87c;
   --grn-tx:#55c78f;
   --grn-dim:rgba(63,168,124,.16);
-  --amb:#d9a13f;
+  --route:#b1a3ed;
+  --route-dim:rgba(177,163,237,.10);
+  --amb:#e3b76a;
   --amb-dim:rgba(217,161,63,.14);
   --sans:'IBM Plex Sans',system-ui,-apple-system,'Segoe UI',sans-serif;
   --mono:'IBM Plex Mono',ui-monospace,'Cascadia Mono',Menlo,Consolas,monospace;
@@ -36,22 +32,21 @@
 html,body { height:100%; }
 body {
   background:var(--bg0);
-  background-image:radial-gradient(1200px 500px at 50% -10%, rgba(38,45,58,.35), transparent 70%);
   color:var(--tx0);
   font:400 13px/1.5 var(--sans);
   -webkit-font-smoothing:antialiased;
   overflow:hidden;
-  padding:10px;
+  padding:0 20px 10px;
 }
 button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
 button:disabled { opacity:.4; cursor:not-allowed; }
-:focus-visible { outline:2px solid var(--red-br); outline-offset:1px; border-radius:4px; }
-::selection { background:var(--red-dim); }
+:focus-visible { outline:2px solid var(--accent); outline-offset:1px; border-radius:4px; }
+::selection { background:var(--accent-dim); }
 
 *::-webkit-scrollbar { width:10px; height:10px; }
-*::-webkit-scrollbar-thumb { background:#262d3a; border:3px solid var(--bg1); border-radius:6px; }
+*::-webkit-scrollbar-thumb { background:#3a484c; border:3px solid var(--bg1); border-radius:6px; }
 *::-webkit-scrollbar-track { background:transparent; }
-* { scrollbar-width:thin; scrollbar-color:#262d3a transparent; }
+* { scrollbar-width:thin; scrollbar-color:#3a484c transparent; }
 
 i.ph, i.ph-fill { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; font-size:16px; flex:none; }
 
