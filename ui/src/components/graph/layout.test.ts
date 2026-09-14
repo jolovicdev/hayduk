@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { GROUP_HEADER, GROUP_INSET, NH, NW, cidrCovers, fitLabel, geometrySignature, layoutHosts, subnetGroups, subnetKey } from "./layout";
+import { GROUP_HEADER, GROUP_INSET, NH, NW, cidrCovers, fitLabel, geometrySignature, layoutHosts, layoutPlan, pivotPath, subnetGroups, subnetKey } from "./layout";
 import { osBadge } from "../../views/os";
 
 describe("subnetKey", () => {
@@ -201,5 +201,91 @@ describe("geometrySignature", () => {
   it("tolerates null host and route entries", () => {
     expect(sig([...base.hosts, null], [...base.routes, null], base.sessions))
       .toBe(sig(base.hosts, base.routes, base.sessions));
+  });
+});
+
+describe("adaptive layout", () => {
+  const hosts = Array.from({ length: 6 }, (_, i) => ({ address: `10.0.1.${i + 1}` }));
+
+  it("uses taller rows when a pivot destination consumes canvas width", () => {
+    expect(layoutPlan(hosts, 920, 570, 320)).toEqual({ columns: 2, groupColumns: 1 });
+    expect(layoutPlan(hosts, 1200, 400, 0)).toEqual({ columns: 3, groupColumns: 1 });
+  });
+
+  it("spreads a many-subnet campaign across stacks instead of one tall rail", () => {
+    // 530 hosts over 8 /24s on a wide, short stage: the fitted overview
+    // must stay legible, which one vertical stack of groups cannot deliver
+    const campaign = Array.from({ length: 8 }, (_, subnet) =>
+      Array.from({ length: 66 }, (_, i) => ({ address: `10.0.${subnet + 1}.${i + 1}` }))).flat();
+    const plan = layoutPlan(campaign, 1392, 204, 0);
+    expect(plan.groupColumns).toBeGreaterThan(1);
+    expect(plan.columns).toBeGreaterThan(3);
+
+    const positions = layoutHosts(campaign, new Map(), plan.columns, plan.groupColumns);
+    const groups = [...subnetGroups(campaign, positions).values()];
+    const world = {
+      w: Math.max(...groups.map(g => g.x + g.w)) - Math.min(...groups.map(g => g.x)),
+      h: Math.max(...groups.map(g => g.y + g.h)) - Math.min(...groups.map(g => g.y)),
+    };
+    // fit must actually fit, and stay legible enough to read a zone label
+    expect(Math.min(1392 / world.w, 204 / world.h)).toBeGreaterThan(0.08);
+  });
+
+  it("keeps subnet stacks side by side without overlap", () => {
+    const twoSubnets = [
+      { address: "10.0.1.1" }, { address: "10.0.1.2" },
+      { address: "10.0.2.1" }, { address: "10.0.2.2" },
+    ];
+    const positions = layoutHosts(twoSubnets, new Map(), 2, 2);
+    const groups = [...subnetGroups(twoSubnets, positions).values()].sort((a, b) => a.x - b.x);
+    expect(groups).toHaveLength(2);
+    expect(groups[1]!.x).toBeGreaterThanOrEqual(groups[0]!.x + groups[0]!.w);
+  });
+
+  it("gaps every pair of groups in a stack, the first pair included", () => {
+    const three = [{ address: "10.0.1.1" }, { address: "10.0.2.1" }, { address: "10.0.3.1" }];
+    const positions = layoutHosts(three, new Map(), 1, 1);
+    const groups = [...subnetGroups(three, positions).values()].sort((a, b) => a.y - b.y);
+    for (let i = 1; i < groups.length; i++) {
+      expect(groups[i]!.y - (groups[i - 1]!.y + groups[i - 1]!.h)).toBe(40);
+    }
+  });
+
+  it("keeps every automatic card inside its subnet without overlap", () => {
+    const multiple = [...hosts, { address: "10.0.2.1" }, { address: "10.0.2.2" }];
+    for (const columns of [1, 2, 3, 4]) {
+      const positions = layoutHosts(multiple, new Map(), columns);
+      const groups = subnetGroups(multiple, positions);
+      for (const host of multiple) {
+        const p = positions.get(host.address)!;
+        const group = groups.get(subnetKey(host.address))!;
+        expect(p.x).toBeGreaterThanOrEqual(group.x + GROUP_INSET);
+        expect(p.y).toBeGreaterThanOrEqual(group.y + GROUP_HEADER);
+        expect(p.x + NW).toBeLessThanOrEqual(group.x + group.w);
+        expect(p.y + NH).toBeLessThanOrEqual(group.y + group.h);
+        for (const other of multiple.filter(h => h.address !== host.address)) {
+          const q = positions.get(other.address)!;
+          expect(p.x + NW <= q.x || q.x + NW <= p.x || p.y + NH <= q.y || q.y + NH <= p.y).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("keeps a dragged position when the canvas changes columns", () => {
+    const sticky = new Map([[hosts[0]!.address, { x: 900, y: 300 }]]);
+    expect(layoutHosts(hosts, sticky, 2).get(hosts[0]!.address)).toEqual({ x: 900, y: 300 });
+  });
+
+  it("exits below a host before crossing its row toward the pivot lane", () => {
+    const positions = layoutHosts(hosts, new Map(), 3);
+    const source = positions.get(hosts[0]!.address)!;
+    const group = subnetGroups(hosts, positions).get("10.0.1")!;
+    const from = { x: source.x + NW / 2, y: source.y + NH };
+    const lane = group.x + group.w + 48;
+    const path = pivotPath(from, { x: lane + 60, y: source.y + NH / 2 }, lane);
+    const rowLane = Number(path.match(/V ([\d.]+)/)![1]);
+    expect(rowLane).toBeGreaterThan(source.y + NH);
+    expect(rowLane).toBeLessThan(positions.get(hosts[3]!.address)!.y);
+    expect(lane).toBeGreaterThan(group.x + group.w);
   });
 });

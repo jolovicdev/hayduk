@@ -7,6 +7,9 @@ import { interactPrompt } from "./format";
 
 export function InteractView() {
   const session = () => campaignState().sessions[interactSID()];
+  const placeholder = () => session()?.type === "meterpreter"
+    ? "type a meterpreter command"
+    : "type a shell command";
 
   return (
     <Show when={interactSID()} fallback={
@@ -28,8 +31,11 @@ export function InteractView() {
       <ConsoleView output={interactOutput}
         prompt={interactPrompt(session()?.type, interactSID())} busy={false}
         target={interactSID}
-        write={(cmd, target) => void write(cmd, target ?? interactSID())
-          .catch((e: any) => flash(e?.message ?? "session write failed"))}
+        placeholder={placeholder()}
+        write={(cmd, target) => {
+          void write(cmd, target ?? interactSID())
+            .catch((e: any) => flash(e?.message ?? "session write failed"));
+        }}
         tabComplete={async () => []} />
     </Show>
   );

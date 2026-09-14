@@ -15,6 +15,15 @@ export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose:
     mode() === "auto" ? props.meterpreter
       : isIPv4(address()) && prefixBits() !== undefined;
 
+  // Split on paste or blur so a partially typed prefix stays in the input.
+  function splitCIDR(value: string) {
+    const cidr = /^(\d{1,3}(?:\.\d{1,3}){3})\/(\d{1,2})$/.exec(value.trim());
+    if (cidr && isIPv4(cidr[1]!) && parsePrefix(cidr[2]!) !== undefined) {
+      setAddress(cidr[1]!);
+      setPrefix(cidr[2]!);
+    }
+  }
+
   async function pivot() {
     setBusy(true);
     setError("");
@@ -57,7 +66,13 @@ export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose:
           <label style="display:grid; gap:4px">
             <span style="font:500 11px var(--sans); color:var(--tx1)">Subnet</span>
             <input value={address()} placeholder="10.13.37.0"
-              onInput={(e) => setAddress(e.currentTarget.value)} autocomplete="off" spellcheck={false} />
+              onInput={(e) => {
+                const value = e.currentTarget.value;
+                setAddress(value);
+                if (e.inputType === "insertFromPaste") splitCIDR(value);
+              }}
+              onBlur={(e) => splitCIDR(e.currentTarget.value)}
+              autocomplete="off" spellcheck={false} />
           </label>
           <label style="display:grid; gap:4px">
             <span style="font:500 11px var(--sans); color:var(--tx1)">Prefix</span>
@@ -65,6 +80,12 @@ export function PivotDialog(props: { sid: string; meterpreter: boolean; onClose:
               onInput={(e) => setPrefix(e.currentTarget.value)} autocomplete="off" />
           </label>
         </div>
+        <Show when={address().trim() !== "" && !valid()}>
+          <p style="color:var(--amb); margin-top:10px">
+            Enter a bare IPv4 address like 10.13.37.0 and a prefix like 24 - pasting
+            10.13.37.0/24 splits across both fields automatically.
+          </p>
+        </Show>
       </Show>
       <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
       <div class="mbtns">

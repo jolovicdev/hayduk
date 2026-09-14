@@ -51,8 +51,13 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 	if e.sessionTags == nil {
 		e.sessionTags = make(map[string]sessionTag)
 	}
+	exploitUUID := ""
+	if ev.Session != nil {
+		exploitUUID = ev.Session.ExploitUUID
+	}
 	e.sessionTags[ev.SessionID] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
 	e.sessions[ev.SessionID] = st
+	e.markExploitSessionLocked(st.ViaExploit, exploitUUID)
 	sessions := copyMap(e.sessions)
 	host := hostLabel(st.TargetHost)
 	e.logf(protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
@@ -177,6 +182,7 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 		e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
 	} else {
 		delete(e.jobs, id)
+		e.finishExploitJobLocked(id)
 	}
 	jobs := copyMap(e.jobs)
 	if started {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  collectOptions, compatiblePayloadsParams, launchDisabled, missingLaunchOptions, missingRequired, optionKind,
+  collectOptions, compatiblePayloadsParams, launchDisabled, missingLaunchOptions, missingRequired, optionKind, payloadGroup,
 } from "./launchOptions";
 
 const defs = {
@@ -134,5 +134,17 @@ describe("launchDisabled", () => {
       busy: false, optionsLoading: false, optionsError: true,
       payloadChosen: false, payloadLoading: false, payloadError: false, missing: [],
     })).toBe(true);
+  });
+});
+
+describe("payloadGroup", () => {
+  it("names the platform family of a payload path", () => {
+    expect(payloadGroup("windows/x64/meterpreter/reverse_tcp")).toBe("windows");
+    expect(payloadGroup("linux/x86/shell_reverse_tcp")).toBe("linux");
+    expect(payloadGroup("cmd/unix/reverse")).toBe("cmd");
+  });
+
+  it("is empty for a family-less name", () => {
+    expect(payloadGroup("generic")).toBe("");
   });
 });

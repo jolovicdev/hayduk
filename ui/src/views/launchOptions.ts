@@ -100,6 +100,11 @@ export function compatiblePayloadsParams(
   return { type, name };
 }
 
+export function payloadGroup(payload: string): string {
+  const slash = payload.indexOf("/");
+  return slash > 0 ? payload.slice(0, slash) : "";
+}
+
 // missingLaunchOptions names the required options blocking a launch: the
 // module's own, plus the chosen payload's once its settings are in hand.
 export function missingLaunchOptions(o: {

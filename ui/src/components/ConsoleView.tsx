@@ -11,6 +11,7 @@ export function ConsoleView(props: {
   // for the framework console). When it changes, the draft and its history
   // are cleared instead of silently retargeting.
   target?: () => string;
+  placeholder?: string;
 }) {
   const [input, setInput] = createSignal("");
   const [history, setHistory] = createSignal<string[]>([]);
@@ -86,7 +87,7 @@ export function ConsoleView(props: {
           <input ref={inputEl} value={input()}
             onInput={(e) => setInput(e.currentTarget.value)}
             onKeyDown={(e) => void onKey(e)}
-            placeholder="type a framework command"
+            placeholder={props.placeholder ?? "type a framework command"}
             autocomplete="off" spellcheck={false} />
         </Show>
       </div>

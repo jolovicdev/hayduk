@@ -26,3 +26,22 @@ export function loadConnectDefaults(
   }
   return d;
 }
+
+// Preserve the original error as detail when a known error has user guidance.
+export function friendlyConnectError(raw: string): { primary: string; detail: string } {
+  const text = raw.trim();
+  const lower = text.toLowerCase();
+  if (lower.includes("login failed")) {
+    return { primary: "Login failed - msfrpcd rejected the username or password.", detail: text };
+  }
+  if (/connection refused|no connection could be made/.test(lower)) {
+    return { primary: "Connection refused - nothing is answering at that host and port; is msfrpcd running?", detail: text };
+  }
+  if (/timeout|timed out|deadline exceeded/.test(lower)) {
+    return { primary: "Timed out reaching msfrpcd - check the host, port, and SSL setting.", detail: text };
+  }
+  if (/tls|ssl|handshake|http response to https/.test(lower)) {
+    return { primary: "Protocol mismatch - try toggling the SSL option to match how msfrpcd runs.", detail: text };
+  }
+  return { primary: text, detail: "" };
+}

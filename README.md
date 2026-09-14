@@ -12,7 +12,9 @@ Hayduk connects to a separate Metasploit Framework instance through `msfrpcd`. I
 
 **[Download the latest release](https://github.com/jolovicdev/hayduk/releases/latest)** · [Quickstart](#quickstart) · [Try the Docker lab](#try-the-docker-lab) · [Team mode](#team-mode)
 
-![Hayduk Metasploit GUI demo showing module selection, a detected service, and a live shell session](docs/demo.gif)
+![Hayduk campaign overview with network topology, host inspection, module library, and live console](docs/screenshot.png)
+
+*Interface shown with illustrative campaign data.*
 
 ## Quickstart
 
@@ -85,7 +87,11 @@ Keep Hayduk running while you use the UI. Press `Ctrl+C` in its terminal to stop
 
 Use a system or network you are authorized to test. Scans run from the connected Metasploit instance, so targets must be reachable from that machine.
 
-Right-click hosts, sessions, table rows, and modules in the tree to open their action menus.
+Click a module to configure it. Right-click hosts, sessions, table rows, and modules in the tree to open their action menus.
+
+Use the campaign summary cards to open hosts, services, sessions, or credentials. **Discover hosts**, **Scan services**, and **Export report** are also available directly above the network map.
+
+The network map adapts host columns to the available canvas. Choose **Focus** to expand the map and host inspector. **Arrange hosts** replaces saved positions with an automatic layout. Host cards show open service counts and access state; violet paths identify pivot routes.
 
 1. **Choose a workspace.** Click the **workspace** chip to switch between existing Metasploit workspaces, or use the current workspace. The active workspace scopes the database tables, topology, and exported report, keeping each client's campaign data separate. Events and sessions retain their originating workspace for report attribution; the **Sessions** tab shows sessions across workspaces.
 2. **Discover hosts.** Open **Campaign → Discover hosts…**, enter your target host or CIDR range, select a scanner, and click **Configure…**. Review the module options and click **Launch**.
@@ -93,13 +99,13 @@ Right-click hosts, sessions, table rows, and modules in the tree to open their a
 4. **Launch an exploit and open a session.** Right-click an exploit module in the tree and choose **Launch…**, or open **Campaign → Find attacks…** and click a match's **Launch** button to prefill the target host and matched port. Review the module options and payload, then click **Launch**. If a session opens, click its row in the **Sessions** tab, or right-click its host and choose **Interact with session <ID>**, to open the live console in **Interact**.
 5. **Export a report.** Choose **File → Export report…** to download a self-contained HTML campaign report.
 
-![Hayduk browser interface with network topology and Metasploit campaign controls](docs/screenshot.png)
+![Hayduk Metasploit GUI demo showing module selection, a detected service, and a live shell session](docs/demo.gif)
 
 ## Features
 
 | Capability | What you can do |
 |---|---|
-| Network topology | View hosts grouped by subnet, access states, and pivot routes; retain node positions across reloads. |
+| Network topology | Explore adaptive subnet groups, host service counts, and pivot routes. Drag hosts, zoom, or expand the map in Focus mode. |
 | Metasploit modules | Browse the module tree, inspect reliability ranks, configure options, and select payloads. |
 | Campaign workflows | Discover hosts, scan services, and find exploit candidates matching known services. |
 | Session management | Interact with Meterpreter and shell sessions, upgrade shells, and terminate sessions. |
@@ -107,6 +113,10 @@ Right-click hosts, sessions, table rows, and modules in the tree to open their a
 | Hail Mary | Launch matching exploits against selected hosts, with paced launches and an event log. |
 | Reporting | Export a self-contained HTML report for campaign review and client delivery. |
 | Team mode | Share a campaign with multiple operators on a trusted network. |
+
+![Hayduk graph focus mode with adaptive subnet layout, host states, and a routed network](docs/topology.png)
+
+*Graph focus mode with illustrative campaign data.*
 
 ## Try the Docker lab
 

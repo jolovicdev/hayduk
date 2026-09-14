@@ -43,6 +43,8 @@ export function write(command: string) {
   const prompt = parsePrompt(current);
   const pending = prompt ? current.slice(0, prompt.start) : current;
   if (prompt) setRawOutput(pending);
+  // the command's echo comes from the engine, which owns the console
+  // buffer and replays it in full once the write completes
   return ws.command("console.write", { command: command + "\n" }).catch(error => {
     if (prompt) setRawOutput(prev => prev === pending ? prev + prompt.value : prev);
     throw error;

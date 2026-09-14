@@ -1,7 +1,7 @@
 /* ---------- toolbar buttons ---------- */
 .tbtn {
   display:inline-flex; align-items:center; gap:8px;
-  height:31px; padding:0 13px; border-radius:6px;
+  height:36px; padding:0 15px; border-radius:6px;
   border:1px solid var(--line); background:var(--bg2);
   font:500 12.5px var(--sans);
   transition:background .12s ease, transform .05s ease;
@@ -10,9 +10,9 @@
 .tbtn:hover { background:var(--bg3); }
 .tbtn:hover i { color:var(--tx0); }
 .tbtn:active { transform:translateY(1px); }
-.tbtn.primary { background:var(--red); border-color:var(--red); color:#fff; }
-.tbtn.primary i { color:#fff; }
-.tbtn.primary:hover { background:var(--red-hi); border-color:var(--red-hi); }
+.tbtn.primary { background:var(--accent); border-color:var(--accent); color:#192416; }
+.tbtn.primary i { color:#192416; }
+.tbtn.primary:hover { background:#d5f6c3; border-color:#d5f6c3; }
 .tbtn .badge {
   min-width:17px; height:16px; padding:0 4px; border-radius:4px;
   display:inline-flex; align-items:center; justify-content:center;
@@ -75,130 +75,75 @@
 .zbtn:hover { background:var(--bg2); color:var(--tx0); }
 .zpct { min-width:46px; text-align:center; font:500 11px var(--mono); color:var(--tx1); }
 
-/* ---------- graph extras ---------- */
+/* ---------- graph ---------- */
 .stagebody.gridbg #topo {
-  background-image:radial-gradient(circle, #171d27 1px, transparent 1px);
-  background-size:28px 28px;
+  background-image:radial-gradient(circle, #344244 1px, transparent 1px);
+  background-size:24px 24px;
 }
 #topo { background-color:var(--well); shape-rendering:geometricPrecision; }
 #topo text { user-select:none; pointer-events:none; }
-
-#topo .topo-zone-icon-bg { fill:#18212c; stroke:#2d3948; stroke-width:1; }
-#topo .topo-zone-icon { fill:#91a0b5; }
-#topo .topo-zone-link { fill:none; stroke:#91a0b5; stroke-width:1.25; stroke-linecap:round; }
-#topo .topo-zone-name {
-  fill:#cbd3de; font:600 10.5px var(--mono); letter-spacing:.07em;
-}
-#topo .topo-zone-meta {
-  fill:#647083; font:600 8px var(--mono); letter-spacing:.12em;
-}
-#topo .topo-zone-spine, #topo .topo-zone-branch {
-  fill:none; stroke:#303a48; stroke-width:1.15; stroke-linecap:round; stroke-linejoin:round;
-}
-#topo .topo-zone-junction { fill:var(--well); stroke:#66748a; stroke-width:1.2; }
-#topo .topo-zone-routed rect { fill:var(--red-dim); stroke:rgba(226,102,107,.35); stroke-width:1; }
-#topo .topo-zone-routed circle, #topo .topo-route-port { fill:var(--red-br); }
-#topo .topo-zone-routed text {
-  fill:var(--red-br); font:600 8px var(--mono); letter-spacing:.08em;
-}
-#topo .topo-route-port { stroke:#2b1115; stroke-width:3; }
-
-#topo .topo-route-halo, #topo .topo-route-line { fill:none; }
-#topo .topo-route-halo { stroke:var(--well); stroke-width:6; opacity:.9; }
-#topo .topo-route-line {
-  stroke:var(--red-br); stroke-width:1.7; stroke-dasharray:7 6; stroke-linecap:round; opacity:.88;
-}
-#topo #topo-route-arrow path { fill:var(--red-br); }
-#topo .topo-route-label rect { fill:#17131a; stroke:rgba(226,102,107,.35); stroke-width:1; }
-#topo .topo-route-label text {
-  fill:#d96a70; text-anchor:middle; font:600 8px var(--mono); letter-spacing:.055em;
-}
-/* routes and routed-network cards carry remove menus */
+#topo .topo-zone-panel { fill:#172123; fill-opacity:.85; stroke:#344649; stroke-width:1; }
+#topo .topo-zone-rule { stroke:#2c3b3e; stroke-width:1; }
+#topo .topo-zone-icon-bg { fill:#243335; }
+#topo .topo-zone-icon { fill:#8da8a7; }
+#topo .topo-zone-link { fill:none; stroke:#8da8a7; stroke-width:1.25; }
+#topo .topo-zone-name { fill:#c2d5d1; font:500 12px var(--mono); letter-spacing:.03em; }
+#topo .topo-zone-meta { fill:#91a5a4; font:500 10px var(--mono); letter-spacing:.08em; }
+#topo .topo-zone-route-note { fill:var(--route); font:500 10px var(--mono); letter-spacing:.06em; }
+#topo .topo-route-port { fill:var(--route); }
+#topo .topo-route-port { stroke:var(--well); stroke-width:3; }
+#topo .topo-route-halo, #topo .topo-route-line { fill:none; stroke-linejoin:round; }
+#topo .topo-route-halo { stroke:var(--well); stroke-width:7; }
+#topo .topo-route-line { stroke:var(--route); stroke-width:1.6; stroke-dasharray:5 5; stroke-linecap:round; }
+#topo #topo-route-arrow path { fill:var(--route); }
+#topo .topo-route-label rect { fill:#262536; stroke:#655d83; }
+#topo .topo-route-label text { fill:#c4b8f6; text-anchor:middle; font:500 10px var(--mono); }
 #topo .topo-routes g, #topo .topo-ghost { cursor:context-menu; }
-
 #topo .topo-node { cursor:grab; outline:none; }
 #topo .topo-node:active { cursor:grabbing; }
-#topo .topo-node-shell {
-  fill:url(#topo-node-fill); stroke:#39455a; stroke-width:1;
-  filter:url(#topo-node-shadow); transition:filter .14s ease, stroke .14s ease;
-}
-#topo .topo-node:hover .topo-node-shell { stroke:#4e5d7a; filter:url(#topo-node-shadow) brightness(1.08); }
-#topo .topo-node.selected .topo-node-shell,
-#topo .topo-node:focus-visible .topo-node-shell {
-  stroke:rgba(226,102,107,.85); stroke-width:1.25;
-  filter:url(#topo-node-shadow) url(#topo-node-glow);
-}
-#topo .topo-device-bg { fill:#202936; stroke:#303c4c; stroke-width:1; }
-#topo .topo-device-screen, #topo .topo-device-stand {
-  fill:none; stroke:#8b97a8; stroke-width:1.35; stroke-linecap:round; stroke-linejoin:round;
-}
-#topo .topo-device.win .topo-device-bg { fill:rgba(74,155,216,.13); stroke:rgba(74,155,216,.32); }
-#topo .topo-device.win .topo-device-screen, #topo .topo-device.win .topo-device-stand { stroke:#69afe2; }
-#topo .topo-device.linux .topo-device-bg { fill:rgba(168,196,74,.12); stroke:rgba(168,196,74,.3); }
-#topo .topo-device.linux .topo-device-screen, #topo .topo-device.linux .topo-device-stand { stroke:#aec967; }
-#topo .topo-node-os {
-  fill:#8290a2; font:600 8.5px var(--mono); letter-spacing:.095em;
-}
-#topo .topo-node-os.win { fill:#69afe2; }
-#topo .topo-node-os.linux { fill:#aec967; }
-#topo .topo-node-name { fill:var(--tx0); font:600 13px var(--sans); }
-#topo .topo-address-dot { fill:#657184; }
-#topo .topo-node-address { fill:#909bad; font:500 10.5px var(--mono); letter-spacing:.015em; }
-#topo .topo-state rect { stroke-width:1; }
-#topo .topo-state text { font:700 7.5px var(--mono); letter-spacing:.075em; }
-#topo .topo-state.access rect { fill:rgba(201,64,74,.14); stroke:rgba(226,102,107,.38); }
-#topo .topo-state.access text { fill:var(--red-br); }
-#topo .topo-live-dot { fill:var(--grn); }
-#topo .topo-live-halo { fill:none; stroke:var(--grn); stroke-width:1; animation:topo-pulse 2.4s ease-out infinite; }
-#topo .topo-state.login rect { fill:var(--amb-dim); stroke:rgba(217,161,63,.35); }
-#topo .topo-state.login circle { fill:var(--amb); }
-#topo .topo-state.login text { fill:var(--amb); }
-@keyframes topo-pulse {
-  0% { r:3; opacity:.65; }
-  75%,100% { r:8; opacity:0; }
-}
-
-#topo .topo-ghost-shell {
-  fill:rgba(201,64,74,.055); stroke:rgba(226,102,107,.48); stroke-width:1;
-  stroke-dasharray:7 5;
-}
-#topo .topo-ghost-icon-bg { fill:rgba(201,64,74,.1); stroke:rgba(226,102,107,.28); stroke-width:1; }
-#topo .topo-ghost-icon { fill:var(--red-br); }
-#topo .topo-ghost-link { fill:none; stroke:var(--red-br); stroke-width:1.3; stroke-linecap:round; }
-#topo .topo-ghost-kicker { fill:#b95860; font:600 8px var(--mono); letter-spacing:.12em; }
-#topo .topo-ghost-address { fill:#e08a8f; font:600 11.5px var(--mono); }
-#topo .topo-ghost-meta { fill:#82545b; font:600 7.5px var(--mono); letter-spacing:.1em; }
-
-#topo .topo-empty text {
-  fill:var(--tx1); text-anchor:middle; font:600 13px var(--sans);
-}
-#topo .topo-empty .topo-empty-sub { fill:var(--tx2); font:400 11.5px var(--sans); }
-
-.legend {
-  position:absolute; left:12px; bottom:10px; z-index:5;
-  display:flex; align-items:center; gap:16px;
-  padding:7px 12px;
-  background:rgba(18,21,27,.92); border:1px solid var(--cardline); border-radius:8px;
-  font:400 11px var(--sans); color:var(--tx1);
-  user-select:none; pointer-events:none;
-}
-.legend i.sw { display:inline-block; margin-right:6px; vertical-align:-1px; }
-.legend .strip { width:13px; height:3px; border-radius:2px; background:var(--red); }
-.legend .dot { width:7px; height:7px; border-radius:99px; background:var(--grn); }
-.legend .sq { width:8px; height:8px; border-radius:2px; background:var(--amb); }
-.legend .dash { width:13px; height:0; border-top:2px dashed var(--red); }
-
-.tipbar {
-  position:absolute; top:10px; right:10px; z-index:6;
-  display:flex; align-items:center; gap:10px;
-  height:32px; padding:0 8px 0 12px; border-radius:8px;
-  background:rgba(24,29,38,.95); border:1px solid var(--line);
-  font:400 12px var(--sans); color:var(--tx1);
-  user-select:none; white-space:nowrap;
-}
-.tipbar i.info { color:var(--grn-tx); }
-.tipbar button { width:22px; height:22px; display:inline-flex; align-items:center; justify-content:center; border-radius:5px; color:var(--tx2); }
-.tipbar button:hover { background:var(--bg3); color:var(--tx0); }
+#topo .topo-node-shell { fill:#243034; stroke:#46585c; stroke-width:1; filter:url(#topo-node-shadow); transition:stroke .15s, fill .15s; }
+#topo .topo-node:hover .topo-node-shell { fill:#2b393b; stroke:#8aaba6; }
+#topo .topo-node.access .topo-node-shell { fill:#233631; stroke:#577d66; }
+#topo .topo-node.login .topo-node-shell { stroke:#88744f; }
+#topo .topo-node.selected .topo-node-shell, #topo .topo-node:focus-visible .topo-node-shell { stroke:var(--accent); stroke-width:2; fill:#2c4037; }
+#topo .topo-node-divider { stroke:#49605c; stroke-width:1; opacity:.5; }
+#topo .topo-device-bg { fill:#33464b; stroke:#526a70; }
+#topo .topo-device-screen, #topo .topo-device-stand { fill:none; stroke:#b3c9cc; stroke-width:1.4; stroke-linecap:round; stroke-linejoin:round; }
+#topo .topo-device.win .topo-device-bg { fill:#283c50; stroke:#426684; }
+#topo .topo-device.win .topo-device-screen, #topo .topo-device.win .topo-device-stand { stroke:#8ebee5; }
+#topo .topo-device.linux .topo-device-bg { fill:#3c3c2e; stroke:#6d6b48; }
+#topo .topo-device.linux .topo-device-screen, #topo .topo-device.linux .topo-device-stand { stroke:#d0c88b; }
+#topo .topo-node-os { fill:#a9babb; font:500 10px var(--mono); letter-spacing:.08em; }
+#topo .topo-node-os.win { fill:#91bde0; }
+#topo .topo-node-os.linux { fill:#d0c88b; }
+#topo .topo-node-name { fill:#f1f5ef; font:600 15px var(--sans); }
+#topo .topo-node-address { fill:#b8ccca; font:400 12px var(--mono); }
+#topo .topo-host-status { fill:#90a5a9; }
+#topo .topo-host-state, #topo .topo-host-services { fill:#a7bcbb; font:400 10px var(--sans); }
+#topo .access .topo-host-status { fill:var(--accent); }
+#topo .access .topo-host-state { fill:var(--accent); }
+#topo .login .topo-host-status, #topo .login .topo-host-state { fill:var(--amb); }
+#topo .topo-ghost-shell { fill:#242434; stroke:#756995; stroke-width:1; stroke-dasharray:5 4; }
+#topo .topo-ghost-icon-bg { fill:#322e46; stroke:#5e527d; }
+#topo .topo-ghost-icon { fill:var(--route); }
+#topo .topo-ghost-link { fill:none; stroke:var(--route); stroke-width:1.3; }
+#topo .topo-ghost-kicker { fill:#a79acb; font:500 10px var(--mono); letter-spacing:.07em; }
+#topo .topo-ghost-address { fill:#d5c9fa; font:500 12px var(--mono); }
+#topo .topo-ghost-meta { fill:#a79acb; font:400 10px var(--mono); }
+.map-context { position:absolute; inset:0 0 auto; height:44px; display:flex; align-items:center; justify-content:space-between; padding:0 20px; font:400 11px var(--mono); color:var(--tx2); border-bottom:1px solid var(--cardline); }
+.map-context > span { display:flex; align-items:center; gap:8px; }
+.map-context-dot { width:5px; height:5px; border-radius:50%; background:var(--accent); }
+.map-context-divider { color:var(--line); margin:0 4px; }
+.map-context button { display:flex; align-items:center; gap:6px; font:400 11px var(--sans); height:30px; border-radius:5px; padding:0 8px; }
+.map-context button:hover { background:var(--bg2); color:var(--tx0); }
+.map-context button i { font-size:13px; }
+.map-scale { position:absolute; right:16px; bottom:12px; font:500 10px var(--mono); color:var(--tx2); }
+.legend { position:absolute; inset:auto 0 0; height:38px; display:flex; align-items:center; gap:16px; padding:0 16px; border-top:1px solid var(--cardline); font:400 11px var(--sans); color:var(--tx1); user-select:none; pointer-events:none; }
+.legend i.sw { display:inline-block; margin-right:6px; vertical-align:0; width:6px; height:6px; border-radius:50%; }
+.legend .dot { background:var(--accent); }
+.legend .sq { background:var(--amb); }
+.legend .neutral { background:#90a5a9; }
+.legend .dash { width:12px; height:0; border-top:2px dashed var(--route); border-radius:0; }
 
 /* ---------- data tables ---------- */
 table.dt { width:100%; border-collapse:collapse; }
@@ -208,7 +153,7 @@ table.dt th {
   color:var(--tx2); padding:10px 12px 8px;
   border-bottom:1px solid var(--line);
 }
-table.dt td { padding:7px 12px; font-size:12.5px; white-space:nowrap; }
+table.dt td { padding:10px 12px; font-size:12.5px; white-space:nowrap; }
 table.dt td.m { font:400 12px var(--mono); color:var(--tx1); }
 table.dt td b { font-weight:600; }
 table.dt tbody tr { cursor:default; }
@@ -302,7 +247,7 @@ table.dt .dim { color:var(--tx1); }
 /* ---------- modals ---------- */
 .modalback {
   position:fixed; inset:0; z-index:200;
-  background:rgba(6,8,10,.66);
+  background:rgba(8,12,9,.78); backdrop-filter:blur(7px);
   display:flex; align-items:center; justify-content:center;
 }
 .modal {
@@ -316,7 +261,6 @@ table.dt .dim { color:var(--tx1); }
 .modal .mhead { display:flex; align-items:center; gap:12px; }
 .modal .mhead svg.mark { width:28px; height:28px; flex:none; }
 .modal .mtitle { font:600 17px var(--sans); }
-.modal .mver { font:500 11px var(--mono); color:var(--red-br); margin-top:2px; }
 .modal p { font:400 12.5px/1.65 var(--sans); color:var(--tx1); margin-top:14px; }
 .modal .mbtns { display:flex; justify-content:flex-end; margin-top:20px; }
 .modal .mbtns .abtn { flex:none; padding:0 20px; }
@@ -327,13 +271,13 @@ table.dt .dim { color:var(--tx1); }
 .modal input[type="text"], .modal input[type="password"], .modal input[type="number"],
 .modal input:not([type]) {
   background: var(--well); border: 1px solid var(--line); border-radius: 6px;
-  padding: 6px 9px; font: 400 12px var(--mono); color: var(--tx0); width: 100%;
+  padding: 10px 12px; font: 400 12px var(--mono); color: var(--tx0); width: 100%;
 }
 .modal select {
   background: var(--well); border: 1px solid var(--line); border-radius: 6px;
-  padding: 6px 9px; font: 400 12px var(--mono); color: var(--tx0); width: 100%;
+  padding: 10px 12px; font: 400 12px var(--mono); color: var(--tx0); width: 100%;
 }
-.modal .kv { display: grid; gap: 4px; align-content: start; }
+.modal .kv { display: grid; grid-template-columns:minmax(0,1fr); gap: 4px; align-content: start; }
 .modal input.invalid { border-color: var(--red-br); }
 .modal .kv b { font: 500 11px var(--sans); color: var(--tx1); }
 
@@ -344,7 +288,7 @@ table.dt .dim { color:var(--tx1); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fmatch .fmreason { font: 400 11px var(--sans); color: var(--tx2); }
 
-.events .opchip { margin-left: 8px; font: 500 9.5px var(--mono); letter-spacing: .05em;
+.events .opchip { margin-left: 8px; font: 500 10.5px var(--mono); letter-spacing: .05em;
   color: var(--tx2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px;
   vertical-align: 1px; }
 
@@ -352,3 +296,54 @@ table.dt .dim { color:var(--tx1); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation:none !important; transition:none !important; }
 }
+
+.connect-modal { width:440px; padding:32px; border-top:3px solid var(--accent); }
+.connect-modal .mtitle { font-size:24px; letter-spacing:-.5px; }
+.connect-modal .mver { color:var(--tx2); font:400 12px var(--sans); margin-top:4px; }
+.connect-modal .mbtns .tbtn { width:100%; justify-content:center; height:42px; }
+.ins .isec { border-top:1px solid var(--cardline); padding-top:14px; }
+.ins .ilabel { text-transform:uppercase; font:500 11px var(--mono); letter-spacing:.12em; }
+.ins .iname { font-size:21px; letter-spacing:-.5px; }
+.trow.expanded { color:var(--accent); }
+.trow.expanded .fic { color:var(--accent); }
+.filterbox input:focus { border-color:var(--accent); }
+
+.map-context-hint { color:var(--amb); font:500 10px var(--mono); letter-spacing:.02em; }
+
+/* filterable select: a native select behind a filter box */
+.fselect { display:grid; gap:6px; }
+.fselect input, .fselect select { padding:8px 12px; }
+
+/* per-row action button: session actions must not hide behind right-click */
+.rowmenu {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:26px; border-radius:5px; border:1px solid transparent;
+  background:transparent; color:var(--tx2); cursor:pointer;
+}
+.rowmenu i { font-size:16px; }
+.rowmenu:hover, .rowmenu:focus-visible { background:var(--bg2); color:var(--tx0); border-color:var(--line); }
+
+/* launch dialog: reserve the options area while module options load */
+.opt-skeleton { margin-top:16px; display:grid; gap:12px; min-height:170px; align-content:start; }
+.opt-skeleton .skel {
+  height:38px; border-radius:6px; background:var(--bg2);
+  animation:skel-pulse 1.1s ease-in-out infinite;
+}
+.opt-skeleton .skel.short { width:55%; }
+@keyframes skel-pulse { 0%, 100% { opacity:.45; } 50% { opacity:1; } }
+
+/* dense-map LOD: host cards are illegible below the threshold, so the map
+   shows constant-size subnet summaries in a screen-space overlay instead */
+#topo.lod .topo-hosts { display:none; }
+#topo .topo-chips .topo-zone-chip { cursor:pointer; }
+#topo .topo-chips .topo-zone-chip-name { fill:#c2d5d1; font:600 12px var(--mono); }
+#topo .topo-chips .topo-zone-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:8px; }
+#topo .topo-chips .topo-zone-chip:hover .topo-zone-chip-name, #topo .topo-chips .topo-zone-chip:focus-visible .topo-zone-chip-name { fill:var(--tx0); }
+#topo .topo-zone-chip:hover .topo-zone-chip-hit, #topo .topo-zone-chip:focus-visible .topo-zone-chip-hit { fill:rgba(255,255,255,.05); }
+/* The tooltip preserves the full session banner when the row truncates it. */
+.row-info { display:inline-block; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; color:var(--tx2); }
+
+/* On narrow viewports, counts remain in the metric cards and subnet chips
+   provide zoom controls. The span qualifier overrides the bar's plain span rule. */
+@media (max-width:1100px) { .map-context > span:first-child { display:none; } }
+@media (max-width:640px) { .map-context > span.map-context-hint { display:none; } }

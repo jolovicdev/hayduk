@@ -90,8 +90,7 @@ export function removeRouteItems(
   return items;
 }
 
-// runAutoroute fires the module and lets the engine's launch/route events
-// narrate the result; throwers (CommandError) are the dialog's to show.
+// Engine events report the route outcome; callers display command errors.
 // The ws singleton is imported lazily: it opens a socket at module load,
 // which unit tests (no `location`) must not trigger by importing this file.
 export async function runAutoroute(options: Record<string, string>): Promise<void> {

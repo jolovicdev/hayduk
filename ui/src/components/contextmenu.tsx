@@ -27,7 +27,7 @@ export function buildMenuHTML(items: MenuItem[]): string {
         );
       }
       return (
-        `<button class="citem${it.danger ? " danger" : ""}">` +
+        `<button class="citem${it.danger ? " danger" : ""}" role="menuitem">` +
         (it.icon ? `<i class="ph ph-${esc(it.icon)}"></i>` : "<i></i>") +
         `<span>${esc(it.label ?? "")}</span>` +
         (it.hint ? `<span class="hint">${esc(it.hint)}</span>` : "") +
@@ -38,9 +38,14 @@ export function buildMenuHTML(items: MenuItem[]): string {
 }
 
 let menuEl: HTMLDivElement | null = null;
+// the element focused when the menu opened; keyboard operators get it
+// back when the menu closes
+let menuOpener: HTMLElement | null = null;
 
 export function closeContextMenu() {
   menuEl?.classList.remove("show");
+  if (menuEl?.contains(document.activeElement)) menuOpener?.focus();
+  menuOpener = null;
 }
 
 export function contextMenuOpen(): boolean {
@@ -68,6 +73,7 @@ export function openContextMenuFor(e: MouseEvent, items: MenuItem[]) {
 
 export function openContextMenu(x: number, y: number, items: MenuItem[]) {
   if (!menuEl) return;
+  menuOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   menuEl.innerHTML = buildMenuHTML(items);
   let i = 0;
   const actionable = items.filter(it => it.label !== undefined);
@@ -80,6 +86,9 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]) {
   const pos = placeMenu(x, y, w, h, window.innerWidth, window.innerHeight);
   menuEl.style.left = pos.x + "px";
   menuEl.style.top = pos.y + "px";
+  // keyboard operators land in the menu instead of being stranded on the
+  // opener with the focus already visually elsewhere
+  menuEl.querySelector<HTMLButtonElement>("button.citem")?.focus();
 }
 
 export function ContextMenuRoot() {

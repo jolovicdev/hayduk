@@ -25,7 +25,7 @@ export function Inspector(props: {
 
   return (
     <div class="ins">
-      <Show when={host()} fallback={<div class="inote">Select a host to inspect it.</div>}>
+      <Show when={host()} fallback={<div class="ins-empty"><div class="empty-symbol"><i aria-hidden="true" class="ph ph-target"></i></div><h2>No host selected</h2><p>Select a host on the map or in Services to view its details and available actions.</p></div>}>
         {(h) => <>
           <div class="ihost">
             <div>
@@ -39,11 +39,11 @@ export function Inspector(props: {
           <div class="badges">
             <Show when={sessions().length > 0} fallback={
               creds().length > 0
-                ? <span class="bdg amb"><i class="ph ph-key"></i>valid login found</span>
-                : <span class="bdg gry"><i class="ph ph-x"></i>no access</span>
+                ? <span class="bdg amb"><i aria-hidden="true" class="ph ph-key"></i>valid login found</span>
+                : <span class="bdg gry"><i aria-hidden="true" class="ph ph-x"></i>no access</span>
             }>
-              <span class="bdg red"><i class="ph-fill ph-lightning"></i>access obtained</span>
-              <span class="bdg grn"><i class="ph ph-pulse"></i>{sessions().length} session{sessions().length > 1 ? "s" : ""} live</span>
+              <span class="bdg grn"><i aria-hidden="true" class="ph-fill ph-lightning"></i>access obtained</span>
+              <span class="bdg grn"><i aria-hidden="true" class="ph ph-pulse"></i>{sessions().length} session{sessions().length > 1 ? "s" : ""} live</span>
             </Show>
           </div>
 
@@ -77,7 +77,7 @@ export function Inspector(props: {
                   <b>{creds().length > 0 ? "Valid credentials found" : "No access on this host"}</b>
                   <div class="abtns">
                     <button class="abtn" onClick={() => props.onLogin(h().address)}>
-                      <i class="ph ph-key"></i>Login as…
+                      <i aria-hidden="true" class="ph ph-key"></i>Login as…
                     </button>
                   </div>
                 </div>
@@ -89,7 +89,7 @@ export function Inspector(props: {
                     <div class="aline">via {s!.viaExploit}</div>
                     <div class="abtns">
                       <button class="abtn" onClick={() => props.onInteract(s!.id)}>
-                        <i class="ph ph-terminal-window"></i>Interact
+                        <i aria-hidden="true" class="ph ph-terminal-window"></i>Interact
                       </button>
                     </div>
                   </>

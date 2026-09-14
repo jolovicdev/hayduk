@@ -1410,10 +1410,25 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The echo precedes the idle read that restores readiness.
+	expectEcho := func() {
+		deadline := time.After(5 * time.Second)
+		for {
+			select {
+			case m := <-sub.C():
+				out, ok := m.(protocol.ConsoleOutputMsg)
+				if ok && out.Data == "msf > silent-command\n" {
+					return
+				}
+			case <-deadline:
+				t.Fatal("the written command was never echoed")
+			}
+		}
+	}
 	expectQuiet := func() {
 		select {
 		case m := <-sub.C():
-			t.Fatalf("console.write broadcast %+v before an idle post-write read", m)
+			t.Fatalf("console.write broadcast %+v beyond the echo", m)
 		default:
 		}
 	}
@@ -1434,6 +1449,7 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 	}
 
 	write()
+	expectEcho()
 	expectQuiet()
 	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
 	expectRestore()
@@ -1462,6 +1478,9 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 				case protocol.ConsoleOutputMsg:
 					if strings.HasSuffix(up.Data, "msf > ") {
 						t.Fatalf("stale read streamed a ready prompt: %q", up.Data)
+					}
+					if strings.Contains(up.Data, "background output") {
+						sawUpdate = true
 					}
 				}
 			case <-time.After(200 * time.Millisecond):
@@ -1497,7 +1516,12 @@ func TestReconnectKeepsSessionAttribution(t *testing.T) {
 	})
 
 	e := connectedEngine(t, f)
-	// sessions 1 and 2 open while client-alpha is active
+	// sessions 1 and 2 open while client-alpha is active: the daemon lists
+	// them, so the reconcile pass that prunes unlisted sessions keeps them
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "target_host": "10.0.0.1", "uuid": "uuid-1"},
+		"2": map[string]interface{}{"type": "shell", "uuid": "uuid-2"},
+	})
 	e.mu.Lock()
 	mon := e.monitor
 	e.mu.Unlock()
@@ -1549,6 +1573,11 @@ func TestSessionAttributionValidatesUUID(t *testing.T) {
 	})
 
 	e := connectedEngine(t, f)
+	// the daemon lists session 1, so the reconcile pass that prunes
+	// unlisted sessions keeps it while the open event attributes it
+	daemonSessions.Store(map[string]interface{}{
+		"1": map[string]interface{}{"type": "shell", "uuid": "uuid-old"},
+	})
 	e.mu.Lock()
 	mon := e.monitor
 	e.mu.Unlock()
@@ -1556,9 +1585,6 @@ func TestSessionAttributionValidatesUUID(t *testing.T) {
 		Session: &gomsf.Session{Type: "shell", UUID: "uuid-old"}})
 
 	// same daemon, same session: the uuid matches, attribution restores
-	daemonSessions.Store(map[string]interface{}{
-		"1": map[string]interface{}{"type": "shell", "uuid": "uuid-old"},
-	})
 	e.Disconnect()
 	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
 		t.Fatalf("reconnect: %+v", err)

@@ -1,6 +1,6 @@
-export const NW = 216, NH = 78;
-export const GROUP_INSET = 18, GROUP_HEADER = 58;
-const HGAP = 26, VGAP = 36, GROUP_GAP = 60, WRAP = 3;
+export const NW = 240, NH = 124;
+export const GROUP_INSET = 22, GROUP_HEADER = 66;
+const HGAP = 26, VGAP = 36, GROUP_GAP = 40;
 
 export interface Position { x: number; y: number }
 
@@ -99,23 +99,37 @@ function groupedAddresses(hosts: { address: string }[]): Map<string, string[]> {
   })]));
 }
 
-export function baseLayout(hosts: { address: string }[]): Map<string, Position> {
+export function baseLayout(hosts: { address: string }[], columns = 3, groupColumns = 1): Map<string, Position> {
   const positions = new Map<string, Position>();
-  let groupY = 0;
+  const groups = [...groupedAddresses(hosts).values()];
+  const heights = groups.map(addresses => groupHeight(addresses.length, columns));
+  const widths = groups.map(addresses => groupWidth(addresses.length, columns));
+  const stackOf = stackAssignment(heights, groupColumns);
+  const stackWidth = new Array<number>(groupColumns).fill(0);
+  groups.forEach((_, i) => {
+    stackWidth[stackOf[i]!] = Math.max(stackWidth[stackOf[i]!]!, widths[i]!);
+  });
+  const stackX: number[] = [];
+  let x = 0;
+  for (let stack = 0; stack < groupColumns; stack++) {
+    stackX.push(x);
+    x += stackWidth[stack]! + GROUP_GAP;
+  }
+  const stackY = new Array<number>(groupColumns).fill(0);
 
-  for (const addresses of groupedAddresses(hosts).values()) {
+  groups.forEach((addresses, i) => {
+    const stack = stackOf[i]!;
+    const base = stackY[stack]!;
     addresses.forEach((address, index) => {
-      const column = index % WRAP;
-      const row = Math.floor(index / WRAP);
+      const column = index % columns;
+      const row = Math.floor(index / columns);
       positions.set(address, {
-        x: GROUP_INSET + column * (NW + HGAP),
-        y: groupY + GROUP_HEADER + row * (NH + VGAP),
+        x: stackX[stack]! + GROUP_INSET + column * (NW + HGAP),
+        y: base + GROUP_HEADER + row * (NH + VGAP),
       });
     });
-
-    const rows = Math.ceil(addresses.length / WRAP);
-    groupY += GROUP_HEADER + rows * NH + Math.max(0, rows - 1) * VGAP + GROUP_INSET + GROUP_GAP;
-  }
+    stackY[stack] = base + heights[i]! + GROUP_GAP;
+  });
 
   return positions;
 }
@@ -123,11 +137,65 @@ export function baseLayout(hosts: { address: string }[]): Map<string, Position> 
 export function layoutHosts(
   hosts: { address: string }[],
   sticky: Map<string, Position>,
+  columns = 3,
+  groupColumns = 1,
 ): Map<string, Position> {
-  const positions = baseLayout(hosts);
+  const positions = baseLayout(hosts, columns, groupColumns);
   for (const [address, position] of sticky) {
     if (positions.has(address)) positions.set(address, position);
   }
+  return positions;
+}
+
+// Preserve held positions and place new hosts in free cells in their subnet
+// so discovery does not move or overlap existing hosts.
+export function layoutWithHeld(
+  hosts: { address: string }[],
+  held: Map<string, Position>,
+  columns: number,
+  groupColumns: number,
+): Map<string, Position> {
+  const positions = new Map(held);
+  const base = baseLayout(hosts, columns, groupColumns);
+
+  const occupied = (x: number, y: number) => {
+    for (const p of positions.values()) {
+      if (x < p.x + NW && x + NW > p.x && y < p.y + NH && y + NH > p.y) return true;
+    }
+    return false;
+  };
+
+  // per-subnet grid anchor: the top-left-most held host
+  const anchors = new Map<string, Position>();
+  for (const [address, position] of held) {
+    const key = subnetKey(address);
+    const anchor = anchors.get(key);
+    if (!anchor || position.y < anchor.y || (position.y === anchor.y && position.x < anchor.x)) {
+      anchors.set(key, { x: position.x, y: position.y });
+    }
+  }
+
+  for (const [address, slot] of base) {
+    if (positions.has(address)) continue;
+    const anchor = anchors.get(subnetKey(address));
+    if (!anchor) {
+      positions.set(address, slot); // a wholly new subnet has nothing to hit
+      continue;
+    }
+    let placed = false;
+    for (let row = 0; row < 512 && !placed; row++) {
+      for (let column = 0; column < 32 && !placed; column++) {
+        const x = anchor.x + column * (NW + HGAP);
+        const y = anchor.y + row * (NH + VGAP);
+        if (!occupied(x, y)) {
+          positions.set(address, { x, y });
+          placed = true;
+        }
+      }
+    }
+    if (!placed) positions.set(address, slot); // unreachable grid cap
+  }
+
   return positions;
 }
 
@@ -154,4 +222,79 @@ export function subnetGroups(
   }
 
   return groups;
+}
+
+// Host and group column counts determine the aspect ratio used when fitting.
+export interface LayoutPlan {
+  columns: number;
+  groupColumns: number;
+}
+
+const MAX_HOST_COLUMNS = 8;
+
+function groupHeight(count: number, columns: number): number {
+  const rows = Math.ceil(count / columns);
+  return GROUP_HEADER + rows * NH + Math.max(0, rows - 1) * VGAP + GROUP_INSET;
+}
+
+function groupWidth(count: number, columns: number): number {
+  const used = Math.min(count, columns);
+  return used * NW + (used - 1) * HGAP + GROUP_INSET * 2;
+}
+
+// Subnet order makes the height-based assignment deterministic.
+function stackAssignment(heights: number[], stacks: number): number[] {
+  const totals = new Array<number>(stacks).fill(0);
+  return heights.map(height => {
+    let target = 0;
+    for (let stack = 1; stack < stacks; stack++) if (totals[stack]! < totals[target]!) target = stack;
+    totals[target] = totals[target]! + height + GROUP_GAP;
+    return target;
+  });
+}
+
+// planBounds measures the world a plan produces: each stack is as wide as
+// its widest group and as tall as its groups plus the gaps between them.
+function planBounds(counts: number[], columns: number, groupColumns: number): { w: number; h: number } {
+  const heights = counts.map(count => groupHeight(count, columns));
+  const widths = counts.map(count => groupWidth(count, columns));
+  const stackOf = stackAssignment(heights, groupColumns);
+  const stackW = new Array<number>(groupColumns).fill(0);
+  const stackH = new Array<number>(groupColumns).fill(0);
+  counts.forEach((_, i) => {
+    const stack = stackOf[i]!;
+    stackW[stack] = Math.max(stackW[stack]!, widths[i]!);
+    stackH[stack] = stackH[stack] === 0 ? heights[i]! : stackH[stack]! + GROUP_GAP + heights[i]!;
+  });
+  return {
+    w: stackW.reduce((sum, width) => sum + width, 0) + (groupColumns - 1) * GROUP_GAP,
+    h: Math.max(0, ...stackH),
+  };
+}
+
+export function layoutPlan(hosts: { address: string }[], width: number, height: number, routeWidth: number): LayoutPlan {
+  const counts = [...groupedAddresses(hosts).values()].map(addresses => addresses.length);
+  if (counts.length === 0 || width <= 0 || height <= 0) return { columns: 3, groupColumns: 1 };
+  const maxCount = Math.max(...counts);
+  let best: LayoutPlan = { columns: 1, groupColumns: 1 };
+  let bestScale = 0;
+  for (let columns = 1; columns <= Math.min(MAX_HOST_COLUMNS, maxCount); columns++) {
+    for (let groupColumns = 1; groupColumns <= counts.length; groupColumns++) {
+      const bounds = planBounds(counts, columns, groupColumns);
+      const scale = Math.min(width / (bounds.w + routeWidth), height / bounds.h);
+      if (scale > bestScale) {
+        best = { columns, groupColumns };
+        bestScale = scale;
+      }
+    }
+  }
+  return best;
+}
+
+export function pivotPath(from: Position, to: Position, lane: number): string {
+  const rowLane = from.y + 18;
+  const direction = to.y < rowLane ? -1 : 1;
+  const exit = to.x < lane ? -1 : 1;
+  const radius = Math.min(8, Math.abs(to.y - rowLane) / 2);
+  return `M ${from.x} ${from.y} V ${rowLane - 8} Q ${from.x} ${rowLane} ${from.x + 8} ${rowLane} H ${lane - radius} Q ${lane} ${rowLane} ${lane} ${rowLane + direction * radius} V ${to.y - direction * radius} Q ${lane} ${to.y} ${lane + exit * radius} ${to.y} H ${to.x}`;
 }

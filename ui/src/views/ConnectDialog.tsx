@@ -2,7 +2,7 @@ import { createSignal, Show } from "solid-js";
 import type { ConnectionState } from "../protocol/types";
 import { HaydukMark } from "../components/mark";
 import { events } from "../stores/events";
-import { CONNECT_DEFAULTS, loadConnectDefaults, parsePort } from "./connectForm";
+import { CONNECT_DEFAULTS, friendlyConnectError, loadConnectDefaults, parsePort } from "./connectForm";
 
 export default function ConnectDialog(props: {
   conn: ConnectionState;
@@ -44,7 +44,6 @@ export default function ConnectDialog(props: {
     } catch (err: any) {
       setError(err.message ?? String(err));
     } finally {
-      // settled is settled: the timer must not outlive a successful connect
       if (timer !== undefined) window.clearTimeout(timer);
       setBusy(false);
     }
@@ -52,15 +51,16 @@ export default function ConnectDialog(props: {
 
   return (
     <div class="modalback show">
-      <form class="modal" style="width:380px" onSubmit={connect}>
+      <form class="modal connect-modal" aria-labelledby="connect-title" onSubmit={connect}>
         <div class="mhead">
           <HaydukMark size={30} />
           <div>
-            <div class="mtitle">Connect to msfrpcd</div>
-            <div class="mver">Metasploit operations, mapped.</div>
+            <div class="eyebrow">METASPLOIT CONNECTION</div>
+            <div class="mtitle" id="connect-title">Connect to msfrpcd</div>
           </div>
         </div>
 
+        <p>Enter the host, port, and credentials for your Metasploit RPC server.</p>
         <Show when={connecting()} fallback={
           <>
             <div style="margin-top:16px; display:grid; gap:10px">
@@ -89,11 +89,21 @@ export default function ConnectDialog(props: {
             </div>
 
             <Show when={props.conn.error || error()}>
-              <p style="color:var(--red-br); margin-top:12px">{props.conn.error || error()}</p>
+              {(_) => {
+                const mapped = friendlyConnectError(props.conn.error || error());
+                return <>
+                  <p role="alert" style="color:var(--red-br); margin-top:12px">{mapped.primary}</p>
+                  <Show when={mapped.detail}>
+                    <p style="margin-top:2px; font:400 10.5px var(--mono); color:var(--tx2); word-break:break-all">
+                      {mapped.detail}
+                    </p>
+                  </Show>
+                </>;
+              }}
             </Show>
 
             <div class="mbtns">
-              <button class="abtn" type="submit" disabled={busy() || !valid()} style="flex:none; padding:0 20px">
+              <button class="tbtn primary" type="submit" disabled={busy() || !valid()} style="flex:none; padding:0 20px">
                 {busy() ? "Connecting…" : "Connect"}
               </button>
             </div>

@@ -278,6 +278,8 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
 	}
 	e.jobs = make(map[string]*protocol.JobState)
+	e.exploitRuns = nil
+	e.earlySessions = nil
 	e.errStreak = 0
 	e.gen = gen + 1
 	e.mu.Unlock()
@@ -340,6 +342,9 @@ func (e *Engine) Disconnect() {
 	e.jobs = make(map[string]*protocol.JobState)
 	e.interactSID = ""
 	e.interactOut = nil
+	// Clear pending runs so their timers cannot warn after disconnect.
+	e.exploitRuns = nil
+	e.earlySessions = nil
 	if e.conn.Status != "disconnected" {
 		e.conn.Status = "disconnected"
 		e.conn.Error = ""

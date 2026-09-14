@@ -1,5 +1,6 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
+import { FilterSelect } from "../components/FilterSelect";
 import { ws } from "../ws/singleton";
 import { CommandError } from "../ws/client";
 import { campaignState } from "../stores/store";
@@ -30,21 +31,19 @@ export function FindAttacksDialog(props: {
   return (
     <Modal title="Find attacks" onClose={props.onClose} width="600px">
       <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
-        Matching is honest and dumb: an exploit is offered when its module path names a service the
-        host runs, with the host's os family as a nudge. It knows nothing about versions or patch
-        levels; verify before launching.
+        Matches use service names in module paths and the host's OS family.
+        Versions and patch levels are not checked. Verify compatibility before launching.
       </p>
       <Show when={hosts().length > 0} fallback={
         <p style="color:var(--red-br); margin-top:14px">
           No hosts in the workspace yet; discover hosts first.
         </p>
       }>
-        <label style="margin-top:14px; display:grid; gap:4px">
+        <div style="margin-top:14px; display:grid; gap:4px">
           <span style="font:500 11px var(--sans); color:var(--tx1)">Host</span>
-          <select value={host() ?? ""} onChange={(e) => setHost(e.currentTarget.value)}>
-            <For each={hosts()}>{(h) => <option value={h}>{h}</option>}</For>
-          </select>
-        </label>
+          <FilterSelect options={hosts().map(h => ({ value: h }))}
+            value={host() ?? ""} label="hosts" onChange={setHost} />
+        </div>
 
         <Show when={!result.loading && result.latest}>
           {(r) => (
