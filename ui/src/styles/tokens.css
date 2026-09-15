@@ -2,6 +2,8 @@
   color-scheme:dark;
   --accent:#c4edac;
   --accent-dim:rgba(196,237,172,.10);
+  --accent-ink:#192416;
+  --accent-hi:#d5f6c3;
   --bg0:#101516;            /* page canvas */
   --bg1:#191f21;            /* cards */
   --bg2:#242d30;            /* hover, elevated */
@@ -19,6 +21,8 @@
   --grn:#3fa87c;
   --grn-tx:#55c78f;
   --grn-dim:rgba(63,168,124,.16);
+  --live-line:#45533f;
+  --live-fill:#242e22;
   --route:#b1a3ed;
   --route-dim:rgba(177,163,237,.10);
   --amb:#e3b76a;
@@ -40,13 +44,14 @@ body {
 }
 button { font:inherit; color:inherit; background:none; border:0; cursor:pointer; }
 button:disabled { opacity:.4; cursor:not-allowed; }
+input[type="checkbox"] { accent-color:var(--accent); }
 :focus-visible { outline:2px solid var(--accent); outline-offset:1px; border-radius:4px; }
 ::selection { background:var(--accent-dim); }
 
 *::-webkit-scrollbar { width:10px; height:10px; }
-*::-webkit-scrollbar-thumb { background:#3a484c; border:3px solid var(--bg1); border-radius:6px; }
+*::-webkit-scrollbar-thumb { background:var(--line); border:3px solid var(--bg1); border-radius:6px; }
 *::-webkit-scrollbar-track { background:transparent; }
-* { scrollbar-width:thin; scrollbar-color:#3a484c transparent; }
+* { scrollbar-width:thin; scrollbar-color:var(--line) transparent; }
 
 i.ph, i.ph-fill { display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; font-size:16px; flex:none; }
 

@@ -86,9 +86,6 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]) {
   const pos = placeMenu(x, y, w, h, window.innerWidth, window.innerHeight);
   menuEl.style.left = pos.x + "px";
   menuEl.style.top = pos.y + "px";
-  // keyboard operators land in the menu instead of being stranded on the
-  // opener with the focus already visually elsewhere
-  menuEl.querySelector<HTMLButtonElement>("button.citem")?.focus();
 }
 
 export function ContextMenuRoot() {

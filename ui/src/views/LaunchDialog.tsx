@@ -136,7 +136,12 @@ export function LaunchDialog(props: {
   return (
     <Modal title={`Launch ${props.path}`} onClose={props.onClose} width="560px">
       <Show when={!info.loading && !info.error && info()} fallback={
-        <Show when={info.error} fallback={<p>Loading module…</p>}>
+        <Show when={info.error} fallback={
+          <div class="opt-skeleton tight" aria-hidden="true">
+            <div class="skel"></div>
+            <div class="skel short"></div>
+          </div>
+        }>
           <p style="color:var(--red-br); margin-top:4px">
             Could not load module info: {String((info.error as Error)?.message ?? info.error)}
           </p>
@@ -183,14 +188,25 @@ export function LaunchDialog(props: {
         </p>
       </Show>
 
+      <Show when={payloads.loading}>
+        <div class="opt-skeleton tight" aria-hidden="true">
+          <div class="skel"></div>
+          <div class="skel short"></div>
+        </div>
+      </Show>
       <Show when={!payloads.loading && (payloads.latest?.length ?? 0) > 0}>
         <div style="margin-top:12px; display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">PAYLOAD</span>
+          <span style="font:500 11px var(--sans); color:var(--tx1)">Payload</span>
           <FilterSelect
             options={(payloads.latest ?? []).map(p => ({ value: p, group: payloadGroup(p) }))}
             value={payload()} label="payloads" blankLabel="(default)"
             onChange={(p) => { setPayload(p); setPayloadValues({}); }} />
         </div>
+        <Show when={payload() && payloadOptions.loading}>
+          <div class="opt-skeleton tight" aria-hidden="true">
+            <div class="skel"></div>
+          </div>
+        </Show>
         <Show when={payload() && !payloadOptions.loading && Object.keys(payMap()).length > 0}>
           <div style="margin-top:10px; display:grid; gap:10px; max-height:180px; overflow:auto; padding-right:6px">
             <For each={Object.keys(payMap())}>{(name) =>

@@ -58,7 +58,7 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
       </p>
       <div style="margin-top:14px; display:flex; align-items:center; gap:8px">
         <button class="abtn" style="flex:none" onClick={toggleAll}>
-          {allPicked() ? "clear all" : "select all"}
+          {picked().size > 0 && allPicked() ? "clear all" : "select all"}
         </button>
         <label style="display:grid; gap:4px; width:110px">
           <span style="font:500 11px var(--sans); color:var(--tx1)">Max per host</span>
@@ -69,7 +69,7 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
       <div style="margin-top:10px; display:grid; gap:6px; max-height:240px; overflow:auto; padding-right:6px">
         <For each={hosts()}>{(addr) => (
           <label style="display:flex; align-items:center; gap:9px; background:var(--well);
-            border:1px solid var(--line); border-radius:7px; padding:7px 10px; cursor:pointer">
+            border:1px solid var(--line); border-radius:6px; padding:7px 10px; cursor:pointer">
             <input type="checkbox" checked={picked().has(addr)} onChange={() => toggle(addr)} />
             <span style="font:400 12px var(--mono); color:var(--tx0)">{addr}</span>
           </label>
@@ -77,7 +77,7 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
       </div>
       <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
       <div class="mbtns">
-        <button class="abtn" style="flex:none; padding:0 20px; background:var(--red); border-color:var(--red); color:#fff"
+        <button class="abtn" style="flex:none; padding:0 20px; background:var(--red); border-color:var(--red); color:var(--tx0)"
           disabled={busy() || picked().size === 0} onClick={() => void launch()}>
           {busy() ? "Launching…" : `Launch at ${picked().size} host${picked().size === 1 ? "" : "s"}`}
         </button>

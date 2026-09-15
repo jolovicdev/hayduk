@@ -51,7 +51,7 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
   }
 
   return (
-    <Modal title={`Login as… ${props.host}`} onClose={props.onClose} width="480px">
+    <Modal title={`Login as ${props.host}`} onClose={props.onClose} width="480px">
       <Show when={modules().length > 0} fallback={
         <p style="color:var(--red-br); margin-top:4px">
           No SMB or SSH service known on this host. Scan it first, or pick a login module from the tree.
