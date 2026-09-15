@@ -445,6 +445,21 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 		return &protocol.ErrorBody{Code: protocol.CodeBusy, Message: "session " + p.SID + " is not attached; attach first"}
 	}
 	data := strings.TrimSuffix(p.Data, "\n") + "\n"
+	prompt := p.SID + " sh > "
+	if session.Type == "meterpreter" {
+		prompt = "meterpreter " + p.SID + " > "
+	}
+	echo := prompt + strings.TrimSuffix(p.Data, "\n") + "\n"
+	// Session streams do not echo commands. Store the echo in the engine
+	// transcript for re-attach and other operators, using the browser's
+	// prompt format. The echo must precede the write: the monitor can
+	// deliver the command's output while the write is still in flight.
+	e.mu.Lock()
+	if e.interactSID == p.SID {
+		e.interactOut = appendCapped(e.interactOut, []byte(echo))
+		e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: p.SID, Data: echo})
+	}
+	e.mu.Unlock()
 	var err error
 	if session.Type == "meterpreter" {
 		err = gomsf.NewMeterpreterSession(rpc, p.SID).Write(ctx, data)
@@ -454,21 +469,6 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 	if err != nil {
 		return mapErr(err)
 	}
-	// Session streams do not echo commands. Store the echo in the engine
-	// transcript for re-attach and other operators, using the browser's
-	// prompt format. An in-flight monitor read may deliver command output
-	// before the write RPC returns and the echo is appended.
-	prompt := p.SID + " sh > "
-	if session.Type == "meterpreter" {
-		prompt = "meterpreter " + p.SID + " > "
-	}
-	echo := prompt + strings.TrimSuffix(p.Data, "\n") + "\n"
-	e.mu.Lock()
-	if e.interactSID == p.SID {
-		e.interactOut = appendCapped(e.interactOut, []byte(echo))
-		e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: p.SID, Data: echo})
-	}
-	e.mu.Unlock()
 	return nil
 }
 
