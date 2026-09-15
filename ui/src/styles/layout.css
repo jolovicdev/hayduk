@@ -80,7 +80,7 @@
 .stage { grid-area:stage; display:flex; flex-direction:column; }
 .stagehead { display:flex; align-items:center; gap:10px; height:56px; padding:0 12px; user-select:none; }
 .stagehead .spacer { flex:1; }
-.stagebody { position:relative; flex:1; margin:0; border-radius:0 0 12px 12px; overflow:hidden; background:var(--well); }
+.stagebody { position:relative; flex:1; margin:0; border-radius:0 0 12px 12px; overflow:hidden; background:var(--well); container:mapstage / inline-size; }
 .view { position:absolute; inset:0; }
 .view[hidden] { display:none; }
 

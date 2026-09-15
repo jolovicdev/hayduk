@@ -338,7 +338,9 @@ table.dt .dim { color:var(--tx1); }
 /* The tooltip preserves the full session banner when the row truncates it. */
 .row-info { display:inline-block; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; color:var(--tx2); }
 
-/* On narrow viewports, counts remain in the metric cards and subnet chips
-   provide zoom controls. The span qualifier overrides the bar's plain span rule. */
-@media (max-width:1100px) { .map-context > span:first-child { display:none; } }
-@media (max-width:640px) { .map-context > span.map-context-hint { display:none; } }
+/* Resizable side panels determine the available stage width. On narrow
+   stages, counts remain in the metric cards and subnet chips provide zoom
+   controls. The span qualifier overrides the bar's plain span rule.
+   The named container scopes these queries to the stage. */
+@container mapstage (max-width:560px) { .map-context > span:first-child { display:none; } }
+@container mapstage (max-width:400px) { .map-context > span.map-context-hint { display:none; } }
