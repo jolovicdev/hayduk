@@ -32,6 +32,18 @@ function OptionField(props: {
   onEdit: (v: unknown) => void;
 }) {
   const kind = () => optionKind(props.def);
+  if (kind() === "bool") {
+    return (
+      <label style="display:flex; gap:8px; align-items:center; font:400 12.5px var(--sans); color:var(--tx1); cursor:pointer">
+        <input type="checkbox" checked={props.value() === true || props.value() === "true"}
+          onChange={(e) => props.onEdit(e.currentTarget.checked)} />
+        <span>{props.name}
+          <Show when={props.def.required}><span style="color:var(--red-br)"> *</span></Show>
+          <span style="color:var(--tx2)"> ({props.def.desc})</span>
+        </span>
+      </label>
+    );
+  }
   return (
     <label style="display:grid; gap:4px">
       <span style="font:500 11px var(--sans); color:var(--tx1)">
@@ -39,20 +51,15 @@ function OptionField(props: {
         <Show when={props.def.required}><span style="color:var(--red-br)"> *</span></Show>
         <span style="color:var(--tx2)"> ({props.def.desc})</span>
       </span>
-      <Show when={kind() === "bool"} fallback={
-        <Show when={kind() === "enum"} fallback={
-          <input value={String(props.value() ?? "")}
-            inputMode={kind() === "number" ? "numeric" : undefined}
-            onInput={(e) => props.onEdit(e.currentTarget.value)} />
-        }>
-          <select value={String(props.value() ?? "")}
-            onChange={(e) => props.onEdit(e.currentTarget.value)}>
-            <For each={props.def.enums ?? []}>{(en) => <option value={en}>{en}</option>}</For>
-          </select>
-        </Show>
+      <Show when={kind() === "enum"} fallback={
+        <input value={String(props.value() ?? "")}
+          inputMode={kind() === "number" ? "numeric" : undefined}
+          onInput={(e) => props.onEdit(e.currentTarget.value)} />
       }>
-        <input type="checkbox" checked={props.value() === true || props.value() === "true"}
-          onChange={(e) => props.onEdit(e.currentTarget.checked)} />
+        <select value={String(props.value() ?? "")}
+          onChange={(e) => props.onEdit(e.currentTarget.value)}>
+          <For each={props.def.enums ?? []}>{(en) => <option value={en}>{en}</option>}</For>
+        </select>
       </Show>
     </label>
   );
