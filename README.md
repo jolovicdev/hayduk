@@ -24,18 +24,7 @@ The steps below assume Hayduk and Metasploit run on the same machine. If you nee
 
 ### 1. Download and extract Hayduk
 
-Open the [latest release](https://github.com/jolovicdev/hayduk/releases/latest) and choose the archive for your operating system and processor:
-
-| Your machine | Release platform | Architecture |
-|---|---|---|
-| Linux on Intel or AMD 64-bit | `linux` | `amd64` |
-| Linux on ARM64 | `linux` | `arm64` |
-| macOS on Intel | `darwin` | `amd64` |
-| macOS on Apple silicon | `darwin` | `arm64` |
-| Windows on Intel or AMD 64-bit | `windows` | `amd64` |
-| Windows on ARM64 | `windows` | `arm64` |
-
-Extract the archive into a folder. There is no Hayduk installer or separate UI setup.
+Open the [latest release](https://github.com/jolovicdev/hayduk/releases/latest) and choose the archive matching your operating system and processor. Extract the archive into a folder. There is no Hayduk installer or separate UI setup.
 
 ### 2. Start Metasploit RPC
 
@@ -99,7 +88,9 @@ The network map adapts host columns to the available canvas. Choose **Focus** to
 4. **Launch an exploit and open a session.** Right-click an exploit module in the tree and choose **Launch…**, or open **Campaign → Find attacks…** and click a match's **Launch** button to prefill the target host and matched port. Review the module options and payload, then click **Launch**. If a session opens, click its row in the **Sessions** tab, or right-click its host and choose **Interact with session <ID>**, to open the live console in **Interact**.
 5. **Export a report.** Choose **File → Export report…** to download a self-contained HTML campaign report.
 
-![Hayduk Metasploit GUI demo showing module selection, a detected service, and a live shell session](docs/demo.gif)
+![Hayduk demo: select a host on the topology map and run commands in its live shell session](docs/demo.gif)
+
+*Demo uses illustrative campaign data.*
 
 ## Features
 
@@ -120,7 +111,7 @@ The network map adapts host columns to the available canvas. Choose **Focus** to
 
 ## Try the Docker lab
 
-The repository includes a disposable Metasploit lab with a database and optional target containers. The demo above uses this lab.
+The repository includes a disposable Metasploit lab with a database and optional target containers. Run it to try the workflow from the demo against live targets.
 
 You need Git, Docker, and Docker Compose. Run these commands from a shell that supports the repository's `.sh` scripts:
 
