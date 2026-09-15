@@ -1,4 +1,5 @@
 import { JSX, For, Show } from "solid-js";
+import { EmptyState } from "./EmptyState";
 
 export type Column<T> = {
   key: string;
@@ -13,7 +14,9 @@ export function DataTable<T>(props: {
   rows: T[];
   rowKey: (row: T) => string;
   selectedKey?: () => string | undefined;
+  emptyTitle: string;
   empty?: string;
+  emptyIcon?: string;
   onRowClick?: (row: T) => void;
   onRowContextMenu?: (row: T, e: MouseEvent) => void;
 }) {
@@ -27,9 +30,9 @@ export function DataTable<T>(props: {
         </thead>
         <tbody>
           <Show when={props.rows.length > 0} fallback={
-            <Show when={props.empty}>
-              <tr><td class="dtempty" colSpan={props.columns.length}>{props.empty}</td></tr>
-            </Show>
+            <tr><td colSpan={props.columns.length}>
+              <EmptyState icon={props.emptyIcon ?? "table"} title={props.emptyTitle} body={props.empty} />
+            </td></tr>
           }>
             <For each={props.rows}>{(row) => (
               <tr

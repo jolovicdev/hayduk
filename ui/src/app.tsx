@@ -387,7 +387,7 @@ export default function App() {
             </div>
           </div>
           <div class="view" hidden={stage() !== "svc"}>
-            <ServicesView onInspect={(addr) => setSelectedHost(addr)} />
+            <ServicesView onInspect={(addr) => setSelectedHost(addr)} selected={selectedHost()} />
           </div>
         </div>
       </main>
@@ -492,7 +492,7 @@ export default function App() {
       </Show>
 
       <Show when={showAbout()}>
-        <Modal title="About Hayduk" onClose={() => setShowAbout(false)}>
+        <Modal title="About hayduk" onClose={() => setShowAbout(false)}>
           <div style="margin-top:10px; display:flex; align-items:center; gap:14px">
             <HaydukMark size={44} tile />
             <div>

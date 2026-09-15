@@ -70,7 +70,7 @@ export default function ConnectDialog(props: {
               </label>
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
                 <label class="kv"><b>Port</b>
-                  <input type="number" value={d().port}
+                  <input inputmode="numeric" value={d().port}
                     classList={{ invalid: !portValid() }}
                     onInput={(e) => setD({ ...d(), port: Number(e.currentTarget.value) })} />
                 </label>
@@ -103,7 +103,7 @@ export default function ConnectDialog(props: {
             </Show>
 
             <div class="mbtns">
-              <button class="tbtn primary" type="submit" disabled={busy() || !valid()} style="flex:none; padding:0 20px">
+              <button class="abtn" type="submit" disabled={busy() || !valid()} style="flex:none; padding:0 20px">
                 {busy() ? "Connecting…" : "Connect"}
               </button>
             </div>

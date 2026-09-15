@@ -45,11 +45,18 @@ export function FindAttacksDialog(props: {
             value={host() ?? ""} label="hosts" onChange={setHost} />
         </div>
 
+        <Show when={result.loading}>
+          <div class="opt-skeleton" aria-hidden="true">
+            <div class="skel"></div>
+            <div class="skel"></div>
+            <div class="skel short"></div>
+          </div>
+        </Show>
         <Show when={!result.loading && result.latest}>
           {(r) => (
             <div style="margin-top:14px; display:grid; gap:6px; max-height:320px; overflow:auto; padding-right:6px">
               <For each={r().matches} fallback={
-                <p style="color:var(--tx2)">No exploits matched this host's services.</p>
+                <p style="color:var(--tx2); text-align:center; padding:12px 0">No exploits matched this host's services.</p>
               }>
                 {(m) => (
                   <div class="fmatch">

@@ -11,6 +11,9 @@ export function CredsView() {
     <DataTable
       rows={rows()}
       rowKey={(r) => `${r.host}:${r.port}:${r.user}:${r.pass}`}
+      emptyTitle="No credentials"
+      emptyIcon="key"
+      empty="Recovered passwords and hashes appear here."
       onRowContextMenu={(r, e) => {
         openContextMenuFor(e, [
           { head: r.user || "(no user)", sub: `recovered credential on ${r.host}` },

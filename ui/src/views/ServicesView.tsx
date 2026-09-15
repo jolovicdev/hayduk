@@ -4,14 +4,17 @@ import { openContextMenuFor } from "../components/contextmenu";
 import { copyWithFeedback } from "../clipboard";
 import type { ServiceState } from "../protocol/types";
 
-export function ServicesView(props: { onInspect: (addr: string) => void }) {
+export function ServicesView(props: { onInspect: (addr: string) => void; selected?: string }) {
   const rows = () => campaignState().services.filter((s): s is ServiceState => !!s);
 
   return (
     <div class="svcwrap">
       <DataTable
         rows={rows()}
-        rowKey={(r) => `${r.host}:${r.port}:${r.proto}`}
+        rowKey={(r) => r.host}
+        selectedKey={() => props.selected}
+        emptyTitle="No services"
+        emptyIcon="stack"
         empty="No services discovered yet; run a services scan or open a host in the inspector."
         onRowClick={(r) => props.onInspect(r.host)}
         onRowContextMenu={(r, e) => {

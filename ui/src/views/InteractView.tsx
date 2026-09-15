@@ -1,5 +1,6 @@
 import { Show } from "solid-js";
 import { ConsoleView } from "../components/ConsoleView";
+import { EmptyState } from "../components/EmptyState";
 import { detach, interactOutput, interactSID, write } from "../stores/interact";
 import { campaignState } from "../stores/store";
 import { flash } from "../statusflash";
@@ -14,7 +15,7 @@ export function InteractView() {
   return (
     <Show when={interactSID()} fallback={
       <div class="console">
-        <div class="cl dim">No session attached. Right-click a session or host and choose Interact.</div>
+        <EmptyState icon="terminal-window" title="No session attached" body="Right-click a session or host and choose Interact." />
       </div>
     }>
       <div style="padding:8px 12px 0; display:flex; gap:8px; align-items:center">

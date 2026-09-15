@@ -4,6 +4,7 @@ import { rankChip } from "./rank";
 import { copyWithFeedback } from "../clipboard";
 import { campaignState } from "../stores/store";
 import { openContextMenuFor } from "./contextmenu";
+import { EmptyState } from "./EmptyState";
 
 export function ModuleTree(props: { onLaunch: (type: string, path: string) => void }) {
   const [query, setQuery] = createSignal("");
@@ -51,7 +52,7 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
 
   return (
     <Show when={root()} fallback={
-      <nav class="tree"><div class="module-empty">{total() === 0 ? "Connect to Metasploit to browse available modules." : "No modules."}</div></nav>
+      <nav class="tree"><EmptyState icon="tree" title="No modules" body={total() === 0 ? "Connect to Metasploit to browse available modules." : "No modules match this build's catalogue."} /></nav>
     }>
       {(r) => (
         <nav class="tree" classList={{ filtered: !!query() && keep().size === 0 }}>

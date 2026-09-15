@@ -45,7 +45,7 @@ export function ScanDialog(props: {
       <div class="mbtns">
         <button class="abtn" style="flex:none; padding:0 20px" disabled={!valid()}
           onClick={() => props.onConfigure(chosen(), target().trim())}>
-          Configure…
+          Launch…
         </button>
       </div>
     </Modal>

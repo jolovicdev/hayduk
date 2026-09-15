@@ -67,6 +67,9 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       <DataTable
         rows={rows()}
         rowKey={(r) => r.id}
+        emptyTitle="No sessions"
+        emptyIcon="broadcast"
+        empty="Sessions appear here when an exploit or handler opens a connection."
         onRowClick={(r) => props.onInteract(r.id)}
         onRowContextMenu={menu}
         columns={[

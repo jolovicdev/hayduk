@@ -9,6 +9,9 @@ export function LootView() {
     <DataTable
       rows={rows()}
       rowKey={(r) => `${r.host}:${r.type}:${r.name}`}
+      emptyTitle="No loot"
+      emptyIcon="archive"
+      empty="Captured files and tokens appear here."
       columns={[
         { key: "host", label: "HOST", mono: true },
         { key: "type", label: "TYPE", mono: true },

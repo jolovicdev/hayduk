@@ -382,7 +382,7 @@ export function TopologyGraph(props: {
       });
     }
     items.push(
-      { icon: "rocket-launch", label: "Run exploit…", fn: () => props.onLaunch(address) },
+      { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(address) },
       { icon: "key", label: "Login as…", fn: () => props.onLogin(address) },
       { sep: true },
       { icon: "copy", label: "Copy address", hint: address, fn: () => copyWithFeedback(address) },

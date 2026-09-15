@@ -15,6 +15,8 @@ export function JobsView(props: { onOpenModule?: (module: string) => void }) {
     <DataTable
       rows={rows()}
       rowKey={(r) => r.id}
+      emptyTitle="No jobs"
+      emptyIcon="gear"
       empty="No jobs running. Exploit handlers and long-running modules appear here the moment msf starts them."
       onRowContextMenu={(r, e) => {
         openContextMenuFor(e, [
