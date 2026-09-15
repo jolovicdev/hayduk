@@ -79,6 +79,7 @@ export function TopologyGraph(props: {
   const [userMoved, setUserMoved] = createSignal(false);
 
   const hosts = createMemo(() => campaignState().hosts.filter((h): h is HostState => !!h));
+  const hostsByAddress = createMemo(() => new Map(hosts().map(h => [h.address, h] as const)));
   let heldPlan: LayoutPlan = { columns: 3, groupColumns: 1 };
   const plan = createMemo(() => {
     const routeWidth = campaignState().routes.length > 0 ? GHOST_W + 100 : 0;
@@ -609,7 +610,7 @@ export function TopologyGraph(props: {
 
           <g class="topo-hosts">
             <For each={hosts().map(h => h.address)}>{address => {
-              const host = () => hosts().find(h => h.address === address)!;
+              const host = () => hostsByAddress().get(address)!;
               const position = () => positions().get(address);
               const hostAccess = () => access()(address);
               const badge = () => osBadge(host());
