@@ -8,13 +8,15 @@ export default function ConnectDialog(props: {
   conn: ConnectionState;
   onConnect: (p: { host: string; port: number; ssl: boolean; username: string; password: string }) => Promise<unknown>;
 }) {
-  const [d, setD] = createSignal(loadConnectDefaults());
+  // port stays a string: per-keystroke Number() renders "NaN" into the box
+  const loaded = loadConnectDefaults();
+  const [d, setD] = createSignal({ ...loaded, port: String(loaded.port) });
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
   const connecting = () => props.conn.status === "connecting";
-  const portValid = () => parsePort(String(d().port)) !== undefined;
+  const portValid = () => parsePort(d().port) !== undefined;
   const valid = () => d().host.trim() !== "" && portValid() && password() !== "";
   const progress = () => {
     if (!connecting()) return "";
@@ -24,10 +26,11 @@ export default function ConnectDialog(props: {
 
   async function connect(e: Event) {
     e.preventDefault();
-    if (connecting() || busy() || !valid()) return;
+    const port = parsePort(d().port);
+    if (connecting() || busy() || !valid() || port === undefined) return;
     setBusy(true);
     setError("");
-    const p = { ...d(), host: d().host.trim(), password: password() };
+    const p = { ...d(), host: d().host.trim(), port, password: password() };
     for (const k of Object.keys(CONNECT_DEFAULTS) as (keyof typeof CONNECT_DEFAULTS)[]) {
       localStorage.setItem("hayduk." + k, String((p as any)[k]));
     }
@@ -72,7 +75,7 @@ export default function ConnectDialog(props: {
                 <label class="kv"><b>Port</b>
                   <input inputmode="numeric" value={d().port}
                     classList={{ invalid: !portValid() }}
-                    onInput={(e) => setD({ ...d(), port: Number(e.currentTarget.value) })} />
+                    onInput={(e) => setD({ ...d(), port: e.currentTarget.value })} />
                 </label>
                 <label class="kv"><b>User</b>
                   <input value={d().username}
