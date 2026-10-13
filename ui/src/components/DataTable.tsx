@@ -22,7 +22,7 @@ export function DataTable<T>(props: {
 }) {
   return (
     <div class="dtwrap">
-      <table class="dt">
+      <table class="dt" classList={{ empty: props.rows.length === 0 }}>
         <thead>
           <tr>
             <For each={props.columns}>{(c) => <th style={c.width ? `width:${c.width}` : ""}>{c.label}</th>}</For>

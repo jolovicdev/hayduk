@@ -56,10 +56,13 @@
 .ph.ph-crosshair:before { content: "\e1d6"; }
 .ph-fill.ph-crosshair:before { content: "\e1d6"; }
 .ph.ph-dots-nine:before { content: "\e1fc"; }
-.ph.ph-dots-three:before { content: "\e1fe"; }
 .ph-fill.ph-dots-nine:before { content: "\e1fc"; }
+.ph.ph-dots-three:before { content: "\e1fe"; }
+.ph-fill.ph-dots-three:before { content: "\e1fe"; }
 .ph.ph-download-simple:before { content: "\e20c"; }
 .ph-fill.ph-download-simple:before { content: "\e20c"; }
+.ph.ph-file:before { content: "\e230"; }
+.ph-fill.ph-file:before { content: "\e230"; }
 .ph.ph-file-code:before { content: "\e914"; }
 .ph-fill.ph-file-code:before { content: "\e914"; }
 .ph.ph-fire:before { content: "\e242"; }
@@ -74,6 +77,8 @@
 .ph-fill.ph-graph:before { content: "\eb58"; }
 .ph.ph-info:before { content: "\e2ce"; }
 .ph-fill.ph-info:before { content: "\e2ce"; }
+.ph.ph-jar:before { content: "\e7e0"; }
+.ph-fill.ph-jar:before { content: "\e7e0"; }
 .ph.ph-key:before { content: "\e2d6"; }
 .ph-fill.ph-key:before { content: "\e2d6"; }
 .ph.ph-keyboard:before { content: "\e2d8"; }

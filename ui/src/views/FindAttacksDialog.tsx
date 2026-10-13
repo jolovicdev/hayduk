@@ -30,17 +30,17 @@ export function FindAttacksDialog(props: {
 
   return (
     <Modal title="Find attacks" onClose={props.onClose} width="600px">
-      <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
+      <p class="mdesc">
         Matches use service names in module paths and the host's OS family.
         Versions and patch levels are not checked. Verify compatibility before launching.
       </p>
       <Show when={hosts().length > 0} fallback={
-        <p style="color:var(--red-br); margin-top:14px">
+        <p class="merror">
           No hosts in the workspace yet; discover hosts first.
         </p>
       }>
-        <div style="margin-top:14px; display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">Host</span>
+        <div class="field" style="margin-top:14px">
+          <b>Host</b>
           <FilterSelect options={hosts().map(h => ({ value: h }))}
             value={host() ?? ""} label="hosts" onChange={setHost} />
         </div>
@@ -54,7 +54,7 @@ export function FindAttacksDialog(props: {
         </Show>
         <Show when={!result.loading && result.latest}>
           {(r) => (
-            <div style="margin-top:14px; display:grid; gap:6px; max-height:320px; overflow:auto; padding-right:6px">
+            <div class="picklist">
               <For each={r().matches} fallback={
                 <p style="color:var(--tx2); text-align:center; padding:12px 0">No exploits matched this host's services.</p>
               }>
@@ -64,7 +64,7 @@ export function FindAttacksDialog(props: {
                       <span class="fmname">{m.name}</span>
                       <span class="fmreason">{m.reason}</span>
                     </div>
-                    <button class="abtn" style="flex:none"
+                    <button class="abtn"
                       onClick={() => props.onLaunch(m.name, r().host, m.port)}>
                       <i class="ph ph-rocket-launch"></i>Launch
                     </button>
@@ -74,7 +74,7 @@ export function FindAttacksDialog(props: {
             </div>
           )}
         </Show>
-        <Show when={errorText()}><p style="color:var(--red-br); margin-top:10px">{errorText()}</p></Show>
+        <Show when={errorText()}><p class="merror">{errorText()}</p></Show>
       </Show>
     </Modal>
   );

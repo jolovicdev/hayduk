@@ -58,7 +58,7 @@ export default function ConnectDialog(props: {
         <div class="mhead">
           <HaydukMark size={30} />
           <div>
-            <div class="eyebrow">METASPLOIT CONNECTION</div>
+            <div class="eyebrow">Metasploit connection</div>
             <div class="mtitle" id="connect-title">Connect to msfrpcd</div>
           </div>
         </div>
@@ -66,26 +66,26 @@ export default function ConnectDialog(props: {
         <p>Enter the host, port, and credentials for your Metasploit RPC server.</p>
         <Show when={connecting()} fallback={
           <>
-            <div style="margin-top:16px; display:grid; gap:10px">
-              <label class="kv"><b>Host</b>
+            <div class="mform">
+              <label class="field"><b>Host</b>
                 <input value={d().host}
                   onInput={(e) => setD({ ...d(), host: e.currentTarget.value })} />
               </label>
-              <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px">
-                <label class="kv"><b>Port</b>
+              <div class="frow even">
+                <label class="field"><b>Port</b>
                   <input inputmode="numeric" value={d().port}
                     classList={{ invalid: !portValid() }}
                     onInput={(e) => setD({ ...d(), port: e.currentTarget.value })} />
                 </label>
-                <label class="kv"><b>User</b>
+                <label class="field"><b>User</b>
                   <input value={d().username}
                     onInput={(e) => setD({ ...d(), username: e.currentTarget.value })} />
                 </label>
               </div>
-              <label class="kv"><b>Password</b>
+              <label class="field"><b>Password</b>
                 <input type="password" value={password()} onInput={(e) => setPassword(e.currentTarget.value)} />
               </label>
-              <label style="display:flex; gap:8px; align-items:center; font:400 12.5px var(--sans); color:var(--tx1)">
+              <label class="checkline">
                 <input type="checkbox" checked={d().ssl} onChange={(e) => setD({ ...d(), ssl: e.currentTarget.checked })} />
                 use SSL (msfrpcd without -S)
               </label>
@@ -95,9 +95,9 @@ export default function ConnectDialog(props: {
               {(_) => {
                 const mapped = friendlyConnectError(props.conn.error || error());
                 return <>
-                  <p role="alert" style="color:var(--red-br); margin-top:12px">{mapped.primary}</p>
+                  <p role="alert" class="merror">{mapped.primary}</p>
                   <Show when={mapped.detail}>
-                    <p style="margin-top:2px; font:400 10.5px var(--mono); color:var(--tx2); word-break:break-all">
+                    <p class="mnote" style="margin-top:2px">
                       {mapped.detail}
                     </p>
                   </Show>
@@ -106,7 +106,7 @@ export default function ConnectDialog(props: {
             </Show>
 
             <div class="mbtns">
-              <button class="abtn" type="submit" disabled={busy() || !valid()} style="flex:none; padding:0 20px">
+              <button class="abtn" type="submit" disabled={busy() || !valid()}>
                 {busy() ? "Connecting…" : "Connect"}
               </button>
             </div>
@@ -114,8 +114,8 @@ export default function ConnectDialog(props: {
         }>
           <div style="margin-top:16px; display:grid; gap:8px; text-align:center">
             <p style="margin:0; color:var(--tx0)">Connecting to <b>{props.conn.host}:{props.conn.port}</b>…</p>
-            <p style="margin:0; font:400 11.5px var(--mono); color:var(--tx2)">{progress()}</p>
-            <p style="margin:6px 0 0; font:400 11px var(--sans); color:var(--tx2)">
+            <p class="mnote" style="margin:0">{progress()}</p>
+            <p class="mdesc" style="margin:6px 0 0">
               a cold msfrpcd can take half a minute to answer; the link state is always in the status bar
             </p>
           </div>

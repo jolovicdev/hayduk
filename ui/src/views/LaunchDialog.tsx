@@ -34,23 +34,23 @@ function OptionField(props: {
   const kind = () => optionKind(props.def);
   if (kind() === "bool") {
     return (
-      <label style="display:flex; gap:8px; align-items:center; font:400 12.5px var(--sans); color:var(--tx1); cursor:pointer">
+      <label class="checkline">
         <input type="checkbox" checked={props.value() === true || props.value() === "true"}
           onChange={(e) => props.onEdit(e.currentTarget.checked)} />
         <span>{props.name}
-          <Show when={props.def.required}><span style="color:var(--red-br)"> *</span></Show>
-          <span style="color:var(--tx2)"> ({props.def.desc})</span>
+          <Show when={props.def.required}><span class="req"> *</span></Show>
+          <span class="fdesc"> ({props.def.desc})</span>
         </span>
       </label>
     );
   }
   return (
-    <label style="display:grid; gap:4px">
-      <span style="font:500 11px var(--sans); color:var(--tx1)">
+    <label class="field">
+      <b>
         {props.name}
-        <Show when={props.def.required}><span style="color:var(--red-br)"> *</span></Show>
-        <span style="color:var(--tx2)"> ({props.def.desc})</span>
-      </span>
+        <Show when={props.def.required}><span class="req"> *</span></Show>
+        <span class="fdesc"> ({props.def.desc})</span>
+      </b>
       <Show when={kind() === "enum"} fallback={
         <input value={String(props.value() ?? "")}
           inputMode={kind() === "number" ? "numeric" : undefined}
@@ -149,16 +149,16 @@ export function LaunchDialog(props: {
             <div class="skel short"></div>
           </div>
         }>
-          <p style="color:var(--red-br); margin-top:4px">
+          <p class="merror">
             Could not load module info: {String((info.error as Error)?.message ?? info.error)}
           </p>
         </Show>
       }>
         {(i) => <>
-          <p style="margin-top:4px; font:400 12.5px var(--sans); color:var(--tx1)">
-            {i().name} · rank <b style="color:var(--red-br)">{i().rank}</b>
+          <p style="margin-top:4px">
+            {i().name} · rank <b class="req">{i().rank}</b>
           </p>
-          <p style="margin-top:8px; max-height:84px; overflow:auto; font:400 12px/1.55 var(--sans); color:var(--tx1)">
+          <p class="mtext" style="margin-top:8px; max-height:84px; overflow:auto">
             {i().description}
           </p>
         </>}
@@ -174,7 +174,7 @@ export function LaunchDialog(props: {
           </div>
         </Show>
       }>
-        <div style="margin-top:16px; display:grid; gap:10px; max-height:300px; min-height:170px; overflow:auto; padding-right:6px">
+        <div class="optlist">
           <For each={ordered()}>{(name) =>
             <Show when={optsMap()[name]}>
               {(def) => <OptionField name={name} def={def()}
@@ -185,12 +185,12 @@ export function LaunchDialog(props: {
         </div>
       </Show>
       <Show when={options.error}>
-        <p style="color:var(--red-br); margin-top:12px">
+        <p class="merror">
           Could not load module options: {String((options.error as Error)?.message ?? options.error)}
         </p>
       </Show>
       <Show when={payload() && payloadOptions.error}>
-        <p style="color:var(--red-br); margin-top:12px">
+        <p class="merror">
           Could not load payload options: {String((payloadOptions.error as Error)?.message ?? payloadOptions.error)}
         </p>
       </Show>
@@ -202,8 +202,8 @@ export function LaunchDialog(props: {
         </div>
       </Show>
       <Show when={!payloads.loading && (payloads.latest?.length ?? 0) > 0}>
-        <div style="margin-top:12px; display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">Payload</span>
+        <div class="field" style="margin-top:12px">
+          <b>Payload</b>
           <FilterSelect
             options={(payloads.latest ?? []).map(p => ({ value: p, group: payloadGroup(p) }))}
             value={payload()} label="payloads" blankLabel="(default)"
@@ -215,7 +215,7 @@ export function LaunchDialog(props: {
           </div>
         </Show>
         <Show when={payload() && !payloadOptions.loading && Object.keys(payMap()).length > 0}>
-          <div style="margin-top:10px; display:grid; gap:10px; max-height:180px; overflow:auto; padding-right:6px">
+          <div class="optlist tight">
             <For each={Object.keys(payMap())}>{(name) =>
               <Show when={payMap()[name]}>
                 {(def) => <OptionField name={name} def={def()}
@@ -228,14 +228,14 @@ export function LaunchDialog(props: {
       </Show>
 
       <Show when={blockers().length > 0}>
-        <p style="color:var(--amb); margin-top:12px">
+        <p class="mwarn">
           Required option{blockers().length > 1 ? "s" : ""} {blockers().join(", ")} need{blockers().length === 1 ? "s" : ""} a value.
         </p>
       </Show>
-      <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
+      <Show when={error()}><p class="merror">{error()}</p></Show>
 
       <div class="mbtns">
-        <button class="abtn" style="flex:none; padding:0 20px"
+        <button class="abtn"
           disabled={launchDisabled({
             busy: busy(),
             optionsLoading: options.loading,

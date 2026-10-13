@@ -27,25 +27,23 @@ export function UpgradeDialog(props: { sid: string; onClose: () => void }) {
 
   return (
     <Modal title={`Upgrade session ${props.sid} to meterpreter`} onClose={props.onClose} width="440px">
-      <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
+      <p class="mdesc">
         The framework spawns a meterpreter handler on this callback address and moves the shell over.
         A new session appears when it checks in.
       </p>
-      <div style="margin-top:14px; display:grid; grid-template-columns:1.4fr 1fr; gap:10px">
-        <label style="display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">LHOST</span>
+      <div class="frow" style="margin-top:14px">
+        <label class="field"><b>LHOST</b>
           <input value={lhost()} placeholder="10.0.0.99"
             onInput={(e) => setLhost(e.currentTarget.value)} autocomplete="off" spellcheck={false} />
         </label>
-        <label style="display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">LPORT</span>
+        <label class="field"><b>LPORT</b>
           <input value={lport()} inputmode="numeric"
             onInput={(e) => setLport(e.currentTarget.value)} autocomplete="off" />
         </label>
       </div>
-      <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
+      <Show when={error()}><p class="merror">{error()}</p></Show>
       <div class="mbtns">
-        <button class="abtn" style="flex:none; padding:0 20px" disabled={busy() || !valid()}
+        <button class="abtn" disabled={busy() || !valid()}
           onClick={() => void upgrade()}>
           {busy() ? "Upgrading…" : "Upgrade"}
         </button>

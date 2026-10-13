@@ -6,6 +6,7 @@ export function Inspector(props: {
   addr: () => string | undefined;
   onInteract: (sid: string) => void;
   onLogin: (host: string) => void;
+  onPivot: (sid: string) => void;
 }) {
   const host = createMemo(() => campaignState().hosts.find(h => h?.address === props.addr()));
   const sessions = createMemo(() => {
@@ -90,6 +91,9 @@ export function Inspector(props: {
                     <div class="abtns">
                       <button class="abtn" onClick={() => props.onInteract(s!.id)}>
                         <i aria-hidden="true" class="ph ph-terminal-window"></i>Interact
+                      </button>
+                      <button class="abtn" onClick={() => props.onPivot(s!.id)}>
+                        <i aria-hidden="true" class="ph ph-signpost"></i>Pivot
                       </button>
                     </div>
                   </>

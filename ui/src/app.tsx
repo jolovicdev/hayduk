@@ -12,9 +12,12 @@ import { CredsView } from "./views/CredsView";
 import { LootView } from "./views/LootView";
 import { EventsView } from "./views/EventsView";
 import { ServicesView } from "./views/ServicesView";
+import { HostsView } from "./views/HostsView";
+import { ListenersView } from "./views/ListenersView";
 import { Inspector } from "./views/Inspector";
 import { InteractView } from "./views/InteractView";
 import { LaunchDialog } from "./views/LaunchDialog";
+import { PivotDialog } from "./views/PivotDialog";
 import { ScanDialog } from "./views/ScanDialog";
 import { LoginDialog } from "./views/LoginDialog";
 import { FindAttacksDialog } from "./views/FindAttacksDialog";
@@ -34,6 +37,7 @@ const notebookTabs: [string, string, string][] = [
   ["console", "terminal-window", "Console"],
   ["interact", "terminal", "Interact"],
   ["sessions", "broadcast", "Sessions"],
+  ["listeners", "plug", "Listeners"],
   ["jobs", "gear", "Jobs"],
   ["creds", "key", "Credentials"],
   ["loot", "archive", "Loot"],
@@ -77,11 +81,13 @@ function Splitter(props: { area: "lsp" | "rsp" | "nsp"; onDelta: (dx: number, dy
 
 export default function App() {
   const [tab, setTab] = createSignal("console");
-  const [stage, setStage] = createSignal<"topo" | "svc">("topo");
+  const [stage, setStage] = createSignal<"topo" | "svc" | "hosts">("topo");
+  const [scanTarget, setScanTarget] = createSignal<string | undefined>(undefined);
   const [selectedHost, setSelectedHost] = createSignal<string | undefined>(undefined);
   const [launch, setLaunch] = createSignal<{ type: string; path: string; host?: string; port?: number } | null>(null);
   const [scan, setScan] = createSignal<"discovery" | "services" | null>(null);
   const [loginHost, setLoginHost] = createSignal<string | undefined>(undefined);
+  const [pivotSid, setPivotSid] = createSignal<string | undefined>(undefined);
   const [findOpen, setFindOpen] = createSignal(false);
   const [hailOpen, setHailOpen] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
@@ -210,6 +216,7 @@ export default function App() {
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "1") setStage("topo");
       else if (e.key === "2") setStage("svc");
+      else if (e.key === "3") setStage("hosts");
       else if ((e.key === "f" || e.key === "F") && stage() === "topo") fit();
     };
     document.addEventListener("keydown", onKey);
@@ -227,7 +234,7 @@ export default function App() {
         <div class="brand">
           <HaydukMark size={21} />
           <span class="word">hayduk<span class="brand-dot">.</span></span>
-          <span class="brand-caption">SECURITY WORKSPACE</span>
+          <span class="brand-caption">Security workspace</span>
         </div>
 
         <Dropdown id="m-file" label="File">
@@ -257,6 +264,7 @@ export default function App() {
         <Dropdown id="m-view" label="View">
           <MenuItemButton icon="graph" label="Topology" hint="1" onClick={() => setStage("topo")} />
           <MenuItemButton icon="table" label="Services" hint="2" onClick={() => setStage("svc")} />
+          <MenuItemButton icon="stack" label="Hosts" hint="3" onClick={() => setStage("hosts")} />
           <div class="dsep"></div>
           <MenuItemButton icon="dots-nine" label={grid() ? "Dot grid: on" : "Dot grid: off"}
             onClick={() => setGrid(!grid())} />
@@ -294,7 +302,7 @@ export default function App() {
 
       <div class="toolbar">
         <div class="campaign-heading">
-          <div class="eyebrow">METASPLOIT / OPERATIONS</div>
+          <div class="eyebrow">Metasploit operations</div>
           <h1>Campaign overview<span class="heading-dot">.</span></h1>
           <p>Discover hosts, scan services, and manage sessions.</p>
         </div>
@@ -347,6 +355,9 @@ export default function App() {
             <button aria-pressed={stage() === "svc"} classList={{ on: stage() === "svc" }} onClick={() => setStage("svc")}>
               <i aria-hidden="true" class="ph ph-table"></i>Services
             </button>
+            <button aria-pressed={stage() === "hosts"} classList={{ on: stage() === "hosts" }} onClick={() => setStage("hosts")}>
+              <i aria-hidden="true" class="ph ph-stack"></i>Hosts
+            </button>
           </div>
           <span class="spacer"></span>
           <Show when={stage() === "topo"}>
@@ -368,7 +379,8 @@ export default function App() {
                 setSelectedHost(host);
                 flash(`host ${host} selected; right-click a module in the tree to launch against it`);
               }}
-              onLogin={(host) => { setSelectedHost(host); setLoginHost(host); }} />
+              onLogin={(host) => { setSelectedHost(host); setLoginHost(host); }}
+              onPivot={(sid) => setPivotSid(sid)} />
             <Show when={campaignState().hosts.length === 0}>
               <div class="map-empty">
                 <div class="empty-symbol"><i aria-hidden="true" class="ph ph-graph"></i></div>
@@ -389,12 +401,15 @@ export default function App() {
           <div class="view" hidden={stage() !== "svc"}>
             <ServicesView onInspect={(addr) => setSelectedHost(addr)} selected={selectedHost()} />
           </div>
+          <div class="view" hidden={stage() !== "hosts"}>
+            <HostsView onInspect={(addr) => { setSelectedHost(addr); setStage("topo"); }} selected={selectedHost()} />
+          </div>
         </div>
       </main>
 
       <aside class="right card">
-        <div class="panelhead"><i aria-hidden="true" class="ph ph-target"></i><span class="pt">Host details</span><span class="panel-kicker">INSPECTOR</span></div>
-        <Inspector addr={selectedHost} onInteract={openInteract} onLogin={setLoginHost} />
+        <div class="panelhead"><i aria-hidden="true" class="ph ph-target"></i><span class="pt">Host details</span><span class="panel-kicker">Inspector</span></div>
+        <Inspector addr={selectedHost} onInteract={openInteract} onLogin={setLoginHost} onPivot={setPivotSid} />
       </aside>
 
       <section class="nb card">
@@ -419,8 +434,10 @@ export default function App() {
           </div>
           <div class="nbpane" hidden={tab() !== "interact"}><InteractView /></div>
           <div class="nbpane" hidden={tab() !== "sessions"}>
-            <SessionsView onInteract={openInteract} />
+            <SessionsView onInteract={openInteract}
+              onScanSubnet={(subnet) => { setScanTarget(subnet); setScan("services"); }} />
           </div>
+          <div class="nbpane" hidden={tab() !== "listeners"}><ListenersView onInteract={openInteract} /></div>
           <div class="nbpane" hidden={tab() !== "jobs"}>
             <JobsView onOpenModule={(module) => {
               setTab("console");
@@ -471,14 +488,22 @@ export default function App() {
         {(h) => <LoginDialog host={h()} onClose={() => setLoginHost(undefined)} />}
       </Show>
 
+      <Show when={pivotSid()}>
+        {(sid) => (
+          <PivotDialog sid={sid()} meterpreter={campaignState().sessions[sid()]?.type === "meterpreter"}
+            onScan={(subnet) => { setPivotSid(undefined); setScanTarget(subnet); setScan("services"); }}
+            onClose={() => setPivotSid(undefined)} />
+        )}
+      </Show>
+
       <Show when={scan()}>
         {(mode) => (
-          <ScanDialog mode={mode()} target={selectedHost()}
+          <ScanDialog mode={mode()} target={scanTarget() ?? selectedHost()}
             onConfigure={(module, target) => {
               setScan(null);
               setLaunch({ type: "auxiliary", path: module, host: target });
             }}
-            onClose={() => setScan(null)} />
+            onClose={() => { setScan(null); setScanTarget(undefined); }} />
         )}
       </Show>
 
@@ -493,16 +518,16 @@ export default function App() {
 
       <Show when={showAbout()}>
         <Modal title="About hayduk" onClose={() => setShowAbout(false)}>
-          <div style="margin-top:10px; display:flex; align-items:center; gap:14px">
+          <div class="about-row">
             <HaydukMark size={44} tile />
             <div>
-              <p style="margin:2px 0 0; font:400 12px/1.55 var(--sans); color:var(--tx1)">
+              <p class="mtext">
                 Graphical attack management console for Metasploit. Runs as a single Go binary
                 with a browser UI. For authorized security testing only.
               </p>
             </div>
           </div>
-          <p style="margin:14px 0 0; font:400 11px var(--mono); color:var(--tx2)">
+          <p class="mnote" style="margin-top:14px">
             Hayduk {serverVersion() || ""} · jolovicdev · MIT · Assisted by: GLM 5.3
           </p>
           <div class="mbtns">
@@ -530,17 +555,18 @@ export default function App() {
 
       <Show when={teamMode() && !operatorName()}>
         <Modal title="Who is operating?" onClose={() => setOperatorDraft("")}>
-          <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
+          <p class="mdesc">
             This Hayduk runs as a team server. Your name rides along on every command and lands
             next to your actions in the shared event log.
           </p>
-          <input style="margin-top:14px" value={operatorDraft()} placeholder="operator name"
-            onInput={(e) => setOperatorDraft(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && operatorDraft().trim()) commitOperator(); }}
-            autocomplete="off" spellcheck={false} />
+          <div class="mform">
+            <input value={operatorDraft()} placeholder="operator name"
+              onInput={(e) => setOperatorDraft(e.currentTarget.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" && operatorDraft().trim()) commitOperator(); }}
+              autocomplete="off" spellcheck={false} />
+          </div>
           <div class="mbtns">
-            <button class="abtn" style="flex:none; padding:0 20px"
-              disabled={!operatorDraft().trim()} onClick={commitOperator}>Join</button>
+            <button class="abtn" disabled={!operatorDraft().trim()} onClick={commitOperator}>Join</button>
           </div>
         </Modal>
       </Show>

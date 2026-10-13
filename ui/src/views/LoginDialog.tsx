@@ -53,22 +53,20 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
   return (
     <Modal title={`Login as ${props.host}`} onClose={props.onClose} width="480px">
       <Show when={modules().length > 0} fallback={
-        <p style="color:var(--red-br); margin-top:4px">
+        <p class="merror">
           No SMB or SSH service known on this host. Scan it first, or pick a login module from the tree.
         </p>
       }>
-        <label style="margin-top:4px; display:grid; gap:4px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">Login module</span>
+        <label class="field" style="margin-top:4px">
+          <b>Login module</b>
           <select value={chosenMod()?.module ?? ""} onChange={(e) => setMod(e.currentTarget.value)}>
             <For each={modules()}>{(m) => <option value={m.module}>{m.module}</option>}</For>
           </select>
         </label>
 
         <Show when={creds().length > 0}>
-          <label style="margin-top:10px; display:grid; gap:4px">
-            <span style="font:500 11px var(--sans); color:var(--tx1)">
-              Recovered credentials <span style="color:var(--tx2)">(from the creds table)</span>
-            </span>
+          <label class="field" style="margin-top:10px">
+            <b>Recovered credentials <span class="fdesc">(from the creds table)</span></b>
             <select value={String(credIdx())} onChange={(e) => pickCred(Number(e.currentTarget.value))}>
               <option value="-1">Manual entry</option>
               <For each={creds()}>{(c, i) => (
@@ -78,23 +76,21 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
           </label>
         </Show>
 
-        <div style="margin-top:10px; display:grid; grid-template-columns:1fr 1fr; gap:10px">
-          <label style="display:grid; gap:4px">
-            <span style="font:500 11px var(--sans); color:var(--tx1)">User</span>
+        <div class="frow even" style="margin-top:10px">
+          <label class="field"><b>User</b>
             <input value={user()} onInput={(e) => setUser(e.currentTarget.value)}
               autocomplete="off" spellcheck={false} />
           </label>
-          <label style="display:grid; gap:4px">
-            <span style="font:500 11px var(--sans); color:var(--tx1)">Password</span>
+          <label class="field"><b>Password</b>
             <input type="password" value={pass()} onInput={(e) => setPass(e.currentTarget.value)}
               autocomplete="off" />
           </label>
         </div>
 
-        <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
+        <Show when={error()}><p class="merror">{error()}</p></Show>
 
         <div class="mbtns">
-          <button class="abtn" style="flex:none; padding:0 20px" disabled={busy()} onClick={() => void launch()}>
+          <button class="abtn" disabled={busy()} onClick={() => void launch()}>
             {busy() ? "Launching…" : "Launch login attack"}
           </button>
         </div>

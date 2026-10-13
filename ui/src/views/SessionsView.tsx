@@ -11,7 +11,10 @@ import { UpgradeDialog } from "./UpgradeDialog";
 import { ageOf } from "./format";
 import type { SessionState } from "../protocol/types";
 
-export function SessionsView(props: { onInteract: (sid: string) => void }) {
+export function SessionsView(props: {
+  onInteract: (sid: string) => void;
+  onScanSubnet?: (subnet: string) => void;
+}) {
   const [upgrading, setUpgrading] = createSignal<string | undefined>(undefined);
   const [pivoting, setPivoting] = createSignal<string | undefined>(undefined);
   // ages are rendered from wall-clock time; without a tick they freeze at
@@ -74,13 +77,13 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
         onRowContextMenu={menu}
         columns={[
           { key: "id", label: "ID", mono: true, width: "48px" },
-          { key: "type", label: "TYPE", render: (r) => r.info
+          { key: "type", label: "Type", render: (r) => r.info
             ? <><b>{r.type}</b> <span class="row-info" title={r.info}>{r.info}</span></>
             : <b>{r.type}</b> },
-          { key: "username", label: "USER" },
-          { key: "targetHost", label: "HOST", mono: true },
-          { key: "viaExploit", label: "VIA", mono: true, render: (r) => <span class="dim">{r.viaExploit}</span> },
-          { key: "openedAt", label: "OPENED", mono: true, render: (r) => ageOf(r.openedAt, now()) },
+          { key: "username", label: "User" },
+          { key: "targetHost", label: "Host", mono: true },
+          { key: "viaExploit", label: "Via", mono: true, render: (r) => <span class="dim">{r.viaExploit}</span> },
+          { key: "openedAt", label: "Opened", mono: true, render: (r) => ageOf(r.openedAt, now()) },
           {
             key: "actions", label: "", width: "44px",
             render: (r) => (
@@ -98,6 +101,7 @@ export function SessionsView(props: { onInteract: (sid: string) => void }) {
       <Show when={pivoting()}>
         {(sid) => (
           <PivotDialog sid={sid()} meterpreter={pivotType(sid())}
+            onScan={(subnet) => { setPivoting(undefined); props.onScanSubnet?.(subnet); }}
             onClose={() => setPivoting(undefined)} />
         )}
       </Show>
