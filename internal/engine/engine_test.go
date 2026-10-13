@@ -623,7 +623,7 @@ func TestSessionAttachWriteStop(t *testing.T) {
 	}
 }
 
-func TestAttachSwitchUnwatchesPreviousSession(t *testing.T) {
+func TestAttachSwitchKeepsPreviousSessionWatched(t *testing.T) {
 	fake := stdFake()
 	fake.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
 		return map[string]interface{}{
@@ -655,11 +655,20 @@ func TestAttachSwitchUnwatchesPreviousSession(t *testing.T) {
 	}
 	waitFor(t, func() bool { return readCount(&reads, "2") >= 2 })
 
-	// session 1 must no longer be polled once session 2 took over
+	// both session consoles stay live after switching: each tab keeps its
+	// own stream, and only detaching a session stops its polling
 	before := readCount(&reads, "1")
 	time.Sleep(150 * time.Millisecond)
+	if after := readCount(&reads, "1"); after == before {
+		t.Fatalf("session 1 no longer polled while its tab is open: %d reads", before)
+	}
+	if _, err := e.Exec(context.Background(), "", "session.detach", json.RawMessage(`{"sid":"1"}`)); err != nil {
+		t.Fatal(err)
+	}
+	before = readCount(&reads, "1")
+	time.Sleep(150 * time.Millisecond)
 	if after := readCount(&reads, "1"); after != before {
-		t.Fatalf("session 1 still polled after switching to session 2: %d -> %d reads", before, after)
+		t.Fatalf("session 1 still polled after detach: %d -> %d reads", before, after)
 	}
 }
 

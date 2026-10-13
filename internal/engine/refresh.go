@@ -52,19 +52,19 @@ const (
 	// default limit of 100 rows, so one naked call silently truncates every
 	// collection of a larger workspace.
 	dbPageSize = 200
-	// dbMaxPages bounds the page walk so a daemon answering every page full
-	// (or ignoring offset entirely) cannot loop forever: 200 x 500 = 100k
-	// rows per collection.
-	dbMaxPages = 500
+	// dbMaxRows bounds the page walk so a daemon answering every page full
+	// (or ignoring offset entirely) cannot loop forever.
+	dbMaxRows = 100_000
 )
 
 // fetchAllPages walks a db collection's limit/offset pages until a short page
 // arrives, pinning the workspace into every request. All pages of one
 // collection are fetched or none are committed: callers get an error, never a
-// silently partial collection.
+// silently partial collection. A collection of exactly dbMaxRows ends with
+// one empty page past its last full page; only rows beyond the cap error.
 func fetchAllPages[T any](ctx context.Context, workspace string, fetch func(ctx context.Context, opts map[string]interface{}) ([]*T, error)) ([]*T, error) {
 	var out []*T
-	for page := 0; page < dbMaxPages; page++ {
+	for page := 0; ; page++ {
 		rows, err := fetch(ctx, map[string]interface{}{
 			"workspace": workspace,
 			"limit":     dbPageSize,
@@ -77,8 +77,10 @@ func fetchAllPages[T any](ctx context.Context, workspace string, fetch func(ctx 
 		if len(rows) < dbPageSize {
 			return out, nil
 		}
+		if len(out) > dbMaxRows {
+			return nil, fmt.Errorf("db collection exceeds %d rows", dbMaxRows)
+		}
 	}
-	return nil, fmt.Errorf("db collection exceeds %d rows", dbMaxPages*dbPageSize)
 }
 
 // refreshDBLocked is refreshDB for callers already holding refreshMu -

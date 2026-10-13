@@ -34,7 +34,7 @@ func (e *Engine) reconnect() {
 	e.consoleID = ""
 	e.routeConsole = nil
 	e.interactSID = ""
-	e.interactOut = nil
+	e.interactBufs = nil
 	p := protocol.ConnectParams{
 		Host: e.conn.Host, Port: e.conn.Port, SSL: e.conn.SSL, Username: e.conn.Username,
 		Password: e.lastPassword,

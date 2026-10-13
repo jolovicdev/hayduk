@@ -341,7 +341,7 @@ func (e *Engine) Disconnect() {
 	e.sessions = make(map[string]*protocol.SessionState)
 	e.jobs = make(map[string]*protocol.JobState)
 	e.interactSID = ""
-	e.interactOut = nil
+	e.interactBufs = nil
 	// Clear pending runs so their timers cannot warn after disconnect.
 	e.exploitRuns = nil
 	e.earlySessions = nil

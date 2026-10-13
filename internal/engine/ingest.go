@@ -101,10 +101,12 @@ func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.removeSessionLocked(ev.SessionID)
 	sessions := copyMap(e.sessions)
 	e.logf(protocol.LevelWarn, "session %s closed", ev.SessionID)
-	if e.interactSID == ev.SessionID {
-		e.interactSID = ""
-		e.interactOut = nil
-		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+	if _, attached := e.interactBufs[ev.SessionID]; attached {
+		delete(e.interactBufs, ev.SessionID)
+		if e.interactSID == ev.SessionID {
+			e.interactSID = ""
+			e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+		}
 	}
 	e.bus.send(protocol.SessionsUpdate(sessions))
 	e.mu.Unlock()
@@ -133,12 +135,23 @@ func (e *Engine) reconcileSessions(ctx context.Context) {
 		return
 	}
 	changed := false
+	interactDropped := false
 	for sid, st := range e.sessions {
 		if _, listed := live[sid]; !listed && !st.OpenedAt.After(snapshotAt) {
 			e.removeSessionLocked(sid)
 			e.logf(protocol.LevelWarn, "session %s closed", sid)
+			if _, attached := e.interactBufs[sid]; attached {
+				delete(e.interactBufs, sid)
+				if e.interactSID == sid {
+					e.interactSID = ""
+				}
+				interactDropped = true
+			}
 			changed = true
 		}
+	}
+	if interactDropped {
+		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	}
 	if changed {
 		e.bus.send(protocol.SessionsUpdate(copyMap(e.sessions)))
@@ -158,7 +171,7 @@ func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {
 		e.mu.Unlock()
 		return
 	}
-	if ev.SessionID != e.interactSID {
+	if _, attached := e.interactBufs[ev.SessionID]; !attached {
 		e.mu.Unlock()
 		return
 	}
@@ -167,7 +180,7 @@ func (e *Engine) sessionOutput(m *gomsf.EventMonitor, ev gomsf.Event) {
 		e.mu.Unlock()
 		return
 	}
-	e.interactOut = appendCapped(e.interactOut, []byte(data))
+	e.interactBufs[ev.SessionID] = appendCapped(e.interactBufs[ev.SessionID], []byte(data))
 	e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: ev.SessionID, Data: data})
 	e.mu.Unlock()
 }

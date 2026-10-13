@@ -88,7 +88,10 @@ type Engine struct {
 	consoleWritePending bool
 	consoleWriteGen     uint64
 	interactSID         string
-	interactOut         []byte
+	// interactBufs holds one transcript per attached session: operators
+	// keep several session consoles open, and switching the active tab
+	// must not erase the others. interactSID names the active one.
+	interactBufs        map[string][]byte
 	// sessionTags remembers the workspace each live session was opened
 	// under, keyed by session id and validated by uuid: ids are per-daemon
 	// counters and get reused, so attribution carries across a reconnect
@@ -114,6 +117,9 @@ type Engine struct {
 	// command-driven ones can overlap, and a stalled read committing after
 	// a newer refresh would revert it
 	refreshMu sync.Mutex
+	// toolsMu serializes one-shot session commands and utility consoles:
+	// both briefly own a stream the monitor also reads.
+	toolsMu sync.Mutex
 	// gen counts connection attempts that took effect (commits, teardowns).
 	// Async work started under one generation must not commit under a later
 	// one: a disconnect or a newer connection invalidates it.
@@ -230,7 +236,7 @@ func (e *Engine) stateLocked() protocol.CampaignState {
 		s.Console = &protocol.ConsoleState{Output: string(e.consoleOut)}
 	}
 	if e.interactSID != "" {
-		s.Interact = &protocol.InteractState{SID: e.interactSID, Output: string(e.interactOut)}
+		s.Interact = &protocol.InteractState{SID: e.interactSID, Output: string(e.interactBufs[e.interactSID])}
 	}
 	s.Operators = e.operatorListLocked()
 	return s
