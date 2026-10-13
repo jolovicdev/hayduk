@@ -11,6 +11,10 @@ import (
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
 
+// autorouteModule is the post module every pivot add and remove runs
+// through; the UI names the same refname.
+const autorouteModule = "multi/manage/autoroute"
+
 // msfrpcd has no route RPC, so the engine owns a second, operator-invisible
 // console and polls `route` there. The table rows are the only route source
 // that carries subnet and gateway; the add/remove confirmations do not.

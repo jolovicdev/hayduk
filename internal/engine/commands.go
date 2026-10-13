@@ -149,7 +149,11 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		return nil, nil
 
 	case protocol.MethodSessionDetach:
-		e.detach()
+		var p protocol.SessionDetachParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		e.detach(p.SID)
 		return nil, nil
 
 	case protocol.MethodSessionWrite:
@@ -278,6 +282,140 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, eb
 		}
 		return e.hailMary(ctx, operator, ws, p)
+
+	case protocol.MethodJobStop:
+		var p protocol.JobRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.ID == "" {
+			return nil, badParam("id is required")
+		}
+		if err := gomsf.NewJobManager(rpc).Stop(ctx, p.ID); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "job %s stopped", p.ID)
+		return nil, nil
+
+	case protocol.MethodSessionRun:
+		var p protocol.SessionRunParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" || p.Command == "" {
+			return nil, badParam("sid and command are required")
+		}
+		return e.sessionRun(ctx, p)
+
+	case protocol.MethodPayloadGenerate:
+		var p protocol.PayloadGenerateParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Payload == "" || p.Format == "" {
+			return nil, badParam("payload and format are required")
+		}
+		return e.payloadGenerate(ctx, rpc, p)
+
+	case protocol.MethodHostAdd:
+		var p protocol.HostAddParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Address == "" {
+			return nil, badParam("address is required")
+		}
+		opts := map[string]interface{}{"host": p.Address}
+		if p.Name != "" { opts["name"] = p.Name }
+		if p.OSName != "" { opts["os_name"] = p.OSName }
+		if p.Comments != "" { opts["comments"] = p.Comments }
+		if _, err := rpc.Call(ctx, gomsf.DbReportHost, opts); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s added", p.Address)
+		_ = e.refreshDB(ctx)
+		return nil, nil
+
+	case protocol.MethodHostDelete:
+		var p protocol.HostRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Address == "" {
+			return nil, badParam("address is required")
+		}
+		if _, err := rpc.Call(ctx, gomsf.DbDelHost, map[string]interface{}{"host": p.Address}); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s deleted", p.Address)
+		_ = e.refreshDB(ctx)
+		return nil, nil
+
+	case protocol.MethodServiceDelete:
+		var p protocol.ServiceRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Host == "" || p.Port == 0 {
+			return nil, badParam("host and port are required")
+		}
+		return e.serviceDelete(ctx, rpc, operator, ws, p)
+
+	case protocol.MethodDBImport:
+		var p protocol.DBImportParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if strings.TrimSpace(p.Data) == "" {
+			return nil, badParam("data is required")
+		}
+		if _, err := rpc.Call(ctx, gomsf.DbImportData, map[string]interface{}{"workspace": ws, "data": p.Data}); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "scan data imported")
+		_ = e.refreshDB(ctx)
+		return nil, nil
+
+	case protocol.MethodHostNote:
+		var p protocol.HostNoteParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Address == "" {
+			return nil, badParam("address is required")
+		}
+		if _, err := rpc.Call(ctx, gomsf.DbReportHost, map[string]interface{}{"host": p.Address, "comments": p.Comments}); err != nil {
+			return nil, mapErr(err)
+		}
+		_ = e.refreshDB(ctx)
+		return nil, nil
+
+	case protocol.MethodCredAdd:
+		var p protocol.CredAddParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Host == "" || p.User == "" {
+			return nil, badParam("host and user are required")
+		}
+		return e.credAdd(ctx, rpc, operator, ws, p)
+
+	case protocol.MethodCredDelete:
+		var p protocol.CredRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.Host == "" {
+			return nil, badParam("host is required")
+		}
+		return e.credDelete(ctx, rpc, operator, ws, p)
+
+	case protocol.MethodLootDownload:
+		var p protocol.LootRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		return e.lootDownload(ctx, rpc, p)
 	}
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
@@ -304,7 +442,7 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	// Register before the RPC so sessions and job events that arrive
 	// before its response can be attributed to this launch.
 	var runKey string
-	if p.Type == string(gomsf.ExploitModuleType) {
+	if p.Type == string(gomsf.ExploitModuleType) && p.Name != "multi/handler" {
 		runKey = e.beginExploitRun(p.Type+"/"+p.Name, ws, operator)
 	}
 	var res *gomsf.ModuleExecuteResult
@@ -344,6 +482,13 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	}
 	if runKey != "" {
 		e.armExploitRun(runKey, res.UUID, res.JobID)
+	}
+	// Autoroute exists only to change the route table. A job-backed run
+	// kicks the poller again when its job stops, but an inline run has no
+	// job events at all, so kick here or the new pivot waits out the
+	// periodic poll before it reaches the topology.
+	if p.Type == "post" && p.Name == autorouteModule {
+		e.kickRoutePoll()
 	}
 	return mustJSON(protocol.ExecPayload{JobID: res.JobID, UUID: res.UUID}), nil
 }
@@ -387,42 +532,49 @@ func (e *Engine) attach(sid string) *protocol.ErrorBody {
 		e.mu.Unlock()
 		return &protocol.ErrorBody{Code: protocol.CodeSessionNotFound, Message: "no session " + sid}
 	}
-	previous := e.interactSID
-	e.interactSID = sid
-	if previous != sid {
-		// attachment is idempotent: reopening the already-attached session
-		// must not erase the transcript every connected operator is reading;
-		// that output is already consumed from the RPC stream and cannot be
-		// polled back
-		e.interactOut = nil
+	if e.interactBufs == nil {
+		e.interactBufs = make(map[string][]byte)
 	}
+	if _, ok := e.interactBufs[sid]; !ok {
+		// first attach starts a fresh transcript; re-attaching keeps the
+		// buffered one, which is already consumed from the RPC stream and
+		// cannot be polled back
+		e.interactBufs[sid] = nil
+	}
+	e.interactSID = sid
 	mon := e.monitor
 	// the update carries the buffered transcript: browsers replace their
 	// local copy on every interact update and would blank it without this
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{
-		SID: sid, Output: string(e.interactOut),
+		SID: sid, Output: string(e.interactBufs[sid]),
 	}))
 	e.mu.Unlock()
 	if mon != nil {
-		if previous != "" && previous != sid {
-			mon.UnwatchSession(previous) // switching must not leave both polled
-		}
 		mon.WatchSession(sid)
 	}
 	return nil
 }
 
-func (e *Engine) detach() {
+// detach closes one session console, or the active one when sid is empty.
+// Other attached sessions keep their transcripts and streams.
+func (e *Engine) detach(sid string) {
 	e.mu.Lock()
-	sid := e.interactSID
+	if sid == "" {
+		sid = e.interactSID
+	}
 	if sid == "" {
 		e.mu.Unlock()
 		return
 	}
-	e.interactSID = ""
-	e.interactOut = nil
+	delete(e.interactBufs, sid)
+	wasActive := e.interactSID == sid
+	if wasActive {
+		e.interactSID = ""
+	}
 	mon := e.monitor
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+	if wasActive {
+		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+	}
 	e.mu.Unlock()
 	if mon != nil {
 		mon.UnwatchSession(sid)
@@ -432,7 +584,7 @@ func (e *Engine) detach() {
 func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams) *protocol.ErrorBody {
 	e.mu.Lock()
 	rpc := e.rpc
-	attached := e.interactSID == p.SID
+	_, attached := e.interactBufs[p.SID]
 	session := e.sessions[p.SID]
 	e.mu.Unlock()
 	if rpc == nil {
@@ -455,8 +607,8 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 	// prompt format. The echo must precede the write: the monitor can
 	// deliver the command's output while the write is still in flight.
 	e.mu.Lock()
-	if e.interactSID == p.SID {
-		e.interactOut = appendCapped(e.interactOut, []byte(echo))
+	if _, ok := e.interactBufs[p.SID]; ok {
+		e.interactBufs[p.SID] = appendCapped(e.interactBufs[p.SID], []byte(echo))
 		e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: p.SID, Data: echo})
 	}
 	e.mu.Unlock()
@@ -547,7 +699,11 @@ func knownMethod(method string) bool {
 		protocol.MethodModuleExecute, protocol.MethodSessionAttach, protocol.MethodSessionDetach,
 		protocol.MethodSessionWrite, protocol.MethodSessionStop, protocol.MethodSessionUpgrade,
 		protocol.MethodWorkspaceList, protocol.MethodWorkspaceSet, protocol.MethodDBRefresh,
-		protocol.MethodAttacksFind, protocol.MethodHailMary:
+		protocol.MethodAttacksFind, protocol.MethodHailMary,
+		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
+		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,
+		protocol.MethodDBImport, protocol.MethodHostNote, protocol.MethodCredAdd,
+		protocol.MethodCredDelete, protocol.MethodLootDownload:
 		return true
 	}
 	return false

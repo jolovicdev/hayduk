@@ -97,7 +97,7 @@ func TestStaleMonitorCloseDoesNotTouchReusedSessionID(t *testing.T) {
 
 	e.sessionOutput(oldMon, gomsf.Event{SessionID: "1", Data: "stale output\r\n"})
 	e.mu.Lock()
-	stale := len(e.interactOut)
+	stale := len(e.interactBufs["1"])
 	e.mu.Unlock()
 	if stale != 0 {
 		t.Fatalf("stale monitor output reached the interact buffer: %d bytes", stale)

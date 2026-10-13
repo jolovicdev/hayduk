@@ -71,3 +71,28 @@ func TestRefreshFetchesAllDatabasePages(t *testing.T) {
 		}
 	}
 }
+
+// A collection of exactly dbMaxRows answers every page full and then one
+// empty page. The walk must ask for that final page instead of reporting
+// the collection as over the cap.
+func TestFetchAllPagesExactlyAtCap(t *testing.T) {
+	fetch := func(_ context.Context, opts map[string]interface{}) ([]*int, error) {
+		offset := opts["offset"].(int)
+		if offset >= dbMaxRows {
+			return nil, nil
+		}
+		rows := make([]*int, dbPageSize)
+		for i := range rows {
+			v := offset + i
+			rows[i] = &v
+		}
+		return rows, nil
+	}
+	got, err := fetchAllPages(context.Background(), "default", fetch)
+	if err != nil {
+		t.Fatalf("exactly-at-cap collection rejected: %v", err)
+	}
+	if len(got) != dbMaxRows {
+		t.Fatalf("got %d rows, want %d", len(got), dbMaxRows)
+	}
+}

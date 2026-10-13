@@ -371,6 +371,17 @@ const (
 	MethodAttacksFind    = "attacks.find"
 	MethodReportHTML     = "report.html"
 	MethodHailMary       = "campaign.hail_mary"
+	MethodJobStop        = "job.stop"
+	MethodSessionRun     = "session.run"
+	MethodPayloadGenerate = "payload.generate"
+	MethodHostAdd        = "db.host_add"
+	MethodHostDelete     = "db.host_delete"
+	MethodServiceDelete  = "db.service_delete"
+	MethodDBImport       = "db.import"
+	MethodHostNote       = "db.host_note"
+	MethodCredAdd        = "db.cred_add"
+	MethodCredDelete     = "db.cred_delete"
+	MethodLootDownload   = "loot.download"
 )
 
 type ConnectParams struct {
@@ -436,6 +447,86 @@ type HailMaryParams struct {
 
 type HailMaryPayload struct {
 	Planned int `json:"planned"`
+}
+
+type JobRefParams struct {
+	ID string `json:"id"`
+}
+
+type SessionRunParams struct {
+	SID     string `json:"sid"`
+	Command string `json:"command"`
+}
+
+type SessionRunPayload struct {
+	Output string `json:"output"`
+}
+
+type SessionDetachParams struct {
+	SID string `json:"sid,omitempty"`
+}
+
+type PayloadGenerateParams struct {
+	Payload string                 `json:"payload"`
+	Options map[string]interface{} `json:"options"`
+	Format  string                 `json:"format"`
+}
+
+type PayloadGeneratePayload struct {
+	Filename  string `json:"filename"`
+	Content   string `json:"content,omitempty"`
+	SavedPath string `json:"savedPath,omitempty"`
+}
+
+type HostAddParams struct {
+	Address  string `json:"address"`
+	Name     string `json:"name,omitempty"`
+	OSName   string `json:"osName,omitempty"`
+	Comments string `json:"comments,omitempty"`
+}
+
+type HostRefParams struct {
+	Address string `json:"address"`
+}
+
+type ServiceRefParams struct {
+	Host  string `json:"host"`
+	Port  int    `json:"port"`
+	Proto string `json:"proto"`
+}
+
+type DBImportParams struct {
+	Data string `json:"data"`
+}
+
+type HostNoteParams struct {
+	Address  string `json:"address"`
+	Comments string `json:"comments"`
+}
+
+type CredAddParams struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Service string `json:"service"`
+	User    string `json:"user"`
+	Pass    string `json:"pass"`
+}
+
+type CredRefParams struct {
+	Host    string `json:"host"`
+	Port    int    `json:"port"`
+	Service string `json:"service"`
+	User    string `json:"user"`
+}
+
+type LootRefParams struct {
+	Host string `json:"host"`
+	Type string `json:"type"`
+	Name string `json:"name"`
+}
+
+type LootPayload struct {
+	Data string `json:"data"`
 }
 
 // Response payloads.

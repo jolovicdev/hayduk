@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -254,4 +255,61 @@ func TestRoutePollTracksChanges(t *testing.T) {
 	if got := e.State().Routes; len(got) != 0 {
 		t.Fatalf("routes must clear on disconnect, got %+v", got)
 	}
+}
+
+// The UI runs autoroute through module.execute. When the post module runs
+// inline (job 0) no job ever starts or stops, so the job-end kick never
+// fires; executing autoroute must kick the route poller itself or the new
+// pivot waits out the periodic poll before it reaches the topology.
+func TestInlineAutorouteKicksRoutePoll(t *testing.T) {
+	fake := stdFake()
+	var consoles int32
+	fake.set(gomsf.ConsoleCreate, func(args ...interface{}) (interface{}, error) {
+		id := atomic.AddInt32(&consoles, 1) - 1
+		return map[string]interface{}{"id": string(rune('0' + id))}, nil
+	})
+	var table atomic.Value
+	table.Store("[*] There are currently no routes defined.\n")
+	var routeWrites int32
+	fake.set(gomsf.ConsoleWrite, func(args ...interface{}) (interface{}, error) {
+		if len(args) > 0 && args[0] == "1" {
+			atomic.AddInt32(&routeWrites, 1)
+		}
+		return map[string]interface{}{"wrote": true}, nil
+	})
+	fake.set(gomsf.ConsoleRead, func(args ...interface{}) (interface{}, error) {
+		if len(args) > 0 && args[0] == "1" {
+			return map[string]interface{}{"data": table.Load().(string), "prompt": "msf > ", "busy": false}, nil
+		}
+		return map[string]interface{}{"data": "", "prompt": "msf > ", "busy": false}, nil
+	})
+	fake.set(gomsf.ModuleInfo, okModuleInfo())
+	fake.set(gomsf.ModuleOptions, func(args ...interface{}) (interface{}, error) {
+		return map[string]interface{}{
+			"SESSION": map[string]interface{}{"type": "integer", "required": true, "desc": "s"},
+			"CMD":     map[string]interface{}{"type": "string", "required": false, "desc": "c"},
+			"SUBNET":  map[string]interface{}{"type": "address", "required": false, "desc": "n"},
+			"NETMASK": map[string]interface{}{"type": "address", "required": false, "desc": "m"},
+		}, nil
+	})
+	// inline run: job 0, no job events will ever fire for this launch
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		return map[string]interface{}{"job_id": 0, "uuid": "u-inline"}, nil
+	})
+
+	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
+		OutputInterval: 5 * time.Millisecond, RefreshInterval: time.Hour,
+		RouteInterval: time.Hour}) // periodic poll effectively disabled
+	t.Cleanup(e.Shutdown)
+	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
+		t.Fatalf("connect: %+v", err)
+	}
+	waitFor(t, func() bool { return atomic.LoadInt32(&routeWrites) >= 1 })
+
+	table.Store(routeTable)
+	if _, eb := e.Exec(context.Background(), "", "module.execute", json.RawMessage(
+		`{"type":"post","name":"multi/manage/autoroute","options":{"SESSION":"1","CMD":"add","SUBNET":"10.99.0.0","NETMASK":"255.255.255.0"}}`)); eb != nil {
+		t.Fatalf("autoroute execute: %+v", eb)
+	}
+	waitFor(t, func() bool { return len(e.State().Routes) == 2 })
 }
