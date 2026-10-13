@@ -22,6 +22,7 @@ import { ScanDialog } from "./views/ScanDialog";
 import { LoginDialog } from "./views/LoginDialog";
 import { FindAttacksDialog } from "./views/FindAttacksDialog";
 import { HailMaryDialog } from "./views/HailMaryDialog";
+import { BruteDialog } from "./views/BruteDialog";
 import { campaignState, protoMismatch, serverVersion, team as teamMode, wsStatus } from "./stores/store";
 import { consoleBusy, consoleOutput, consolePrompt, tabs as consoleTabs, write } from "./stores/console";
 import { attach } from "./stores/interact";
@@ -90,6 +91,7 @@ export default function App() {
   const [pivotSid, setPivotSid] = createSignal<string | undefined>(undefined);
   const [findOpen, setFindOpen] = createSignal(false);
   const [hailOpen, setHailOpen] = createSignal(false);
+  const [bruteOpen, setBruteOpen] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [grid, setGrid] = createSignal(true);
@@ -252,7 +254,7 @@ export default function App() {
           <MenuItemButton icon="wifi-high" label="Scan services…" disabled={conn().status !== "connected"}
             onClick={() => setScan("services")} />
           <MenuItemButton icon="key" label="Brute force logins…" disabled={conn().status !== "connected"}
-            onClick={() => flash("right-click a host on the graph and pick Login as…")} />
+            onClick={() => setBruteOpen(true)} />
           <div class="dsep"></div>
           <MenuItemButton icon="lightning" label="Find attacks…" disabled={conn().status !== "connected"}
             onClick={() => setFindOpen(true)} />
@@ -472,6 +474,10 @@ export default function App() {
 
       <Show when={hailOpen()}>
         <HailMaryDialog host={selectedHost()} onClose={() => setHailOpen(false)} />
+      </Show>
+
+      <Show when={bruteOpen()}>
+        <BruteDialog host={selectedHost()} onClose={() => setBruteOpen(false)} />
       </Show>
 
       <Show when={findOpen()}>
