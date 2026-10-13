@@ -19,6 +19,9 @@ services:
       - ./database.yml:/tmp/database.yml:ro
     ports:
       - "127.0.0.1:55553:55553"
+      # handler range for callbacks from lab targets on the LAN; LHOST is
+      # the docker host's address and these ports forward into the container
+      - "4444-4450:4444-4450"
     depends_on:
       db:
         condition: service_healthy
