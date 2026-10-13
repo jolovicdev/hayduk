@@ -38,12 +38,12 @@ export function Modal(props: { title: string; onClose: () => void; children: JSX
   return (
     <div class="modalback show" onClick={(e) => { if (e.target === e.currentTarget) props.onClose(); }}>
       <div class="modal" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={card} tabIndex={-1}
-        style={props.width ? `width:${props.width}` : ""}>
+        style={props.width ? `width:${props.width}` : undefined}>
         <div class="mhead">
           <div>
             <div class="mtitle" id={titleId}>{props.title}</div>
           </div>
-          <button class="zbtn" style="margin-left:auto" onClick={props.onClose} aria-label="Close">
+          <button class="zbtn" onClick={props.onClose} aria-label="Close">
             <i class="ph ph-x"></i>
           </button>
         </div>

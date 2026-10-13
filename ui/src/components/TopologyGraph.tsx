@@ -39,6 +39,9 @@ interface Ghost extends Position {
 interface RouteEdge {
   sessionID: string;
   subnet: string;
+  // group is the subnet-group key this edge lands on; "" for ghost edges,
+  // which land on a routed-network card instead of a host group.
+  group: string;
   from: Position;
   to: Position;
   lane: number;
@@ -63,6 +66,7 @@ export function TopologyGraph(props: {
   onInteract: (sid: string) => void;
   onLaunch: (host: string) => void;
   onLogin: (host: string) => void;
+  onPivot: (sid: string) => void;
 }) {
   let svgEl!: SVGSVGElement;
   let resizeObserver: ResizeObserver | undefined;
@@ -168,14 +172,6 @@ export function TopologyGraph(props: {
     return pairs;
   });
 
-  const routedKeys = createMemo(() => {
-    const keys = new Set<string>();
-    for (const { covered } of routedGroups()) {
-      for (const key of covered) keys.add(key);
-    }
-    return keys;
-  });
-
   const ghosts = createMemo(() => {
     const result = new Map<string, Ghost>();
     const groupMap = groups();
@@ -207,22 +203,28 @@ export function TopologyGraph(props: {
     const ghostMap = ghosts();
     const result: RouteEdge[] = [];
 
+    // Every edge gets its own lane: one route can cover several groups,
+    // and edges sharing a lane would draw on top of each other.
+    const rightEdge = Math.max(0, ...[...groupMap.values()].map(group => group.x + group.w));
+    const nextLane = () => rightEdge + 48 + result.length * 14;
+
     for (const { route, covered } of routedGroups()) {
       const session = state.sessions[route.sessionId];
       const sourceHost = session?.targetHost || session?.sessionHost;
       const source = sourceHost ? hostPositions.get(sourceHost) : undefined;
       if (!source) continue;
       const from = { x: source.x + NW / 2, y: source.y + NH };
-      const lane = Math.max(...[...groupMap.values()].map(group => group.x + group.w)) + 48 + result.length * 14;
 
       let drawn = false;
       for (const key of covered) {
         const group = groupMap.get(key);
         if (!group) continue;
+        const lane = nextLane();
         const to = { x: group.x + group.w, y: group.y + 30 };
         result.push({
           sessionID: route.sessionId,
           subnet: route.subnet,
+          group: key,
           from,
           to,
           lane,
@@ -235,10 +237,12 @@ export function TopologyGraph(props: {
 
       const ghost = ghostMap.get(route.subnet);
       if (ghost) {
+        const lane = nextLane();
         const to = { x: ghost.x, y: ghost.y + GHOST_H / 2 };
         result.push({
           sessionID: route.sessionId,
           subnet: route.subnet,
+          group: "",
           from,
           to,
           lane,
@@ -249,6 +253,17 @@ export function TopologyGraph(props: {
     }
 
     return result;
+  });
+
+  // A group earns its ROUTED badge from a drawn edge, not from CIDR math
+  // alone: when the owning session's host is unknown no edge can be drawn,
+  // and badging the group would claim a pivot the map does not show.
+  const routedKeys = createMemo(() => {
+    const keys = new Set<string>();
+    for (const edge of routes()) {
+      if (edge.group) keys.add(edge.group);
+    }
+    return keys;
   });
 
   const worldBounds = createMemo<WorldBounds | undefined>(() => {
@@ -380,6 +395,11 @@ export function TopologyGraph(props: {
         icon: "terminal-window",
         label: `Interact with session ${session.id}`,
         fn: () => props.onInteract(session.id),
+      });
+      items.push({
+        icon: "signpost",
+        label: `Pivot via session ${session.id}…`,
+        fn: () => props.onPivot(session.id),
       });
     }
     items.push(
@@ -581,13 +601,13 @@ export function TopologyGraph(props: {
                   <path class="topo-zone-link" d="M 10 11 L 17 8 M 10 13 L 17 16" />
                 </g>
                 <text class="topo-zone-name" x={group().x + 60} y={group().y + 31}>
-                  {key === "other" ? "OTHER HOSTS" : `${key}.0/24`}
+                  {key === "other" ? "Other hosts" : `${key}.0/24`}
                 </text>
                 <text class="topo-zone-meta" x={group().x + group().w - 20} y={group().y + 31} text-anchor="end">
-                  {group().count} {group().count === 1 ? "HOST" : "HOSTS"}
+                  {group().count} {group().count === 1 ? "host" : "hosts"}
                 </text>
                 <Show when={routedKeys().has(key)}>
-                  <text class="topo-zone-route-note" x={group().x + 60} y={group().y + 44}>ROUTED NETWORK</text>
+                  <text class="topo-zone-route-note" x={group().x + 60} y={group().y + 44}>Routed network</text>
                   <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 30} r="4" />
                 </Show>
 
@@ -672,9 +692,9 @@ export function TopologyGraph(props: {
                   <circle class="topo-ghost-icon" cx="25" cy="26" r="2.5" />
                   <path class="topo-ghost-link" d="M 14 18 L 23 13 M 14 20 L 23 25" />
                 </g>
-                <text class="topo-ghost-kicker" x="62" y="27">ROUTED NETWORK</text>
+                <text class="topo-ghost-kicker" x="62" y="27">Routed network</text>
                 <text class="topo-ghost-address" x="62" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
-                <text class="topo-ghost-meta" x="62" y="74">AWAITING DISCOVERY</text>
+                <text class="topo-ghost-meta" x="62" y="74">Awaiting discovery</text>
               </g>
             )}</For>
           </g>
@@ -701,7 +721,7 @@ export function TopologyGraph(props: {
                 }}>
                 <rect class="topo-zone-chip-hit" x="-78" y="-16" width="156" height="32" rx="8" fill="transparent" />
                 <text class="topo-zone-chip-name" text-anchor="middle" y="4">
-                  {key === "other" ? "OTHER HOSTS" : `${key}.0/24`} · {count()}
+                  {key === "other" ? "Other hosts" : `${key}.0/24`} · {count()}
                 </text>
               </g>
             )}</Show>;

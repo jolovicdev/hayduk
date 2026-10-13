@@ -452,6 +452,50 @@ export const MethodReportHTML = "report.html";
  * Command methods.
  */
 export const MethodHailMary = "campaign.hail_mary";
+/**
+ * Command methods.
+ */
+export const MethodJobStop = "job.stop";
+/**
+ * Command methods.
+ */
+export const MethodSessionRun = "session.run";
+/**
+ * Command methods.
+ */
+export const MethodPayloadGenerate = "payload.generate";
+/**
+ * Command methods.
+ */
+export const MethodHostAdd = "db.host_add";
+/**
+ * Command methods.
+ */
+export const MethodHostDelete = "db.host_delete";
+/**
+ * Command methods.
+ */
+export const MethodServiceDelete = "db.service_delete";
+/**
+ * Command methods.
+ */
+export const MethodDBImport = "db.import";
+/**
+ * Command methods.
+ */
+export const MethodHostNote = "db.host_note";
+/**
+ * Command methods.
+ */
+export const MethodCredAdd = "db.cred_add";
+/**
+ * Command methods.
+ */
+export const MethodCredDelete = "db.cred_delete";
+/**
+ * Command methods.
+ */
+export const MethodLootDownload = "loot.download";
 export interface ConnectParams {
   host: string;
   port: number /* int */;
@@ -503,6 +547,71 @@ export interface HailMaryParams {
 }
 export interface HailMaryPayload {
   planned: number /* int */;
+}
+export interface JobRefParams {
+  id: string;
+}
+export interface SessionRunParams {
+  sid: string;
+  command: string;
+}
+export interface SessionRunPayload {
+  output: string;
+}
+export interface SessionDetachParams {
+  sid?: string;
+}
+export interface PayloadGenerateParams {
+  payload: string;
+  options: { [key: string]: any};
+  format: string;
+}
+export interface PayloadGeneratePayload {
+  filename: string;
+  content?: string;
+  savedPath?: string;
+}
+export interface HostAddParams {
+  address: string;
+  name?: string;
+  osName?: string;
+  comments?: string;
+}
+export interface HostRefParams {
+  address: string;
+}
+export interface ServiceRefParams {
+  host: string;
+  port: number /* int */;
+  proto: string;
+}
+export interface DBImportParams {
+  data: string;
+}
+export interface HostNoteParams {
+  address: string;
+  comments: string;
+}
+export interface CredAddParams {
+  host: string;
+  port: number /* int */;
+  service: string;
+  user: string;
+  pass: string;
+}
+export interface CredRefParams {
+  host: string;
+  port: number /* int */;
+  service: string;
+  user: string;
+}
+export interface LootRefParams {
+  host: string;
+  type: string;
+  name: string;
+}
+export interface LootPayload {
+  data: string;
 }
 export interface ModuleInfoPayload {
   name: string;

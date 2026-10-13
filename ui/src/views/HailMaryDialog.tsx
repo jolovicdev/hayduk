@@ -51,34 +51,32 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
 
   return (
     <Modal title="Hail Mary" onClose={props.onClose} width="520px">
-      <p style="margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2)">
+      <p class="mdesc">
         Run every matching exploit against the selected hosts in sequence. This can disrupt
         target services. Matches use the same service names and OS family as Find attacks;
         versions and patch levels are not checked.
       </p>
       <div style="margin-top:14px; display:flex; align-items:center; gap:8px">
-        <button class="abtn" style="flex:none" onClick={toggleAll}>
+        <button class="abtn" onClick={toggleAll}>
           {picked().size > 0 && allPicked() ? "clear all" : "select all"}
         </button>
-        <label style="display:grid; gap:4px; width:110px">
-          <span style="font:500 11px var(--sans); color:var(--tx1)">Max per host</span>
+        <label class="field" style="width:110px">
+          <b>Max per host</b>
           <input value={maxPerHost()} inputmode="numeric"
             onInput={(e) => setMaxPerHost(e.currentTarget.value)} autocomplete="off" />
         </label>
       </div>
-      <div style="margin-top:10px; display:grid; gap:6px; max-height:240px; overflow:auto; padding-right:6px">
+      <div class="picklist">
         <For each={hosts()}>{(addr) => (
-          <label style="display:flex; align-items:center; gap:9px; background:var(--well);
-            border:1px solid var(--line); border-radius:6px; padding:7px 10px; cursor:pointer">
+          <label class="pickrow">
             <input type="checkbox" checked={picked().has(addr)} onChange={() => toggle(addr)} />
-            <span style="font:400 12px var(--mono); color:var(--tx0)">{addr}</span>
+            <span class="addr">{addr}</span>
           </label>
         )}</For>
       </div>
-      <Show when={error()}><p style="color:var(--red-br); margin-top:12px">{error()}</p></Show>
+      <Show when={error()}><p class="merror">{error()}</p></Show>
       <div class="mbtns">
-        <button class="abtn" style="flex:none; padding:0 20px; background:var(--red); border-color:var(--red); color:var(--tx0)"
-          disabled={busy() || picked().size === 0} onClick={() => void launch()}>
+        <button class="abtn red" disabled={busy() || picked().size === 0} onClick={() => void launch()}>
           {busy() ? "Launching…" : `Launch at ${picked().size} host${picked().size === 1 ? "" : "s"}`}
         </button>
       </div>
