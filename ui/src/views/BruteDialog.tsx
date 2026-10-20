@@ -38,26 +38,43 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const valid = () => hostList().length > 0 && passList().length + (addBlank() ? 1 : 0) > 0
     && (scanner().userless || userList().length > 0);
 
-  // The engine only re-pulls the database on its own periodic tick, so the
-  // last attempt's credentials are still missing from the store when the
-  // workers stop: measuring straight away would report "no credentials" and
-  // close while the creds showed up in the tab a tick later. Force the
-  // refresh, then let the resulting broadcast land - it rides the bus rather
-  // than the command response, so awaiting the response alone can still race
-  // it. Stop as soon as the store moves so a productive run does not sit out
-  // the whole grace window.
-  async function settleCreds(before: number, graceMs = 1000): Promise<number> {
-    try {
-      await ws.command("db.refresh", {});
-    } catch (e) {
-      const failure = e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
-      flash(`db refresh failed: ${failure}`);
-    }
+  // A login scanner is launched as a job: module.execute returns before the
+  // spray has actually finished, and the engine only re-pulls the database
+  // on its own periodic tick. Measuring straight away reports a false "no
+  // credentials" while the session and its credential row are still on the
+  // way. Force a refresh, wait for either collection to move, and pull once
+  // more after a session so the credential can land. Stop as soon as the
+  // store moves so a productive run does not sit out the whole window.
+  async function settleLogin(beforeCreds: number, beforeSessions: number, graceMs = 5000) {
+    const refresh = async () => {
+      try {
+        await ws.command("db.refresh", {});
+      } catch (e) {
+        const failure = e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
+        flash(`db refresh failed: ${failure}`);
+      }
+    };
+    const moved = () => campaignState().creds.length > beforeCreds
+      || Object.keys(campaignState().sessions).length > beforeSessions;
+    await refresh();
     const deadline = Date.now() + graceMs;
-    while (campaignState().creds.length === before && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 50));
+    while (!moved() && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 100));
     }
-    return campaignState().creds.length - before;
+    // the session can open before the credential row is committed; one more
+    // pull gives the row its chance without holding the dialog open long
+    if (campaignState().creds.length === beforeCreds &&
+        Object.keys(campaignState().sessions).length > beforeSessions) {
+      await refresh();
+      const credDeadline = Date.now() + 1500;
+      while (campaignState().creds.length === beforeCreds && Date.now() < credDeadline) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+    }
+    return {
+      creds: campaignState().creds.length - beforeCreds,
+      sessions: Object.keys(campaignState().sessions).length - beforeSessions,
+    };
   }
 
   async function run() {
@@ -68,6 +85,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
     setDone(0);
     setError("");
     const credsBefore = campaignState().creds.length;
+    const sessionsBefore = Object.keys(campaignState().sessions).length;
     let next = 0;
     let failure = "";
     // the scanners answer one pair at a time; a few workers keep the spray
@@ -91,9 +109,11 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
     await Promise.all(workers);
     setRunning(false);
     setCurrent("");
-    const found = await settleCreds(credsBefore);
-    if (found > 0) {
-      flash(`${found} credential${found === 1 ? "" : "s"} found - see the Credentials tab`);
+    const found = await settleLogin(credsBefore, sessionsBefore);
+    if (found.creds > 0) {
+      flash(`${found.creds} credential${found.creds === 1 ? "" : "s"} found - see the Credentials tab`);
+    } else if (found.sessions > 0) {
+      flash(`${found.sessions} session${found.sessions === 1 ? "" : "s"} opened - see the Sessions tab`);
     } else if (failure) {
       setError(failure);
     } else {
