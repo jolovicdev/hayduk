@@ -326,9 +326,15 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, badParam("address is required")
 		}
 		opts := map[string]interface{}{"host": p.Address}
-		if p.Name != "" { opts["name"] = p.Name }
-		if p.OSName != "" { opts["os_name"] = p.OSName }
-		if p.Comments != "" { opts["comments"] = p.Comments }
+		if p.Name != "" {
+			opts["name"] = p.Name
+		}
+		if p.OSName != "" {
+			opts["os_name"] = p.OSName
+		}
+		if p.Comments != "" {
+			opts["comments"] = p.Comments
+		}
 		if _, err := rpc.Call(ctx, gomsf.DbReportHost, opts); err != nil {
 			return nil, mapErr(err)
 		}
@@ -415,7 +421,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := parseParams(params, &p); eb != nil {
 			return nil, eb
 		}
-		return e.lootDownload(ctx, rpc, p)
+		return e.lootDownload(ctx, rpc, ws, p)
 	}
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
@@ -606,9 +612,14 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 	// transcript for re-attach and other operators, using the browser's
 	// prompt format. The echo must precede the write: the monitor can
 	// deliver the command's output while the write is still in flight.
+	// A write that fails rolls it back, because the transcript is what a
+	// later re-attach replays and a command that never reached the daemon
+	// must not become part of the session's history.
+	var echoed bool
 	e.mu.Lock()
 	if _, ok := e.interactBufs[p.SID]; ok {
 		e.interactBufs[p.SID] = appendCapped(e.interactBufs[p.SID], []byte(echo))
+		echoed = true
 		e.bus.send(protocol.SessionOutputMsg{Type: protocol.KindSessionOutput, SID: p.SID, Data: echo})
 	}
 	e.mu.Unlock()
@@ -619,9 +630,28 @@ func (e *Engine) sessionWrite(ctx context.Context, p protocol.SessionWriteParams
 		err = gomsf.NewShellSession(rpc, p.SID).Write(ctx, data)
 	}
 	if err != nil {
+		if echoed {
+			e.rollbackEcho(p.SID, echo)
+		}
+		e.logf(protocol.LevelWarn, "session %s write failed: %v", p.SID, err)
 		return mapErr(err)
 	}
 	return nil
+}
+
+// rollbackEcho drops the echo of a write that failed from the transcript.
+// The line has already gone out on the bus and cannot be recalled without
+// either a new protocol message or hijacking every operator's active tab,
+// so the failure is reported in the event log and the session history that
+// survives a re-attach stays truthful.
+func (e *Engine) rollbackEcho(sid, echo string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if buf, ok := e.interactBufs[sid]; ok {
+		if trimmed, cut := bytes.CutSuffix(buf, []byte(echo)); cut {
+			e.interactBufs[sid] = trimmed
+		}
+	}
 }
 
 func (e *Engine) sessionUpgrade(ctx context.Context, operator, ws string, p protocol.SessionUpgradeParams) *protocol.ErrorBody {
@@ -685,6 +715,8 @@ func mapErr(err error) *protocol.ErrorBody {
 		return &protocol.ErrorBody{Code: protocol.CodeInvalidOption, Message: err.Error()}
 	case errors.Is(err, gomsf.ErrNotAuthenticated):
 		return &protocol.ErrorBody{Code: protocol.CodeNotConnected, Message: err.Error()}
+	case errors.Is(err, errConsoleLineBreak):
+		return &protocol.ErrorBody{Code: protocol.CodeBadParams, Message: err.Error()}
 	case errors.Is(err, errNotConnected):
 		return &protocol.ErrorBody{Code: protocol.CodeNotConnected, Message: err.Error()}
 	default:

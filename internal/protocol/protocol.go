@@ -121,16 +121,16 @@ type ServiceState struct {
 }
 
 type SessionState struct {
-	ID          string    `json:"id"`
-	Type        string    `json:"type"` // meterpreter|shell
-	TunnelPeer  string    `json:"tunnelPeer,omitempty"`
-	ViaExploit  string    `json:"viaExploit,omitempty"`
-	ViaPayload  string    `json:"viaPayload,omitempty"`
-	Info        string    `json:"info,omitempty"`
-	Username    string    `json:"username,omitempty"`
-	TargetHost  string    `json:"targetHost,omitempty"`
-	SessionHost string    `json:"sessionHost,omitempty"`
-	UUID        string    `json:"uuid,omitempty"`
+	ID          string `json:"id"`
+	Type        string `json:"type"` // meterpreter|shell
+	TunnelPeer  string `json:"tunnelPeer,omitempty"`
+	ViaExploit  string `json:"viaExploit,omitempty"`
+	ViaPayload  string `json:"viaPayload,omitempty"`
+	Info        string `json:"info,omitempty"`
+	Username    string `json:"username,omitempty"`
+	TargetHost  string `json:"targetHost,omitempty"`
+	SessionHost string `json:"sessionHost,omitempty"`
+	UUID        string `json:"uuid,omitempty"`
 	// Workspace is the msf workspace active when the session opened; empty
 	// for sessions picked up without one. Reports scope sessions on it.
 	Workspace string    `json:"workspace,omitempty"`
@@ -351,37 +351,37 @@ type ClientMessage struct {
 
 // Command methods.
 const (
-	MethodConnect        = "connect"
-	MethodDisconnect     = "disconnect"
-	MethodConsoleWrite   = "console.write"
-	MethodConsoleTabs    = "console.tabs"
-	MethodModuleInfo     = "module.info"
-	MethodModuleOptions  = "module.options"
-	MethodPayloads       = "module.compatible_payloads"
-	MethodModuleExecute  = "module.execute"
-	MethodSessionAttach  = "session.attach"
-	MethodSessionDetach  = "session.detach"
-	MethodSessionWrite   = "session.write"
-	MethodSessionStop    = "session.stop"
-	MethodSessionUpgrade = "session.upgrade"
-	MethodWorkspaceList  = "workspace.list"
-	MethodWorkspaceSet   = "workspace.set"
-	MethodOperatorJoin   = "operator.join"
-	MethodDBRefresh      = "db.refresh"
-	MethodAttacksFind    = "attacks.find"
-	MethodReportHTML     = "report.html"
-	MethodHailMary       = "campaign.hail_mary"
-	MethodJobStop        = "job.stop"
-	MethodSessionRun     = "session.run"
+	MethodConnect         = "connect"
+	MethodDisconnect      = "disconnect"
+	MethodConsoleWrite    = "console.write"
+	MethodConsoleTabs     = "console.tabs"
+	MethodModuleInfo      = "module.info"
+	MethodModuleOptions   = "module.options"
+	MethodPayloads        = "module.compatible_payloads"
+	MethodModuleExecute   = "module.execute"
+	MethodSessionAttach   = "session.attach"
+	MethodSessionDetach   = "session.detach"
+	MethodSessionWrite    = "session.write"
+	MethodSessionStop     = "session.stop"
+	MethodSessionUpgrade  = "session.upgrade"
+	MethodWorkspaceList   = "workspace.list"
+	MethodWorkspaceSet    = "workspace.set"
+	MethodOperatorJoin    = "operator.join"
+	MethodDBRefresh       = "db.refresh"
+	MethodAttacksFind     = "attacks.find"
+	MethodReportHTML      = "report.html"
+	MethodHailMary        = "campaign.hail_mary"
+	MethodJobStop         = "job.stop"
+	MethodSessionRun      = "session.run"
 	MethodPayloadGenerate = "payload.generate"
-	MethodHostAdd        = "db.host_add"
-	MethodHostDelete     = "db.host_delete"
-	MethodServiceDelete  = "db.service_delete"
-	MethodDBImport       = "db.import"
-	MethodHostNote       = "db.host_note"
-	MethodCredAdd        = "db.cred_add"
-	MethodCredDelete     = "db.cred_delete"
-	MethodLootDownload   = "loot.download"
+	MethodHostAdd         = "db.host_add"
+	MethodHostDelete      = "db.host_delete"
+	MethodServiceDelete   = "db.service_delete"
+	MethodDBImport        = "db.import"
+	MethodHostNote        = "db.host_note"
+	MethodCredAdd         = "db.cred_add"
+	MethodCredDelete      = "db.cred_delete"
+	MethodLootDownload    = "loot.download"
 )
 
 type ConnectParams struct {

@@ -16,18 +16,18 @@ const attackMatchCap = 200
 // serviceAliases normalize database service names that do not carry their
 // protocol in the string itself.
 var serviceAliases = map[string]string{
-	"microsoft-ds":   "smb",
-	"netbios-ssn":    "smb",
-	"ms-wbt-server":  "rdp",
-	"ms-sql-s":       "mssql",
-	"ms-sql-m":       "mssql",
-	"http-proxy":     "http",
-	"https-alt":      "http",
-	"domain":         "dns",
-	"postgresql":     "postgres",
-	"imaps":          "imap",
-	"pop3s":          "pop3",
-	"ssl/mysql":      "mysql",
+	"microsoft-ds":  "smb",
+	"netbios-ssn":   "smb",
+	"ms-wbt-server": "rdp",
+	"ms-sql-s":      "mssql",
+	"ms-sql-m":      "mssql",
+	"http-proxy":    "http",
+	"https-alt":     "http",
+	"domain":        "dns",
+	"postgresql":    "postgres",
+	"imaps":         "imap",
+	"pop3s":         "pop3",
+	"ssl/mysql":     "mysql",
 }
 
 var portServices = map[int]string{
