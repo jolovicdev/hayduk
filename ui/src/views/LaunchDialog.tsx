@@ -84,6 +84,10 @@ export function LaunchDialog(props: {
     return params ? ws.command<string[]>("module.compatible_payloads", params) : [];
   });
   const [payload, setPayload] = createSignal("");
+  // TARGET is an execution option, not a registered module option, so it does
+  // not appear in module.options. module.info carries the target list; the
+  // selected index rides the execute options where msf expects it.
+  const [target, setTarget] = createSignal("0");
   const [payloadOptions] = createResource(payload, async (p) => {
     if (!p) return null;
     return ws.command<OptionsMap>("module.options", { type: "payload", name: p });
@@ -95,6 +99,7 @@ export function LaunchDialog(props: {
 
   const optsMap = () => (options.latest ?? {}) as OptionsMap;
   const payMap = () => (payloadOptions.latest ?? {}) as OptionsMap;
+  const targets = () => info.latest?.targets ?? [];
 
   const required = () => Object.entries(optsMap()).filter(([, o]) => o?.required).map(([k]) => k);
   const optional = () => Object.entries(optsMap()).filter(([, o]) => o && !o.required).map(([k]) => k);
@@ -127,9 +132,11 @@ export function LaunchDialog(props: {
     setBusy(true);
     setError("");
     try {
+      const runOptions = collectOptions(optsMap(), resolved());
+      if (targets().length > 1) runOptions.TARGET = Number(target());
       await ws.command("module.execute", {
         type: props.type, name: props.path,
-        options: collectOptions(optsMap(), resolved()),
+        options: runOptions,
         ...(payload() ? { payload: payload(), payloadOptions: collectOptions(payMap(), resolvedPayload()) } : {}),
       });
       props.onClose();
@@ -162,6 +169,15 @@ export function LaunchDialog(props: {
             {i().description}
           </p>
         </>}
+      </Show>
+
+      <Show when={targets().length > 1}>
+        <label class="field" style="margin-top:12px">
+          <b>Target <span class="fdesc">(exploit target, not an option)</span></b>
+          <select value={target()} onChange={(e) => setTarget(e.currentTarget.value)}>
+            <For each={targets()}>{(t, i) => <option value={String(i())}>{i()} · {t}</option>}</For>
+          </select>
+        </label>
       </Show>
 
       <Show when={!options.loading && !options.error && options.latest} fallback={
