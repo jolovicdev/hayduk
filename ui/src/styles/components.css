@@ -311,7 +311,7 @@ table.dt .amb { color:var(--amb); }
 /* ---------- dialog copy ---------- */
 .modal p.mdesc { margin-top:4px; font:400 12px/1.55 var(--sans); color:var(--tx2); }
 .modal p.mtext { margin-top:0; font:400 12px/1.55 var(--sans); color:var(--tx1); }
-.modal p.mnote { margin-top:0; font:400 11px/1.5 var(--mono); color:var(--tx2); word-break:break-all; }
+.modal p.mnote { margin-top:0; font:400 11px/1.5 var(--mono); color:var(--tx2); overflow-wrap:anywhere; }
 .modal p.merror { margin-top:12px; color:var(--red-br); }
 .modal p.mwarn { margin-top:12px; color:var(--amb); }
 
@@ -428,4 +428,20 @@ table.dt .amb { color:var(--amb); }
   background:var(--well); border:1px solid var(--line); border-radius:6px;
   padding:10px 12px; font:400 12px var(--mono); color:var(--tx0);
   width:100%; margin-top:12px;
+}
+
+/* The stage head has to hold the view switch, zoom, and focus controls on one
+   row. On a narrow stage the zoom pair is the least useful of the three -
+   wheel and fit still work - so it drops first, then the focus label, and on
+   the smallest phones the segment icons. Without this the row's min-content
+   width pushed the whole page into horizontal scroll. */
+@container stage (max-width:470px) {
+  .stagehead { gap:6px; }
+  .zoomui { display:none; }
+  .graph-focus .focus-label { display:none; }
+  .graph-focus { width:30px; padding:0; justify-content:center; flex:none; }
+}
+@container stage (max-width:330px) {
+  .seg button i { display:none; }
+  .seg button { gap:0; padding:0 9px; }
 }

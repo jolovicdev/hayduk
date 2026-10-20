@@ -132,6 +132,11 @@ export function PivotDialog(props: {
       </Show>
       <div class="msec">
         <b>SOCKS proxy</b>
+        <p class="mnote">
+          Listens on the msfrpcd host and forwards through the workspace routing
+          table, so it reaches the networks every pivot above has added - this
+          session's included. It is workspace-wide, not scoped to this session.
+        </p>
         <div style="display:flex; gap:8px; align-items:center">
           <span class="fdesc">127.0.0.1:</span>
           <input value={socksPort()} inputmode="numeric" style="width:90px"
@@ -141,7 +146,7 @@ export function PivotDialog(props: {
         <For each={socksJobs()}>{(j) => (
           <div class="tools-row">
             <span class="m">job {j!.id}</span><span>socks_proxy</span>
-            <span class="dim">proxy for this workspace</span>
+            <span class="dim">on the msfrpcd host</span>
             <button class="abtn" onClick={() => stopJob(j!.id)}>Stop</button>
           </div>
         )}</For>

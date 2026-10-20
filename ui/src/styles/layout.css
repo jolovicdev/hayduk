@@ -77,7 +77,7 @@
 .tree .filterbox { margin:0 0 10px; }
 
 /* ---------- stage ---------- */
-.stage { grid-area:stage; display:flex; flex-direction:column; }
+.stage { grid-area:stage; display:flex; flex-direction:column; container:stage / inline-size; }
 .stagehead { display:flex; align-items:center; gap:10px; height:56px; padding:0 12px; user-select:none; }
 .stagehead .spacer { flex:1; }
 .stagebody { position:relative; flex:1; margin:0; border-radius:0 0 12px 12px; overflow:hidden; background:var(--well); container:mapstage / inline-size; }
@@ -207,7 +207,7 @@
   .toolbar .spacer { display:none; }
   .metric { padding:12px; gap:9px; }
   .metric-icon { display:none; }
-  .nbtabs { overflow-x:auto; flex-shrink:0; }
+  .nbtabs { flex-wrap:wrap; flex-shrink:0; }
   .nbtab { flex-shrink:0; }
 }
 @media (max-width:600px) {

@@ -369,8 +369,10 @@ export default function App() {
               <button class="zbtn" aria-label="Fit to view" onClick={fit} title="Fit graph to view (F)"><i aria-hidden="true" class="ph ph-corners-out"></i></button>
             </div>
           </Show>
-          <button class="graph-focus" aria-pressed={graphFocus()} onClick={() => setGraphFocus(!graphFocus())} title={graphFocus() ? "Return to campaign overview" : "Expand the map and inspector"}>
-            <i aria-hidden="true" class="ph ph-arrows-out-simple"></i>{graphFocus() ? "Exit focus" : "Focus"}
+          <button class="graph-focus" aria-pressed={graphFocus()} onClick={() => setGraphFocus(!graphFocus())}
+            aria-label={graphFocus() ? "Exit focus" : "Focus the map"}
+            title={graphFocus() ? "Return to campaign overview" : "Expand the map and inspector"}>
+            <i aria-hidden="true" class="ph ph-arrows-out-simple"></i><span class="focus-label">{graphFocus() ? "Exit focus" : "Focus"}</span>
           </button>
         </div>
         <div class="stagebody" classList={{ gridbg: stage() === "topo" && grid() }}>

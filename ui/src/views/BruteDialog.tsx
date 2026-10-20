@@ -38,6 +38,28 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const valid = () => hostList().length > 0 && passList().length + (addBlank() ? 1 : 0) > 0
     && (scanner().userless || userList().length > 0);
 
+  // The engine only re-pulls the database on its own periodic tick, so the
+  // last attempt's credentials are still missing from the store when the
+  // workers stop: measuring straight away would report "no credentials" and
+  // close while the creds showed up in the tab a tick later. Force the
+  // refresh, then let the resulting broadcast land - it rides the bus rather
+  // than the command response, so awaiting the response alone can still race
+  // it. Stop as soon as the store moves so a productive run does not sit out
+  // the whole grace window.
+  async function settleCreds(before: number, graceMs = 1000): Promise<number> {
+    try {
+      await ws.command("db.refresh", {});
+    } catch (e) {
+      const failure = e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
+      flash(`db refresh failed: ${failure}`);
+    }
+    const deadline = Date.now() + graceMs;
+    while (campaignState().creds.length === before && Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 50));
+    }
+    return campaignState().creds.length - before;
+  }
+
   async function run() {
     const p = plan();
     if (p.attempts.length === 0) return;
@@ -69,7 +91,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
     await Promise.all(workers);
     setRunning(false);
     setCurrent("");
-    const found = campaignState().creds.length - credsBefore;
+    const found = await settleCreds(credsBefore);
     if (found > 0) {
       flash(`${found} credential${found === 1 ? "" : "s"} found - see the Credentials tab`);
     } else if (failure) {
@@ -101,12 +123,12 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
         <div class="frow even">
           <label class="field">
             <b>Users <span class="fdesc">(one per line)</span></b>
-            <textarea rows={4} value={users()} spellcheck={false} disabled={scanner().userless}
+            <textarea rows={5} value={users()} spellcheck={false} disabled={scanner().userless}
               onInput={(e) => setUsers(e.currentTarget.value)} />
           </label>
           <label class="field">
             <b>Passwords <span class="fdesc">(one per line)</span></b>
-            <textarea rows={4} value={passes()} spellcheck={false}
+            <textarea rows={5} value={passes()} spellcheck={false}
               onInput={(e) => setPasses(e.currentTarget.value)} />
           </label>
         </div>
