@@ -42,6 +42,14 @@ jobs:
           go run github.com/gzuidhof/tygo@v0.2.21 generate
           git diff --exit-code -- ui/src/protocol/types.ts
 
+      - name: Vet and format Go
+        run: |
+          go vet ./...
+          unformatted=$(gofmt -l ./cmd ./internal)
+          if [ -n "$unformatted" ]; then
+            echo "gofmt needed on:"; echo "$unformatted"; exit 1
+          fi
+
       - name: Test Go
         run: go test -race ./...
 

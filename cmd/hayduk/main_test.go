@@ -35,7 +35,7 @@ func TestWildcardHost(t *testing.T) {
 		host string
 		want bool
 	}{
-		{"", true},          // ":8787" binds every interface
+		{"", true}, // ":8787" binds every interface
 		{"0.0.0.0", true},
 		{"::", true},
 		{"::ffff:0.0.0.0", true}, // mapped unspecified

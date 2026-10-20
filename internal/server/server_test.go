@@ -603,6 +603,7 @@ func TestOperatorJoinOverWS(t *testing.T) {
 		}
 	}
 }
+
 // Cookies are not partitioned by port: two instances on one host need
 // distinct cookie names, or the second login invalidates the first.
 func TestInstancesDoNotOverwriteAuthCookies(t *testing.T) {

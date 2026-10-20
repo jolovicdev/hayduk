@@ -91,7 +91,7 @@ type Engine struct {
 	// interactBufs holds one transcript per attached session: operators
 	// keep several session consoles open, and switching the active tab
 	// must not erase the others. interactSID names the active one.
-	interactBufs        map[string][]byte
+	interactBufs map[string][]byte
 	// sessionTags remembers the workspace each live session was opened
 	// under, keyed by session id and validated by uuid: ids are per-daemon
 	// counters and get reused, so attribution carries across a reconnect

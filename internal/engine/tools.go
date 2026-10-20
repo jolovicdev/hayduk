@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -16,7 +19,30 @@ import (
 // db deletes, credential writes) runs on a temporary utility console: the
 // operator's console never sees it, and the route console keeps its job.
 
+// lockedUtilityConsole is utilityConsole with toolsMu held. Every caller that
+// runs console-only work goes through it so the unlock happens on every
+// path: a panic in the string work below must not leave the mutex locked
+// and wedge every later session command.
+func (e *Engine) lockedUtilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines []string) (string, error) {
+	e.toolsMu.Lock()
+	defer e.toolsMu.Unlock()
+	return e.utilityConsole(ctx, rpc, lines)
+}
+
+// errConsoleLineBreak rejects a utility-console command whose own text holds
+// a line break. The console is line-oriented: quoting a value for Ruby's
+// Shellwords keeps it one argv token, but an embedded newline still ends the
+// console input line, so the rest of the value would run as a command of its
+// own. There is no legitimate console value with a newline, so refuse it
+// instead of changing what the operator typed.
+var errConsoleLineBreak = errors.New("console command contains a line break")
+
 func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines []string) (string, error) {
+	for _, line := range lines {
+		if strings.ContainsAny(line, "\r\n") {
+			return "", errConsoleLineBreak
+		}
+	}
 	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
 	cm := gomsf.NewConsoleManager(rpc)
@@ -135,13 +161,12 @@ func (e *Engine) payloadGenerate(ctx context.Context, rpc gomsf.RPCCaller, p pro
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		lines = append(lines, fmt.Sprintf("set %s %v", k, p.Options[k]))
+		if !optionNameRe.MatchString(k) {
+			return nil, badParam("invalid payload option name: " + k)
+		}
+		lines = append(lines, "set "+k+" "+consoleOptionArg(p.Options[k]))
 	}
-	base := p.Payload
-	if i := strings.LastIndex(base, "/"); i >= 0 {
-		base = base[i+1:]
-	}
-	saved := "/tmp/hayduk-" + base + "." + p.Format
+	saved := payloadOutputPath(payloadBase(p.Payload), p.Format)
 	lines = append(lines, "generate -f "+p.Format+" -o "+saved)
 	out, err := e.utilityConsole(ctx, rpc, lines)
 	if err != nil {
@@ -151,16 +176,66 @@ func (e *Engine) payloadGenerate(ctx context.Context, rpc gomsf.RPCCaller, p pro
 		return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "payload generation produced no file"}
 	}
 	return mustJSON(protocol.PayloadGeneratePayload{
-		Filename: base + "." + p.Format, SavedPath: saved,
+		Filename: strings.TrimPrefix(saved, "/tmp/"), SavedPath: saved,
 	}), nil
 }
 
+func payloadBase(payload string) string {
+	if i := strings.LastIndex(payload, "/"); i >= 0 {
+		return payload[i+1:]
+	}
+	return payload
+}
+
+// The generated file lands on the msfrpcd host, and this process cannot
+// create a directory over there, so the name itself has to carry the
+// uniqueness. A predictable path in a world-writable directory can be
+// pre-created as a symlink by another local user, and `generate -o` follows
+// it, writing the payload wherever they pointed it.
+func payloadOutputPath(base, format string) string {
+	var b [6]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("/tmp/hayduk-%s-%d.%s", base, time.Now().UnixNano(), format)
+	}
+	return fmt.Sprintf("/tmp/hayduk-%s-%x.%s", base, b, format)
+}
+
+// services -d selects on host and port alone. Metasploit's services command
+// parses -r/--protocol but applies it to the add and update paths only, so a
+// delete that carries it drops the filter before the search and takes every
+// protocol on that port with it. The UI deletes row by row, so a tcp/udp pair
+// on one port would silently lose the row the operator did not click. Refuse
+// instead: an over-deletion they cannot see is worse than one they must
+// resolve at the daemon.
+func (e *Engine) serviceProtoConflict(host string, port int) string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	protos := map[string]bool{}
+	for _, s := range e.services {
+		if s != nil && s.Host == host && s.Port == port && s.Proto != "" {
+			protos[s.Proto] = true
+		}
+	}
+	if len(protos) < 2 {
+		return ""
+	}
+	names := make([]string, 0, len(protos))
+	for p := range protos {
+		names = append(names, p)
+	}
+	sort.Strings(names)
+	return fmt.Sprintf(
+		"%s:%d is recorded on %s, and msfconsole cannot delete one protocol at a time",
+		host, port, strings.Join(names, " and "))
+}
+
 func (e *Engine) serviceDelete(ctx context.Context, rpc gomsf.RPCCaller, operator, ws string, p protocol.ServiceRefParams) (json.RawMessage, *protocol.ErrorBody) {
-	e.toolsMu.Lock()
-	out, err := e.utilityConsole(ctx, rpc, []string{
-		fmt.Sprintf("services -d -p %d %s", p.Port, p.Host),
+	if conflict := e.serviceProtoConflict(p.Host, p.Port); conflict != "" {
+		return nil, badParam(conflict)
+	}
+	out, err := e.lockedUtilityConsole(ctx, rpc, []string{
+		fmt.Sprintf("services -d -p %d %s", p.Port, consoleArg(p.Host)),
 	})
-	e.toolsMu.Unlock()
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -172,31 +247,60 @@ func (e *Engine) serviceDelete(ctx context.Context, rpc gomsf.RPCCaller, operato
 	return nil, nil
 }
 
-func credConsoleArg(v string) string {
+// consoleArg quotes one value for the msfconsole line it lands in.
+// msfconsole splits its arguments with Ruby's shellwords, where a single
+// quote protects everything up to the next quote, so an embedded quote is
+// escaped the POSIX way - close, backslash-escape, reopen. Deleting it
+// instead would write a different credential than the operator typed and
+// report success, which is worse than a rejected add. A bare double quote
+// or backslash starts a quoted or escaped run too, so either one forces the
+// whole value inside quotes.
+func consoleArg(v string) string {
 	if v == "" {
 		return v
 	}
-	if strings.ContainsAny(v, " \t'") {
-		return "'" + strings.ReplaceAll(v, "'", "") + "'"
+	if !strings.ContainsAny(v, " \t'\"\\") {
+		return v
 	}
-	return v
+	return "'" + strings.ReplaceAll(v, "'", `'\''`) + "'"
+}
+
+// optionNameRe constrains the option names that reach a console line. msf
+// option names are identifiers, so anything else - a newline above all -
+// can only be an attempt to smuggle a second console command into the
+// utility console's script.
+var optionNameRe = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]*$`)
+
+// consoleOptionArg renders one option value for `set K V`. Scalars print
+// bare: quoting a bool or an integer would hand msfconsole a literal that
+// its option validator rejects. A string goes through consoleArg so a value
+// carrying a space - a User-Agent, a custom command - survives, and one
+// carrying a newline cannot break out into a console line of its own.
+func consoleOptionArg(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return consoleArg(t)
+	case bool, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, float32, float64:
+		return fmt.Sprintf("%v", v)
+	default:
+		return consoleArg(fmt.Sprintf("%v", v))
+	}
 }
 
 func (e *Engine) credAdd(ctx context.Context, rpc gomsf.RPCCaller, operator, ws string, p protocol.CredAddParams) (json.RawMessage, *protocol.ErrorBody) {
-	parts := []string{"creds add", "address:" + credConsoleArg(p.Host)}
+	parts := []string{"creds add", "address:" + consoleArg(p.Host)}
 	if p.Port > 0 {
 		parts = append(parts, fmt.Sprintf("port:%d", p.Port), "protocol:tcp")
 	}
 	if p.Service != "" {
-		parts = append(parts, "service-name:"+credConsoleArg(p.Service))
+		parts = append(parts, "service-name:"+consoleArg(p.Service))
 	}
-	parts = append(parts, "user:"+credConsoleArg(p.User))
+	parts = append(parts, "user:"+consoleArg(p.User))
 	if p.Pass != "" {
-		parts = append(parts, "password:"+credConsoleArg(p.Pass))
+		parts = append(parts, "password:"+consoleArg(p.Pass))
 	}
-	e.toolsMu.Lock()
-	out, err := e.utilityConsole(ctx, rpc, []string{strings.Join(parts, " ")})
-	e.toolsMu.Unlock()
+	out, err := e.lockedUtilityConsole(ctx, rpc, []string{strings.Join(parts, " ")})
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -209,16 +313,14 @@ func (e *Engine) credAdd(ctx context.Context, rpc gomsf.RPCCaller, operator, ws 
 }
 
 func (e *Engine) credDelete(ctx context.Context, rpc gomsf.RPCCaller, operator, ws string, p protocol.CredRefParams) (json.RawMessage, *protocol.ErrorBody) {
-	parts := []string{"creds -d", p.Host}
+	parts := []string{"creds -d", consoleArg(p.Host)}
 	if p.Port > 0 {
 		parts = append(parts, fmt.Sprintf("-p %d", p.Port))
 	}
 	if p.User != "" {
-		parts = append(parts, "-u "+credConsoleArg(p.User))
+		parts = append(parts, "-u "+consoleArg(p.User))
 	}
-	e.toolsMu.Lock()
-	out, err := e.utilityConsole(ctx, rpc, []string{strings.Join(parts, " ")})
-	e.toolsMu.Unlock()
+	out, err := e.lockedUtilityConsole(ctx, rpc, []string{strings.Join(parts, " ")})
 	if err != nil {
 		return nil, mapErr(err)
 	}
@@ -230,11 +332,14 @@ func (e *Engine) credDelete(ctx context.Context, rpc gomsf.RPCCaller, operator, 
 	return nil, nil
 }
 
-func (e *Engine) lootDownload(ctx context.Context, rpc gomsf.RPCCaller, p protocol.LootRefParams) (json.RawMessage, *protocol.ErrorBody) {
+// lootDownload reads through the connection and workspace the dispatcher
+// already captured when it cleared the auth gate. Both belong to that
+// decision, so neither is re-read here: a workspace.set landing mid-command
+// would otherwise pair the old connection with the newer workspace.
+func (e *Engine) lootDownload(ctx context.Context, rpc gomsf.RPCCaller, ws string, p protocol.LootRefParams) (json.RawMessage, *protocol.ErrorBody) {
 	if rpc == nil {
 		return nil, notConnected()
 	}
-	_, ws := e.dispatchScope()
 	loots, err := gomsf.NewDbManager(rpc).Loots(ctx, map[string]interface{}{"workspace": ws})
 	if err != nil {
 		return nil, mapErr(err)
@@ -246,4 +351,3 @@ func (e *Engine) lootDownload(ctx context.Context, rpc gomsf.RPCCaller, p protoc
 	}
 	return nil, badParam("no such loot entry")
 }
-
