@@ -83,8 +83,8 @@ Use the campaign summary cards to open hosts, services, sessions, or credentials
 The network map adapts host columns to the available canvas. Choose **Focus** to expand the map and host inspector. **Arrange hosts** replaces saved positions with an automatic layout. Host cards show open service counts and access state; violet paths identify pivot routes.
 
 1. **Choose a workspace.** Click the **workspace** chip to switch between existing Metasploit workspaces, or use the current workspace. The active workspace scopes the database tables, topology, and exported report, keeping each client's campaign data separate. Events and sessions retain their originating workspace for report attribution; the **Sessions** tab shows sessions across workspaces.
-2. **Discover hosts.** Open **Campaign → Discover hosts…**, enter your target host or CIDR range, select a scanner, and click **Configure…**. Review the module options and click **Launch**.
-3. **Scan and inspect services.** Open **Campaign → Scan services…** and configure a scan for your target. Review the options before launching it. Open **View → Topology** to see discovered hosts, or **View → Services** to inspect service results.
+2. **Discover hosts.** Open **Campaign → Discover hosts…**, enter your target host or CIDR range, select a scanner, and click **Launch…**. Review the module options and click **Launch**.
+3. **Scan and inspect services.** Open **Campaign → Scan services…** and enter a target. Version detection is on by default: nmap fingerprints service names and versions and imports them into the workspace. Clear it to use a Metasploit portscan module instead. Open **View → Topology** to see discovered hosts, or **View → Services** to inspect service results.
 4. **Launch an exploit and open a session.** Right-click an exploit module in the tree and choose **Launch…**, or open **Campaign → Find attacks…** and click a match's **Launch** button to prefill the target host and matched port. Review the module options and payload, then click **Launch**. If a session opens, click its row in the **Sessions** tab, or right-click its host and choose **Interact with session <ID>**, to open the live console in **Interact**.
 5. **Export a report.** Choose **File → Export report…** to download a self-contained HTML campaign report.
 
@@ -98,7 +98,7 @@ The network map adapts host columns to the available canvas. Choose **Focus** to
 |---|---|
 | Network topology | Explore adaptive subnet groups, host service counts, and pivot routes. Drag hosts, zoom, or expand the map in Focus mode. |
 | Metasploit modules | Browse the module tree, inspect reliability ranks, configure options, and select payloads. |
-| Campaign workflows | Discover hosts, scan services, and find exploit candidates matching known services. |
+| Campaign workflows | Discover hosts, version-fingerprint services, and find exploit candidates matching known services. |
 | Session management | Interact with Meterpreter and shell sessions, upgrade shells, and terminate sessions. |
 | Credentials and loot | Review workspace data and use recovered credentials in login workflows. |
 | Hail Mary | Launch matching exploits against selected hosts, with paced launches and an event log. |
@@ -154,6 +154,7 @@ Team mode uses one shared token and plain HTTP. Operator names are labels, not v
 | SSL connection fails | Leave **use SSL** unchecked when `msfrpcd` runs with `-S`; enable it when the daemon uses SSL. |
 | Connection takes time | Watch the connection dialog. A cold Metasploit instance can take about half a minute to respond. |
 | Hosts or services are missing | Check the selected workspace, Metasploit's database connection, and target reachability from Metasploit. |
+| Service scan fails | Version detection runs `db_nmap`, so nmap must be installed on the Metasploit host and Metasploit's database must be connected. Clear **detect service versions** to fall back to a portscan module. |
 
 ## FAQ
 
