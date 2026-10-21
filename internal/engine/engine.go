@@ -134,6 +134,9 @@ type Engine struct {
 	// routeKick wakes the route poller out of band; an autoroute job ending
 	// kicks it so new pivots show up at once instead of next interval
 	routeKick chan struct{}
+	// refreshKick coalesces post-mutation refreshes. A command returns as
+	// soon as the write lands; the table update follows on the refresh loop.
+	refreshKick chan struct{}
 
 	bus *bus
 	wg  sync.WaitGroup
@@ -142,12 +145,13 @@ type Engine struct {
 func New(cfg Config) *Engine {
 	cfg = cfg.withDefaults()
 	e := &Engine{
-		cfg:       cfg,
-		sessions:  make(map[string]*protocol.SessionState),
-		jobs:      make(map[string]*protocol.JobState),
-		bus:       newBus(),
-		conn:      protocol.ConnectionState{Status: "disconnected"},
-		routeKick: make(chan struct{}, 1),
+		cfg:         cfg,
+		sessions:    make(map[string]*protocol.SessionState),
+		jobs:        make(map[string]*protocol.JobState),
+		bus:         newBus(),
+		conn:        protocol.ConnectionState{Status: "disconnected"},
+		routeKick:   make(chan struct{}, 1),
+		refreshKick: make(chan struct{}, 1),
 	}
 	e.wg.Add(1)
 	go func() {

@@ -339,7 +339,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s added", p.Address)
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodHostDelete:
@@ -354,7 +354,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s deleted", p.Address)
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodServiceDelete:
@@ -379,7 +379,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "scan data imported")
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodHostNote:
@@ -393,7 +393,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if _, err := rpc.Call(ctx, gomsf.DbReportHost, map[string]interface{}{"host": p.Address, "comments": p.Comments}); err != nil {
 			return nil, mapErr(err)
 		}
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodCredAdd:

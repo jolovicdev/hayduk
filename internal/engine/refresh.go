@@ -25,7 +25,20 @@ func (e *Engine) refreshLoop(ctx context.Context) {
 			return
 		case <-time.After(e.cfg.RefreshInterval):
 			e.pollState(ctx)
+		case <-e.refreshKick:
+			e.pollState(ctx)
 		}
+	}
+}
+
+// requestRefresh asks the refresh loop for a sweep after a mutation. The
+// channel is buffered and the send non-blocking: several mutations in one
+// burst collapse into a single refresh, and a command never waits for the
+// database read.
+func (e *Engine) requestRefresh() {
+	select {
+	case e.refreshKick <- struct{}{}:
+	default:
 	}
 }
 

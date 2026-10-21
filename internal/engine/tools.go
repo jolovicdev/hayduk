@@ -243,7 +243,7 @@ func (e *Engine) serviceDelete(ctx context.Context, rpc gomsf.RPCCaller, operato
 		return nil, badParam(fmt.Sprintf("no service %s:%d to delete", p.Host, p.Port))
 	}
 	e.eventfOpIn(ws, operator, protocol.LevelInfo, "service %s:%d deleted", p.Host, p.Port)
-	_ = e.refreshDB(ctx)
+	e.requestRefresh()
 	return nil, nil
 }
 
@@ -308,7 +308,7 @@ func (e *Engine) credAdd(ctx context.Context, rpc gomsf.RPCCaller, operator, ws 
 		return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "msfrpcd rejected the credential"}
 	}
 	e.eventfOpIn(ws, operator, protocol.LevelInfo, "credential for %s on %s added", p.User, p.Host)
-	_ = e.refreshDB(ctx)
+	e.requestRefresh()
 	return nil, nil
 }
 
@@ -328,7 +328,7 @@ func (e *Engine) credDelete(ctx context.Context, rpc gomsf.RPCCaller, operator, 
 		return nil, badParam("no matching credential to delete")
 	}
 	e.eventfOpIn(ws, operator, protocol.LevelInfo, "credential for %s deleted", p.Host)
-	_ = e.refreshDB(ctx)
+	e.requestRefresh()
 	return nil, nil
 }
 
