@@ -1,7 +1,7 @@
 // msf option values must keep their types: rpc_execute rejects "443" where
 // it wants an integer and "true" where it wants a boolean.
 
-import { serviceOpen } from "./serviceState";
+import { SERVICE_NAMES, SERVICE_PORTS, matchingServicePort } from "./serviceCatalog";
 
 export interface LaunchService {
   host: string;
@@ -15,33 +15,9 @@ export interface LaunchService {
 // appear as, plus fallback ports for scanners that did not fingerprint a
 // name. Matching the path rather than the module's prose keeps the guess
 // predictable.
-const SERVICE_TOKEN_NAMES: Record<string, string[]> = {
-  ssh: ["ssh"],
-  smb: ["smb", "microsoft-ds", "netbios-ssn"],
-  ftp: ["ftp"],
-  telnet: ["telnet"],
-  smtp: ["smtp"],
-  dns: ["dns", "domain"],
-  http: ["http", "http-proxy", "https", "ssl/http"],
-  mysql: ["mysql", "ssl/mysql"],
-  mssql: ["mssql", "ms-sql-s", "ms-sql-m"],
-  postgres: ["postgres", "postgresql"],
-  rdp: ["rdp", "ms-wbt-server"],
-  vnc: ["vnc"],
-  ldap: ["ldap"],
-  snmp: ["snmp"],
-};
-
-const SERVICE_TOKEN_PORTS: Record<string, number[]> = {
-  ssh: [22], smb: [139, 445], ftp: [21], telnet: [23], smtp: [25],
-  dns: [53], http: [80, 443, 591, 8000, 8080, 8443], mysql: [3306],
-  mssql: [1433], postgres: [5432], rdp: [3389], vnc: [5900],
-  ldap: [389], snmp: [161],
-};
-
 export function moduleServiceToken(name: string): string | undefined {
   const segments = name.toLowerCase().split("/");
-  for (const token of Object.keys(SERVICE_TOKEN_NAMES)) {
+  for (const token of Object.keys(SERVICE_NAMES)) {
     if (segments.includes(token)) return token;
   }
   return undefined;
@@ -58,18 +34,9 @@ export function inferServicePort(
   if (!host) return undefined;
   const token = moduleServiceToken(name);
   if (!token) return undefined;
-  const names = SERVICE_TOKEN_NAMES[token] ?? [];
-  const ports = SERVICE_TOKEN_PORTS[token] ?? [];
-  const matches = services
-    .filter((s): s is LaunchService => !!s && s.host === host && serviceOpen(s))
-    .filter(s => {
-      const serviceName = (s.name ?? "").toLowerCase();
-      return (serviceName !== "" && names.some(n => serviceName.includes(n))) || ports.includes(s.port);
-    })
-    .map(s => s.port)
-    .filter(port => port > 0)
-    .sort((a, b) => a - b);
-  return matches[0];
+  const names = SERVICE_NAMES[token] ?? [];
+  const ports = SERVICE_PORTS[token] ?? [];
+  return matchingServicePort(host, names, ports, services);
 }
 
 export interface OptionDef {

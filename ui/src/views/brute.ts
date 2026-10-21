@@ -1,7 +1,7 @@
 // Brute-force planning: the login scanners take one credential pair per
 // run, so the dialog sprays pairs and the cartesian product is built here.
 
-import { serviceOpen } from "./serviceState";
+import { SERVICE_NAMES, SERVICE_PORTS, matchingServicePort, serviceMatches } from "./serviceCatalog";
 
 export interface BruteAttempt {
   host: string;
@@ -38,35 +38,35 @@ export interface LoginScanner {
 export const LOGIN_SCANNERS: LoginScanner[] = [
   {
     service: "smb", label: "SMB", module: "scanner/smb/smb_login",
-    names: ["smb", "microsoft-ds", "netbios-ssn"], ports: [139, 445],
+    names: SERVICE_NAMES.smb!, ports: SERVICE_PORTS.smb!,
   },
   {
     service: "ssh", label: "SSH", module: "scanner/ssh/ssh_login",
-    names: ["ssh"], ports: [22],
+    names: SERVICE_NAMES.ssh!, ports: SERVICE_PORTS.ssh!,
   },
   {
     service: "ftp", label: "FTP", module: "scanner/ftp/ftp_login",
-    names: ["ftp"], ports: [21],
+    names: SERVICE_NAMES.ftp!, ports: SERVICE_PORTS.ftp!,
   },
   {
     service: "telnet", label: "Telnet", module: "scanner/telnet/telnet_login",
-    names: ["telnet"], ports: [23],
+    names: SERVICE_NAMES.telnet!, ports: SERVICE_PORTS.telnet!,
   },
   {
     service: "mssql", label: "MSSQL", module: "scanner/mssql/mssql_login",
-    names: ["mssql", "ms-sql-s", "ms-sql-m"], ports: [1433],
+    names: SERVICE_NAMES.mssql!, ports: SERVICE_PORTS.mssql!,
   },
   {
     service: "mysql", label: "MySQL", module: "scanner/mysql/mysql_login",
-    names: ["mysql", "ssl/mysql"], ports: [3306],
+    names: SERVICE_NAMES.mysql!, ports: SERVICE_PORTS.mysql!,
   },
   {
     service: "postgres", label: "PostgreSQL", module: "scanner/postgres/postgres_login",
-    names: ["postgres", "postgresql"], ports: [5432],
+    names: SERVICE_NAMES.postgres!, ports: SERVICE_PORTS.postgres!,
   },
   {
     service: "vnc", label: "VNC", module: "scanner/vnc/vnc_login",
-    names: ["vnc"], ports: [5900], userless: true,
+    names: SERVICE_NAMES.vnc!, ports: SERVICE_PORTS.vnc!, userless: true,
   },
 ];
 
@@ -98,10 +98,7 @@ export function matchesLoginScanner(
   service: { port?: number; name?: string; state?: string },
   scanner: LoginScanner,
 ): boolean {
-  if (!serviceOpen(service)) return false;
-  const name = (service.name ?? "").toLowerCase();
-  if (name && scanner.names.some(n => name.includes(n))) return true;
-  return scanner.ports.includes(service.port ?? -1);
+  return serviceMatches(service, scanner.names, scanner.ports);
 }
 
 // defaultScannerForHost preselects the login scanner that matches the
@@ -123,12 +120,7 @@ export function servicePortForHost(
   scanner: LoginScanner,
   services: readonly (BruteService | undefined)[],
 ): number | undefined {
-  const ports = services
-    .filter((s): s is BruteService => !!s && s.host === host && matchesLoginScanner(s, scanner))
-    .map(s => s.port)
-    .filter(p => p > 0)
-    .sort((a, b) => a - b);
-  return ports[0];
+  return matchingServicePort(host, scanner.names, scanner.ports, services);
 }
 
 export interface BruteInput {
