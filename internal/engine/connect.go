@@ -320,6 +320,10 @@ func (e *Engine) Disconnect() {
 		e.connecting = false
 	}
 	cancel := e.runCancel
+	scanCancel := e.scanCancel
+	e.scanCancel = nil
+	e.scanRunning = false
+	e.scanSeq++ // an old scan's deferred cleanup must not clear a later one
 	dropRPC := e.rpc
 	dropConsoleID := e.consoleID
 	dropRouteCID := ""
@@ -364,6 +368,9 @@ func (e *Engine) Disconnect() {
 		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
 	}
 	e.mu.Unlock()
+	if scanCancel != nil {
+		scanCancel()
+	}
 	if cancel != nil {
 		cancel()
 	}

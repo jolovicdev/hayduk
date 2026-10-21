@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
 )
@@ -69,6 +70,52 @@ func TestRefreshFetchesAllDatabasePages(t *testing.T) {
 		if n != 105 {
 			t.Errorf("%s: 105 rows in the database, %d in the campaign", name, n)
 		}
+	}
+}
+
+// The four database collections are independent RPCs. Fetch them together
+// instead of paying their latency one after another.
+func TestRefreshFetchesCollectionsConcurrently(t *testing.T) {
+	started := make(chan string, 4)
+	release := make(chan struct{})
+	fake := stdFake()
+	for _, table := range []struct {
+		method gomsf.MsfRpcMethod
+		key    string
+	}{
+		{gomsf.DbHosts, "hosts"}, {gomsf.DbServices, "services"},
+		{gomsf.DbCreds, "creds"}, {gomsf.DbLoots, "loots"},
+	} {
+		table := table
+		fake.set(table.method, func(args ...interface{}) (interface{}, error) {
+			started <- table.key
+			<-release
+			return map[string]interface{}{table.key: []interface{}{}}, nil
+		})
+	}
+	e := testEngine(t)
+	e.rpc = fake
+	e.conn.Workspace = "default"
+	e.gen = 1
+
+	done := make(chan error, 1)
+	go func() { done <- e.refreshDB(context.Background()) }()
+	for i := 0; i < 4; i++ {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			close(release)
+			t.Fatal("refresh started collections one at a time")
+		}
+	}
+	close(release)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("refresh: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("concurrent refresh did not finish")
 	}
 }
 

@@ -106,6 +106,12 @@ type Engine struct {
 	operators     map[string]int
 	seq           int64
 	errStreak     int
+	// scanRunning guards the single asynchronous version-scan slot.
+	// scanSeq identifies the current owner so a canceled scan's cleanup
+	// cannot release a scan started after it.
+	scanRunning bool
+	scanSeq     uint64
+	scanCancel  context.CancelFunc
 
 	connecting bool
 	// connectSeq names the connection attempt that owns the connecting slot;

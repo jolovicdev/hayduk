@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -17,17 +18,32 @@ import (
 // handed in by the bootstrap that owns it, so an old loop can never bind to
 // a newer connection's context.
 func (e *Engine) refreshLoop(ctx context.Context) {
-	e.refreshDB(ctx)
-	e.reconcileSessions(ctx)
+	e.pollState(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(e.cfg.RefreshInterval):
-			e.refreshDB(ctx)
-			e.reconcileSessions(ctx)
+			e.pollState(ctx)
 		}
 	}
+}
+
+// pollState refreshes the database and reconciles sessions together: they
+// touch different resources and both are RPC round trips, so serializing them
+// only delays the next tick.
+func (e *Engine) pollState(ctx context.Context) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = e.refreshDB(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		e.reconcileSessions(ctx)
+	}()
+	wg.Wait()
 }
 
 func (e *Engine) runContext() context.Context {
@@ -83,6 +99,50 @@ func fetchAllPages[T any](ctx context.Context, workspace string, fetch func(ctx 
 	}
 }
 
+// fetchWorkspaceCollections reads the four database tables concurrently.
+// Each is an independent RPC round trip and msfrpcd answers them in parallel,
+// so a slow collection no longer serializes the whole refresh. All four reads
+// still finish (or fail) before any state is committed, preserving the
+// all-or-nothing refresh contract.
+func fetchWorkspaceCollections(
+	ctx context.Context, db *gomsf.DbManager, workspace string,
+) (hosts []*gomsf.Host, services []*gomsf.Service, creds []*gomsf.Credential, loots []*gomsf.Loot, err error) {
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	collect := func(name string, fetch func() (any, error)) {
+		defer wg.Done()
+		rows, e := fetch()
+		if e != nil {
+			errs <- fmt.Errorf("%s: %w", name, e)
+			return
+		}
+		switch v := rows.(type) {
+		case []*gomsf.Host:
+			hosts = v
+		case []*gomsf.Service:
+			services = v
+		case []*gomsf.Credential:
+			creds = v
+		case []*gomsf.Loot:
+			loots = v
+		}
+		errs <- nil
+	}
+	wg.Add(4)
+	go collect("hosts", func() (any, error) { return fetchAllPages(ctx, workspace, db.Hosts) })
+	go collect("services", func() (any, error) { return fetchAllPages(ctx, workspace, db.Services) })
+	go collect("creds", func() (any, error) { return fetchAllPages(ctx, workspace, db.Creds) })
+	go collect("loots", func() (any, error) { return fetchAllPages(ctx, workspace, db.Loots) })
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		if e != nil && err == nil {
+			err = e
+		}
+	}
+	return
+}
+
 // refreshDBLocked is refreshDB for callers already holding refreshMu -
 // workspace.set uses it so its clear-plus-reload transition cannot be
 // interleaved with a periodic refresh that still read the old workspace.
@@ -103,22 +163,7 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	if current, _ := db.CurrentWorkspace(ctx); current != "" {
 		pinned = current
 	}
-	hosts, err := fetchAllPages(ctx, pinned, db.Hosts)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	services, err := fetchAllPages(ctx, pinned, db.Services)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	creds, err := fetchAllPages(ctx, pinned, db.Creds)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	loots, err := fetchAllPages(ctx, pinned, db.Loots)
+	hosts, services, creds, loots, err := fetchWorkspaceCollections(ctx, db, pinned)
 	if err != nil {
 		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err

@@ -382,6 +382,9 @@ const (
 	MethodCredAdd         = "db.cred_add"
 	MethodCredDelete      = "db.cred_delete"
 	MethodLootDownload    = "loot.download"
+	// MethodServicesScan runs a version-detecting nmap scan through the
+	// Metasploit console and imports the results into the workspace.
+	MethodServicesScan = "services.scan"
 )
 
 type ConnectParams struct {
@@ -434,6 +437,20 @@ type WorkspaceSetParams struct {
 
 type AttacksFindParams struct {
 	Host string `json:"host"`
+}
+
+// ServiceScanParams describes a version-detecting service scan. Ports empty
+// means nmap's top 1000 TCP ports; SkipDiscovery adds -Pn for hosts that do
+// not answer ping.
+type ServiceScanParams struct {
+	Target        string `json:"target"`
+	Ports         string `json:"ports,omitempty"`
+	SkipDiscovery bool   `json:"skipDiscovery,omitempty"`
+}
+
+type ServiceScanPayload struct {
+	Target string `json:"target"`
+	Ports  string `json:"ports,omitempty"`
 }
 
 type ReportPayload struct {

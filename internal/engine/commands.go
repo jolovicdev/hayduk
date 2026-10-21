@@ -422,6 +422,13 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, eb
 		}
 		return e.lootDownload(ctx, rpc, ws, p)
+
+	case protocol.MethodServicesScan:
+		var p protocol.ServiceScanParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		return e.servicesScan(ctx, operator, ws, p)
 	}
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
@@ -735,7 +742,8 @@ func knownMethod(method string) bool {
 		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
 		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,
 		protocol.MethodDBImport, protocol.MethodHostNote, protocol.MethodCredAdd,
-		protocol.MethodCredDelete, protocol.MethodLootDownload:
+		protocol.MethodCredDelete, protocol.MethodLootDownload,
+		protocol.MethodServicesScan:
 		return true
 	}
 	return false

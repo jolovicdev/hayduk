@@ -80,10 +80,13 @@ func sessionState(id string, s *gomsf.Session, ws string) *protocol.SessionState
 		st.ViaExploit = s.ViaExploit
 		st.ViaPayload = s.ViaPayload
 		st.Info = s.Info
-		st.Username = s.Username
-		st.TargetHost = s.TargetHost
-		st.SessionHost = s.SessionHost
+		st.Username = daemonSessionUsername(s)
+		st.TargetHost = cleanSessionHost(s.TargetHost)
+		st.SessionHost = cleanSessionHost(s.SessionHost)
 		st.UUID = s.UUID
+		if st.TargetHost == "" {
+			st.TargetHost = sessionTargetHost(s)
+		}
 	}
 	return st
 }
@@ -137,16 +140,29 @@ func (e *Engine) reconcileSessions(ctx context.Context) {
 	changed := false
 	interactDropped := false
 	for sid, st := range e.sessions {
-		if _, listed := live[sid]; !listed && !st.OpenedAt.After(snapshotAt) {
-			e.removeSessionLocked(sid)
-			e.logf(protocol.LevelWarn, "session %s closed", sid)
-			if _, attached := e.interactBufs[sid]; attached {
-				delete(e.interactBufs, sid)
-				if e.interactSID == sid {
-					e.interactSID = ""
+		daemonSession, listed := live[sid]
+		if !listed {
+			if !st.OpenedAt.After(snapshotAt) {
+				e.removeSessionLocked(sid)
+				e.logf(protocol.LevelWarn, "session %s closed", sid)
+				if _, attached := e.interactBufs[sid]; attached {
+					delete(e.interactBufs, sid)
+					if e.interactSID == sid {
+						e.interactSID = ""
+					}
+					interactDropped = true
 				}
-				interactDropped = true
+				changed = true
 			}
+			continue
+		}
+		// The first open event can arrive before session.list has the
+		// username/host; enrich the row as the daemon fills those fields in.
+		// Replace the pointer rather than mutating it: broadcasts already
+		// queued for browsers share the old value.
+		next := *st
+		if enrichSessionState(&next, daemonSession) {
+			e.sessions[sid] = &next
 			changed = true
 		}
 	}
