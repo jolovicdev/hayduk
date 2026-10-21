@@ -14,12 +14,13 @@ import type { SessionState } from "../protocol/types";
 export function SessionsView(props: {
   onInteract: (sid: string) => void;
   onScanSubnet?: (subnet: string) => void;
+  active?: () => boolean;
 }) {
   const [upgrading, setUpgrading] = createSignal<string | undefined>(undefined);
   const [pivoting, setPivoting] = createSignal<string | undefined>(undefined);
   // ages are rendered from wall-clock time; without a tick they freeze at
   // whatever moment the sessions map last changed
-  const now = createNowSignal();
+  const now = createNowSignal(30_000, () => props.active?.() ?? true);
   const rows = createMemo(() =>
     Object.values(campaignState().sessions)
       .filter((s): s is SessionState => !!s)

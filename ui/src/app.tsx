@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import ConnectDialog from "./views/ConnectDialog";
 import { ContextMenuRoot, closeContextMenu, openContextMenu } from "./components/contextmenu";
 import { Dropdown, MenuItemButton } from "./components/dropdown";
@@ -83,6 +83,19 @@ function Splitter(props: { area: "lsp" | "rsp" | "nsp"; onDelta: (dx: number, dy
 export default function App() {
   const [tab, setTab] = createSignal("console");
   const [stage, setStage] = createSignal<"topo" | "svc" | "hosts">("topo");
+  // Panes stay mounted after their first visit so drafts and scroll state
+  // survive, but an unvisited pane does not compute or run timers. The stage
+  // and notebook clocks are gated separately on actual visibility.
+  const [mountedTabs, setMountedTabs] = createSignal<Set<string>>(new Set(["console"]));
+  const [mountedStages, setMountedStages] = createSignal<Set<string>>(new Set(["topo"]));
+  createEffect(() => {
+    const t = tab();
+    setMountedTabs(prev => prev.has(t) ? prev : new Set(prev).add(t));
+  });
+  createEffect(() => {
+    const s = stage();
+    setMountedStages(prev => prev.has(s) ? prev : new Set(prev).add(s));
+  });
   const [scanTarget, setScanTarget] = createSignal<string | undefined>(undefined);
   const [selectedHost, setSelectedHost] = createSignal<string | undefined>(undefined);
   const [launch, setLaunch] = createSignal<{ type: string; path: string; host?: string; port?: number } | null>(null);
@@ -115,15 +128,18 @@ export default function App() {
     setPanels(p => ({ ...p, nb: clampNotebook(p.nb - dy, window.innerHeight) }));
   }
 
-  const conn = () => campaignState().connection;
-  const liveCount = () => Object.keys(campaignState().sessions).length;
-  const jobCount = () => Object.keys(campaignState().jobs).length;
-  const totalModules = () => {
-    const m = campaignState().modules;
+  const conn = createMemo(() => campaignState().connection);
+  const sessions = createMemo(() => campaignState().sessions);
+  const jobs = createMemo(() => campaignState().jobs);
+  const modules = createMemo(() => campaignState().modules);
+  const liveCount = createMemo(() => Object.keys(sessions()).length);
+  const jobCount = createMemo(() => Object.keys(jobs()).length);
+  const totalModules = createMemo(() => {
+    const m = modules();
     if (!m) return 0;
     return [m.exploits, m.auxiliary, m.post, m.payloads, m.encoders, m.nops, m.evasion]
       .reduce((a, v) => a + (v?.length ?? 0), 0);
-  };
+  });
 
   function openInteract(sid: string) {
     // the tab switches only once the engine confirms the attach; otherwise
@@ -408,10 +424,14 @@ export default function App() {
             </div>
           </div>
           <div class="view" hidden={stage() !== "svc"}>
-            <ServicesView onInspect={(addr) => setSelectedHost(addr)} selected={selectedHost()} />
+            <Show when={mountedStages().has("svc")}>
+              <ServicesView onInspect={(addr) => setSelectedHost(addr)} selected={selectedHost()} />
+            </Show>
           </div>
           <div class="view" hidden={stage() !== "hosts"}>
-            <HostsView onInspect={(addr) => { setSelectedHost(addr); setStage("topo"); }} selected={selectedHost()} />
+            <Show when={mountedStages().has("hosts")}>
+              <HostsView onInspect={(addr) => { setSelectedHost(addr); setStage("topo"); }} selected={selectedHost()} />
+            </Show>
           </div>
         </div>
       </main>
@@ -441,22 +461,38 @@ export default function App() {
               write={(cmd) => void write(cmd).catch((e: any) => flash(e?.message ?? "console write failed"))}
               tabComplete={(line) => consoleTabs(line).catch(() => [])} />
           </div>
-          <div class="nbpane" hidden={tab() !== "interact"}><InteractView /></div>
+          <div class="nbpane" hidden={tab() !== "interact"}>
+            <Show when={mountedTabs().has("interact")}><InteractView /></Show>
+          </div>
           <div class="nbpane" hidden={tab() !== "sessions"}>
-            <SessionsView onInteract={openInteract}
-              onScanSubnet={(subnet) => { setScanTarget(subnet); setScan("services"); }} />
+            <Show when={mountedTabs().has("sessions")}>
+              <SessionsView onInteract={openInteract} active={() => tab() === "sessions"}
+                onScanSubnet={(subnet) => { setScanTarget(subnet); setScan("services"); }} />
+            </Show>
           </div>
-          <div class="nbpane" hidden={tab() !== "listeners"}><ListenersView onInteract={openInteract} /></div>
+          <div class="nbpane" hidden={tab() !== "listeners"}>
+            <Show when={mountedTabs().has("listeners")}>
+              <ListenersView onInteract={openInteract} active={() => tab() === "listeners"} />
+            </Show>
+          </div>
           <div class="nbpane" hidden={tab() !== "jobs"}>
-            <JobsView onOpenModule={(module) => {
-              setTab("console");
-              void write(`use ${module}`)
-                .catch((e: any) => flash(e?.message ?? "console write failed"));
-            }} />
+            <Show when={mountedTabs().has("jobs")}>
+              <JobsView active={() => tab() === "jobs"} onOpenModule={(module) => {
+                setTab("console");
+                void write(`use ${module}`)
+                  .catch((e: any) => flash(e?.message ?? "console write failed"));
+              }} />
+            </Show>
           </div>
-          <div class="nbpane" hidden={tab() !== "creds"}><CredsView /></div>
-          <div class="nbpane" hidden={tab() !== "loot"}><LootView /></div>
-          <div class="nbpane" hidden={tab() !== "events"}><EventsView /></div>
+          <div class="nbpane" hidden={tab() !== "creds"}>
+            <Show when={mountedTabs().has("creds")}><CredsView /></Show>
+          </div>
+          <div class="nbpane" hidden={tab() !== "loot"}>
+            <Show when={mountedTabs().has("loot")}><LootView /></Show>
+          </div>
+          <div class="nbpane" hidden={tab() !== "events"}>
+            <Show when={mountedTabs().has("events")}><EventsView /></Show>
+          </div>
         </div>
       </section>
 

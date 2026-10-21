@@ -20,7 +20,7 @@ export default function ConnectDialog(props: {
   const valid = () => d().host.trim() !== "" && portValid() && password() !== "";
   const progress = () => {
     if (!connecting()) return "";
-    const last = events().at(-1);
+    const last = events().at(0);
     return last?.text ?? "reaching msfrpcd";
   };
 

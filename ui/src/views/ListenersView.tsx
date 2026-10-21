@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { FilterSelect } from "../components/FilterSelect";
 import { Modal } from "../components/modal";
@@ -34,8 +34,8 @@ function loadLaunches(): ListenerLaunch[] {
   }
 }
 
-export function ListenersView(props: { onInteract: (sid: string) => void }) {
-  const now = createNowSignal(10_000);
+export function ListenersView(props: { onInteract: (sid: string) => void; active?: () => boolean }) {
+  const now = createNowSignal(10_000, () => props.active?.() ?? true);
   const [launches, setLaunches] = createSignal<ListenerLaunch[]>(loadLaunches());
   const [starting, setStarting] = createSignal(false);
   const [showGenerate, setShowGenerate] = createSignal(false);
@@ -45,17 +45,20 @@ export function ListenersView(props: { onInteract: (sid: string) => void }) {
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
-  const payloads = () => (campaignState().modules?.payloads ?? [])
-    .filter(p => p.includes("meterpreter") || p.includes("shell"));
+  const modules = createMemo(() => campaignState().modules);
+  const jobs = createMemo(() => campaignState().jobs);
+  const sessions = createMemo(() => campaignState().sessions);
+  const payloads = createMemo(() => (modules()?.payloads ?? [])
+    .filter(p => p.includes("meterpreter") || p.includes("shell")));
   createEffect(() => {
     if (!payload() && payloads().length > 0) {
       setPayload(payloads().find(p => p.includes("linux/x64/meterpreter/reverse_tcp")) ?? payloads()[0]!);
     }
   });
 
-  const handlers = () => jobRows(campaignState().jobs).filter(r => r.module.includes("multi/handler"));
-  const handlerSessions = () => Object.values(campaignState().sessions)
-    .filter((s): s is SessionState => !!s && (s.viaExploit ?? "").includes("multi/handler"));
+  const handlers = createMemo(() => jobRows(jobs()).filter(r => r.module.includes("multi/handler")));
+  const handlerSessions = createMemo(() => Object.values(sessions())
+    .filter((s): s is SessionState => !!s && (s.viaExploit ?? "").includes("multi/handler")));
   const launchFor = (jobId: string) => launches().find(l => l.jobId === jobId);
   // a launch knows its payload but not its job's sessions; the payload is as
   // close to a link as the daemon's job and session records come

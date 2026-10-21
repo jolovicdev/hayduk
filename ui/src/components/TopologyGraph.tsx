@@ -75,6 +75,9 @@ export function TopologyGraph(props: {
 
   const [view, setView] = createSignal<Viewport>({ x: 0, y: 0, s: 1 });
   const [sticky, setSticky] = createSignal(loadPositions());
+  // A drag updates only this transient position. Committing it to sticky on
+  // drop runs the layout once, not on every pointermove.
+  const [dragPosition, setDragPosition] = createSignal<(Position & { address: string }) | null>(null);
   const [canvas, setCanvas] = createSignal({ width: 900, height: 500 });
   // the scale the last fit settled on; drives the dense-map hint. Zoom and
   // pan by the operator do not change it.
@@ -85,12 +88,21 @@ export function TopologyGraph(props: {
 
   const hosts = createMemo(() => campaignState().hosts.filter((h): h is HostState => !!h));
   const hostsByAddress = createMemo(() => new Map(hosts().map(h => [h.address, h] as const)));
+  // Host info changes (a ripened fingerprint, a new note) must not re-run the
+  // layout. The geometry signature gates the slot list on the address set;
+  // the memo returns the same array when that set is unchanged, so downstream
+  // layout/group computations stay put.
+  const hostGeometry = createMemo(() => hosts().map(h => h.address).join("\x1f"));
+  const hostSlots = createMemo(() => {
+    const key = hostGeometry();
+    return key === "" ? [] : key.split("\x1f").map(address => ({ address }));
+  });
   let heldPlan: LayoutPlan = { columns: 3, groupColumns: 1 };
   const plan = createMemo(() => {
     const routeWidth = campaignState().routes.length > 0 ? GHOST_W + 100 : 0;
-    hosts(), canvas();
+    hostSlots(), canvas();
     if (userMoved()) return heldPlan;
-    heldPlan = layoutPlan(hosts(), Math.max(16, canvas().width - 48), Math.max(16, canvas().height - 48), routeWidth);
+    heldPlan = layoutPlan(hostSlots(), Math.max(16, canvas().width - 48), Math.max(16, canvas().height - 48), routeWidth);
     return heldPlan;
   });
   // Preserve existing host positions during manual navigation. Newly
@@ -101,9 +113,9 @@ export function TopologyGraph(props: {
     if (userMoved() && prev) {
       const held = new Map(prev);
       for (const [address, position] of sticky()) held.set(address, position);
-      return layoutWithHeld(hosts(), held, columns, groupColumns);
+      return layoutWithHeld(hostSlots(), held, columns, groupColumns);
     }
-    return layoutHosts(hosts(), sticky(), columns, groupColumns);
+    return layoutHosts(hostSlots(), sticky(), columns, groupColumns);
   });
   const serviceCounts = createMemo(() => {
     const counts = new Map<string, number>();
@@ -112,7 +124,7 @@ export function TopologyGraph(props: {
     }
     return counts;
   });
-  const groups = createMemo(() => subnetGroups(hosts(), positions()));
+  const groups = createMemo(() => subnetGroups(hostSlots(), positions()));
 
   // Subnet chips keep a constant screen size below the LOD threshold.
   // Place overlapping chips in rows, then columns when the canvas is full.
@@ -165,7 +177,7 @@ export function TopologyGraph(props: {
     for (const route of state.routes) {
       if (!route?.subnet || !route.sessionId) continue;
       const covered = new Set<string>();
-      for (const host of hosts()) {
+      for (const host of hostSlots()) {
         if (cidrCovers(route.subnet, host.address)) covered.add(subnetKey(host.address));
       }
       pairs.push({ route: { subnet: route.subnet, sessionId: route.sessionId }, covered });
@@ -475,11 +487,10 @@ export function TopologyGraph(props: {
       if (Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 4) drag.moved = true;
       if (!drag.moved) return;
       setUserMoved(true);
-      // zones are bounding boxes of their nodes, so the node can move
-      // freely and its zone follows - single-host zones included
+      // Move only the dragged node while the gesture is live. Updating
+      // sticky here would re-run layout/groups/routes at pointer rate.
       const point = toWorld(event.clientX, event.clientY);
-      const position = { x: point.x - drag.dx, y: point.y - drag.dy };
-      setSticky(previous => new Map(previous).set(drag!.address, position));
+      setDragPosition({ address: drag.address, x: point.x - drag.dx, y: point.y - drag.dy });
       return;
     }
 
@@ -501,11 +512,18 @@ export function TopologyGraph(props: {
     }
     if (drag && !drag.moved) props.onSelect(drag.address);
     if (drag?.moved) {
-      // forget hosts that left the workspace; storage failures are fine
+      // Commit the transient drag once, at drop. Then forget hosts that
+      // left the workspace; storage failures are fine.
+      const dropped = dragPosition();
+      const committed = new Map(sticky());
+      if (dropped && dropped.address === drag.address) {
+        committed.set(dropped.address, { x: dropped.x, y: dropped.y });
+      }
       const live = new Set(hosts().map(h => h.address));
-      const pruned = pruneStale(sticky(), live);
+      const pruned = pruneStale(committed, live);
       setSticky(pruned);
       savePositions(pruned);
+      setDragPosition(null);
     }
     if (pan && !pan.moved) props.onSelect(undefined);
     chipTap = undefined;
@@ -524,6 +542,7 @@ export function TopologyGraph(props: {
       const restored = new Map(drag.snapshot);
       if (!restored.has(drag.address)) restored.set(drag.address, drag.origin);
       setSticky(restored);
+      setDragPosition(null);
     }
     chipTap = undefined;
     drag = undefined;
@@ -644,7 +663,10 @@ export function TopologyGraph(props: {
           <g class="topo-hosts">
             <For each={hosts().map(h => h.address)}>{address => {
               const host = () => hostsByAddress().get(address)!;
-              const position = () => positions().get(address);
+              const position = () => {
+                const moving = dragPosition();
+                return moving?.address === address ? moving : positions().get(address);
+              };
               const hostAccess = () => access()(address);
               const badge = () => osBadge(host());
               return (

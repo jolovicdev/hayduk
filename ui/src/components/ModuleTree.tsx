@@ -10,14 +10,15 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
   const [query, setQuery] = createSignal("");
   const [open, setOpen] = createSignal(new Set<string>(["exploit"]));
 
+  const modules = createMemo(() => campaignState().modules);
   const root = createMemo(() => {
-    const m = campaignState().modules as unknown as Record<string, string[]> | null | undefined;
+    const m = modules() as unknown as Record<string, string[]> | null | undefined;
     if (!m) return null;
     return buildModuleTree(m as Record<string, string[]>);
   });
   const keep = createMemo(() => (root() ? filterTree(root()!, query()) : new Set<string>()));
   const total = createMemo(() => {
-    const m = campaignState().modules;
+    const m = modules();
     if (!m) return 0;
     return [m.exploits, m.auxiliary, m.post, m.payloads, m.encoders, m.nops, m.evasion]
       .reduce((a, v) => a + (v?.length ?? 0), 0);

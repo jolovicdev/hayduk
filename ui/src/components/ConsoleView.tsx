@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import { applyCompletion, pushHistory, recallHistory } from "./consoleInput";
 
 export function ConsoleView(props: {
@@ -18,13 +18,28 @@ export function ConsoleView(props: {
   const [histIdx, setHistIdx] = createSignal(-1);
   let scrollEl: HTMLDivElement | undefined;
   let inputEl: HTMLInputElement | undefined;
+  let pinned = true;
+  let scrollFrame = 0;
 
-  const lines = () => props.output().split("\n");
+  const lines = createMemo(() => props.output().split("\n"));
 
+  // Autoscroll only while the operator is already at the bottom, and after
+  // the new lines have been laid out. Scrolling up must not be yanked back
+  // by the next console chunk.
   createEffect(() => {
-    props.output();
-    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+    lines();
+    if (!pinned || !scrollEl) return;
+    cancelAnimationFrame(scrollFrame);
+    scrollFrame = requestAnimationFrame(() => {
+      if (pinned && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
+    });
   });
+  onCleanup(() => cancelAnimationFrame(scrollFrame));
+
+  function onScroll() {
+    if (!scrollEl) return;
+    pinned = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 24;
+  }
 
   createEffect(on(() => props.target?.() ?? "", () => {
     setInput("");
@@ -79,7 +94,7 @@ export function ConsoleView(props: {
   }
 
   return (
-    <div class="console" ref={scrollEl} onClick={() => inputEl?.focus()}>
+    <div class="console" ref={scrollEl} onClick={() => inputEl?.focus()} onScroll={onScroll}>
       <For each={lines()}>{(l) => <div class="cl out">{l || "\u00a0"}</div>}</For>
       <div class="inputline">
         <span class="pr">{props.prompt}</span>
