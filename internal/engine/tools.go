@@ -340,14 +340,43 @@ func (e *Engine) lootDownload(ctx context.Context, rpc gomsf.RPCCaller, ws strin
 	if rpc == nil {
 		return nil, notConnected()
 	}
-	loots, err := gomsf.NewDbManager(rpc).Loots(ctx, map[string]interface{}{"workspace": ws})
-	if err != nil {
-		return nil, mapErr(err)
+	if p.Host == "" {
+		return nil, badParam("host is required")
 	}
-	for _, l := range loots {
-		if l != nil && l.Host == p.Host && l.Type == p.Type && l.Name == p.Name {
-			return mustJSON(protocol.LootPayload{Data: l.Data}), nil
+	db := gomsf.NewDbManager(rpc)
+	// db.loots applies its options as record-column filters. Narrow by type
+	// and name server-side (host is an association, not a column), then page
+	// the remainder. An unpaged read is capped at 100 rows, which used to make
+	// a real loot entry look missing. Stop at the first match so a hit early
+	// in a large workspace never downloads every payload.
+	for offset := 0; ; {
+		opts := map[string]interface{}{
+			"workspace": ws,
+			"limit":     dbPageSize,
+			"offset":    offset,
 		}
+		if p.Type != "" {
+			opts["ltype"] = p.Type
+		}
+		if p.Name != "" {
+			opts["name"] = p.Name
+		}
+		loots, err := db.Loots(ctx, opts)
+		if err != nil {
+			return nil, mapErr(err)
+		}
+		for _, l := range loots {
+			if l != nil && l.Host == p.Host && l.Type == p.Type && l.Name == p.Name {
+				return mustJSON(protocol.LootPayload{Data: l.Data}), nil
+			}
+		}
+		if len(loots) < dbPageSize {
+			break
+		}
+		if offset >= dbMaxRows {
+			return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "loot collection exceeds the paging cap"}
+		}
+		offset += dbPageSize
 	}
 	return nil, badParam("no such loot entry")
 }
