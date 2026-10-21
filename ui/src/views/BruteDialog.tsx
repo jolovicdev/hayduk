@@ -2,12 +2,12 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import {
   BRUTE_CAP, LOGIN_SCANNERS, attemptOptions, buildBrutePlan, defaultScannerForHost, parseLines,
   servicePortForHost,
 } from "./brute";
+import { errorMessage } from "../errors";
 
 const DEFAULT_USERS = "Administrator\nadmin\nuser";
 const DEFAULT_PASSES = "password\n123456\nadmin\nuser\ntest";
@@ -75,7 +75,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
       try {
         await ws.command("db.refresh", {});
       } catch (e) {
-        const failure = e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
+        const failure = errorMessage(e);
         flash(`db refresh failed: ${failure}`);
       }
     };
@@ -126,7 +126,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
             type: "auxiliary", name: p.module, options: attemptOptions(a, scanner().userless),
           });
         } catch (e) {
-          failure = e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
+          failure = errorMessage(e);
         }
         setDone(d => d + 1);
       }

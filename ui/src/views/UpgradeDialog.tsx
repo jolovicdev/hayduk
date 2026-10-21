@@ -1,7 +1,7 @@
 import { Show, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
+import { errorMessage } from "../errors";
 
 export function UpgradeDialog(props: { sid: string; onClose: () => void }) {
   const [lhost, setLhost] = createSignal("");
@@ -19,7 +19,7 @@ export function UpgradeDialog(props: { sid: string; onClose: () => void }) {
       });
       props.onClose();
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

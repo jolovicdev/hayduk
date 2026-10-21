@@ -2,9 +2,9 @@ import { For, Show, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import { DISCOVERY_MODULES, SERVICE_MODULES, pickModules } from "./scan";
+import { errorMessage } from "../errors";
 
 export function ScanDialog(props: {
   mode: "discovery" | "services";
@@ -45,7 +45,7 @@ export function ScanDialog(props: {
       flash("service scan started - results land in Services and Events");
       props.onClose();
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
       setBusy(false);
     }
   }

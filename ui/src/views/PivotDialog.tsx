@@ -1,13 +1,13 @@
 import { For, Show, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
-import { CommandError } from "../ws/client";
 import {
   autorouteAdd, autorouteAutoadd, autorouteRemove, isIPv4,
   parsePrefix, parseRouteTarget, prefixToNetmask, runAutoroute,
 } from "./pivot";
 import { parsePortForwards, type PortForwardRow } from "./sessionTools";
 import { stopJob } from "./JobsView";
+import { errorMessage } from "../errors";
 
 export function PivotDialog(props: {
   sid: string; meterpreter: boolean;
@@ -38,7 +38,7 @@ export function PivotDialog(props: {
         .command<{ output: string }>("session.run", { sid: props.sid, command });
       return res.output;
     } catch (e) {
-      setError(e instanceof CommandError ? e.message : String(e));
+      setError(errorMessage(e));
       return "";
     }
   }
@@ -56,7 +56,7 @@ export function PivotDialog(props: {
         options: { SRVHOST: "127.0.0.1", SRVPORT: Number(socksPort()) || 1080 },
       });
     } catch (e) {
-      setError(e instanceof CommandError ? e.message : String(e));
+      setError(errorMessage(e));
     }
   }
 
@@ -80,7 +80,7 @@ export function PivotDialog(props: {
     try {
       await runAutoroute(autorouteRemove(props.sid, parseRouteTarget(subnet)));
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setRemoving("");
     }
@@ -97,7 +97,7 @@ export function PivotDialog(props: {
       );
       props.onClose();
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

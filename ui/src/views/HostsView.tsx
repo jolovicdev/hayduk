@@ -4,10 +4,10 @@ import { Modal } from "../components/modal";
 import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import type { HostState } from "../protocol/types";
 import { serviceOpen } from "./serviceState";
+import { errorMessage } from "../errors";
 
 export function HostsView(props: { onInspect: (addr: string) => void; selected?: string }) {
   const hosts = createMemo(() => campaignState().hosts);
@@ -40,7 +40,7 @@ export function HostsView(props: { onInspect: (addr: string) => void; selected?:
       await ws.command(method, params);
       close();
     } catch (e) {
-      setError(e instanceof CommandError ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

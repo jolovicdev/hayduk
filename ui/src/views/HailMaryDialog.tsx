@@ -1,9 +1,9 @@
 import { For, Show, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { campaignState } from "../stores/store";
 import { flash } from "../statusflash";
+import { errorMessage } from "../errors";
 
 export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
   const hosts = () => campaignState().hosts.filter(h => !!h).map(h => h!.address);
@@ -43,7 +43,7 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
       props.onClose();
       flash(`hail mary under way: ${res.planned} launches planned; watch the event log`);
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

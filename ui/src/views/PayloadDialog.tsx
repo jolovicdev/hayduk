@@ -2,8 +2,8 @@ import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { FilterSelect } from "../components/FilterSelect";
+import { errorMessage } from "../errors";
 
 const FORMATS = ["exe", "elf", "macho", "msi", "apk", "war", "jar", "raw",
   "base64", "hex", "c", "csharp", "java", "python", "powershell", "ps1", "ruby", "sh"];
@@ -40,7 +40,7 @@ export function PayloadDialog(props: { onClose: () => void }) {
       );
       setResult(res);
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

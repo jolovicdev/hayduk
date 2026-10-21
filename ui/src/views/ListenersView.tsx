@@ -6,13 +6,13 @@ import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import { copyWithFeedback } from "../clipboard";
 import { ageOf } from "./format";
 import { jobRows, type JobRow } from "./jobs";
 import { PayloadDialog } from "./PayloadDialog";
 import type { SessionState } from "../protocol/types";
+import { errorMessage } from "../errors";
 
 // A handler job only names its module; the payload and callback address are
 // gone by the time job.list answers. The launch details are kept here so the
@@ -94,7 +94,7 @@ export function ListenersView(props: { onInteract: (sid: string) => void; active
       setStarting(false);
       flash(`listener starting for ${payload()}`);
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

@@ -2,9 +2,9 @@ import { For, Show, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { FilterSelect } from "../components/FilterSelect";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { campaignState } from "../stores/store";
 import type { AttacksPayload } from "../protocol/types";
+import { errorMessage } from "../errors";
 
 export function FindAttacksDialog(props: {
   host?: string;
@@ -25,7 +25,7 @@ export function FindAttacksDialog(props: {
     if (result.loading) return "";
     const e = result.error;
     if (!e) return "";
-    return e instanceof CommandError ? `${e.code}: ${e.message}` : String(e);
+    return errorMessage(e);
   };
 
   return (

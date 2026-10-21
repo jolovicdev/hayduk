@@ -3,12 +3,12 @@ import { Modal } from "../components/modal";
 import { FilterSelect } from "../components/FilterSelect";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import {
   collectOptions, compatiblePayloadsParams, defaultText, inferServicePort, launchDisabled,
   missingLaunchOptions, optionKind, payloadGroup,
 } from "./launchOptions";
 import type { ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
+import { errorMessage } from "../errors";
 
 type OptionsMap = Record<string, ModuleOptionPayload>;
 
@@ -149,7 +149,7 @@ export function LaunchDialog(props: {
       });
       props.onClose();
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
