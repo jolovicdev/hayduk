@@ -272,17 +272,8 @@ func deepSlice[T any](in []*T) []*T {
 	return out
 }
 
-// copySlice and copyMap copy only the container; elements are shared, which
-// is safe for broadcast values under the engine's copy-on-write rule.
-func copySlice[T any](in []T) []T {
-	if in == nil {
-		return nil
-	}
-	out := make([]T, len(in))
-	copy(out, in)
-	return out
-}
-
+// copyMap copies only the container; elements are shared, which is safe for
+// broadcast values under the engine's copy-on-write rule.
 func copyMap[K comparable, V any](in map[K]V) map[K]V {
 	if in == nil {
 		return nil

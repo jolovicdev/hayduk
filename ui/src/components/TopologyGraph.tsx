@@ -24,6 +24,7 @@ import {
   type Position,
 } from "./graph/layout";
 import { loadPositions, pruneStale, savePositions } from "./graph/positions";
+import { clamp } from "../stores/panels";
 
 const GHOST_W = 220, GHOST_H = 100, GHOST_GAP = 18;
 // below this zoom the host cards render smaller than their own text; the
@@ -54,10 +55,6 @@ interface WorldBounds extends Position { w: number; h: number }
 // "SESSION <id>" chips sized to their text so longer ids do not overflow
 function routeLabelWidth(sessionId: string): number {
   return Math.max(64, 40 + sessionId.length * 7);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 export function TopologyGraph(props: {
@@ -385,12 +382,12 @@ export function TopologyGraph(props: {
   }
 
   function edgeMenu(edge: RouteEdge, event: MouseEvent) {
-    const removal = removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute);
+    const removal = removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute, false);
     openContextMenuFor(event, [
       { head: edge.subnet, sub: "pivot route" },
       { icon: "wifi-high", label: "Scan this subnet…", fn: () => props.onScanSubnet(edge.subnet) },
       { sep: true },
-      ...removal.slice(1),
+      ...removal,
     ]);
   }
 
@@ -401,12 +398,12 @@ export function TopologyGraph(props: {
     const routes = campaignState().routes
       .filter(r => !!r && r.subnet === subnet)
       .map(r => ({ subnet: r!.subnet, sessionId: r!.sessionId }));
-    const removal = removeRouteItems(routes, removeRoute);
+    const removal = removeRouteItems(routes, removeRoute, false);
     openContextMenuFor(event, [
       { head: subnet, sub: "routed network" },
       { icon: "wifi-high", label: "Scan this subnet…", fn: () => props.onScanSubnet(subnet) },
       { sep: true },
-      ...removal.slice(1),
+      ...removal,
     ]);
   }
 

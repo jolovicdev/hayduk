@@ -75,10 +75,11 @@ export function autorouteRemove(sid: string, target: RouteTarget): Record<string
 export function removeRouteItems(
   routes: readonly { subnet: string; sessionId: string }[],
   onRemove: (route: { subnet: string; sessionId: string }) => void,
+  includeHead = true,
 ): MenuItem[] {
   const live = routes.filter(r => r.subnet && r.sessionId);
   if (live.length === 0) return [];
-  const items: MenuItem[] = [{ head: live[0]!.subnet, sub: "pivot route" }];
+  const items: MenuItem[] = includeHead ? [{ head: live[0]!.subnet, sub: "pivot route" }] : [];
   for (const route of live) {
     items.push({
       icon: "signpost",

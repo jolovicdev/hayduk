@@ -1,4 +1,4 @@
-import type { CampaignState, CredState, HostState, SessionState } from "../protocol/types";
+import type { CampaignState, CredState, SessionState } from "../protocol/types";
 
 export function emptyState(): CampaignState {
   return {
@@ -73,10 +73,4 @@ export function credsByHost(s: CampaignState): Map<string, CredState[]> {
   return m;
 }
 
-export function liveSessions(s: CampaignState): SessionState[] {
-  return Object.values(s.sessions).filter((x): x is SessionState => !!x);
-}
 
-export function hostsWithAccess(s: CampaignState, byHost: Map<string, SessionState[]>): HostState[] {
-  return s.hosts.filter((h): h is HostState => !!h && (byHost.get(h.address)?.length ?? 0) > 0);
-}
