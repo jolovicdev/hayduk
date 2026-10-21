@@ -175,15 +175,24 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	newCreds := credStates(creds)
 	newLoot := lootStates(loots)
 
+	// Snapshot the committed collections, then diff outside the engine lock:
+	// signing and sorting every host/service must not stall broadcasts or
+	// commands. Collections are copy-on-write, so the snapshots stay valid
+	// until the generation/commit check below.
 	e.mu.Lock()
 	if e.gen != gen || e.rpc == nil {
-		// the link was torn down or replaced while this refresh was in
-		// flight; committing would clobber the newer connection's state
 		e.mu.Unlock()
 		return errSuperseded
 	}
-	known := make(map[string]bool, len(e.hosts))
-	for _, h := range e.hosts {
+	oldHosts := e.hosts
+	oldServices := e.services
+	oldCreds := e.creds
+	oldLoot := e.loot
+	oldWorkspace := e.conn.Workspace
+	e.mu.Unlock()
+
+	known := make(map[string]bool, len(oldHosts))
+	for _, h := range oldHosts {
 		known[h.Address] = true
 	}
 	var discovered []*protocol.HostState
@@ -192,14 +201,21 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 			discovered = append(discovered, h)
 		}
 	}
-	credDelta := len(newCreds) - len(e.creds)
+	credDelta := len(newCreds) - len(oldCreds)
 
-	hostsChanged := !sameHosts(e.hosts, newHosts)
-	servicesChanged := !sameServices(e.services, newServices)
-	credsChanged := !sameCreds(e.creds, newCreds)
-	lootChanged := !sameLoot(e.loot, newLoot)
-	wsChanged := workspace != "" && workspace != e.conn.Workspace
+	hostsChanged := !sameHosts(oldHosts, newHosts)
+	servicesChanged := !sameServices(oldServices, newServices)
+	credsChanged := !sameCreds(oldCreds, newCreds)
+	lootChanged := !sameLoot(oldLoot, newLoot)
+	wsChanged := workspace != "" && workspace != oldWorkspace
 
+	e.mu.Lock()
+	if e.gen != gen || e.rpc == nil {
+		// the link was torn down or replaced while the diff was in flight;
+		// committing would clobber the newer connection's state
+		e.mu.Unlock()
+		return errSuperseded
+	}
 	e.hosts = newHosts
 	e.services = newServices
 	e.creds = newCreds
