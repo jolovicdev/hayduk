@@ -35,16 +35,24 @@ func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.H
 		p.MaxPerHost = hailMaryMaxPerHost
 	}
 
-	e.mu.Lock()
-	var exploits []string
-	if e.modules != nil {
-		exploits = e.modules.Exploits
-	}
 	hostSet := make(map[string]bool, len(p.Hosts))
 	for _, h := range p.Hosts {
 		hostSet[h] = true
 	}
-	var targets []hailMaryTarget
+
+	// Copy the immutable host/service pointers under the lock, then do all
+	// catalogue matching outside it: preparing thousands of module names and
+	// matching them per host must not stall broadcasts.
+	type candidate struct {
+		host *protocol.HostState
+		svcs []*protocol.ServiceState
+	}
+	e.mu.Lock()
+	var exploits []string
+	if e.modules != nil {
+		exploits = append([]string(nil), e.modules.Exploits...)
+	}
+	var candidates []candidate
 	for _, h := range e.hosts {
 		if h == nil || !hostSet[h.Address] {
 			continue
@@ -55,13 +63,19 @@ func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.H
 				svcs = append(svcs, s)
 			}
 		}
-		matches := matchAttacks(exploits, svcs, h.OSName)
+		candidates = append(candidates, candidate{host: h, svcs: svcs})
+	}
+	e.mu.Unlock()
+
+	catalogue := prepareAttacks(exploits)
+	var targets []hailMaryTarget
+	for _, c := range candidates {
+		matches := matchPreparedAttacks(catalogue, c.svcs, c.host.OSName)
 		if len(matches) > p.MaxPerHost {
 			matches = matches[:p.MaxPerHost]
 		}
-		targets = append(targets, hailMaryTarget{host: h, matches: matches})
+		targets = append(targets, hailMaryTarget{host: c.host, matches: matches})
 	}
-	e.mu.Unlock()
 
 	if len(targets) == 0 {
 		return nil, &protocol.ErrorBody{Code: protocol.CodeBadParams, Message: "none of those hosts are in the workspace"}

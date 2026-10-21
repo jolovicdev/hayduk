@@ -59,9 +59,8 @@ func (e *Engine) consoleRead(console *gomsf.MsfConsole, result *gomsf.ConsoleRea
 		stream += prompt
 	}
 	e.consolePrompt = prompt
-	output := string(e.consoleOut)
 	if replaced {
-		e.bus.send(protocol.ConsoleUpdate(&protocol.ConsoleState{Output: output}))
+		e.bus.send(protocol.ConsoleUpdate(&protocol.ConsoleState{Output: string(e.consoleOut)}))
 	} else if stream != "" {
 		e.bus.send(protocol.ConsoleOutputMsg{Type: protocol.KindConsoleOutput, Data: stream})
 	}
@@ -71,7 +70,7 @@ func (e *Engine) consoleRead(console *gomsf.MsfConsole, result *gomsf.ConsoleRea
 		// A silent command produces no output and no prompt change, so this
 		// is the only path that restores them.
 		e.consoleWritePending = false
-		e.bus.send(protocol.ConsoleUpdate(&protocol.ConsoleState{Output: output}))
+		e.bus.send(protocol.ConsoleUpdate(&protocol.ConsoleState{Output: string(e.consoleOut)}))
 	}
 	e.mu.Unlock()
 }

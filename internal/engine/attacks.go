@@ -136,7 +136,29 @@ type tokHit struct {
 	named bool
 }
 
+// attackEntry is an exploit refname prepared once for matching. Hail Mary
+// evaluates thousands of names across several hosts; lowercasing and
+// splitting them per host made the difference under the engine lock.
+type attackEntry struct {
+	name  string
+	lower string
+	segs  []string
+}
+
+func prepareAttacks(exploits []string) []attackEntry {
+	out := make([]attackEntry, 0, len(exploits))
+	for _, name := range exploits {
+		lower := strings.ToLower(name)
+		out = append(out, attackEntry{name: name, lower: lower, segs: strings.Split(lower, "/")})
+	}
+	return out
+}
+
 func matchAttacks(exploits []string, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
+	return matchPreparedAttacks(prepareAttacks(exploits), services, osName)
+}
+
+func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
 	// tokenPorts maps every service token to the port a match should
 	// target. A row whose service name produced the token is a fingerprint
 	// and wins over the well-known-port guess; among equals the lowest port
@@ -169,22 +191,20 @@ func matchAttacks(exploits []string, services []*protocol.ServiceState, osName s
 		osFirst bool
 	}
 	var found []ranked
-	for _, name := range exploits {
-		lower := strings.ToLower(name)
-		segs := strings.Split(lower, "/")
-		if !remoteForOS(segs, prefix) {
+	for _, entry := range entries {
+		if !remoteForOS(entry.segs, prefix) {
 			continue
 		}
-		token := matchToken(lower, tokenPorts)
+		token := matchTokenSegments(entry.lower, entry.segs, tokenPorts)
 		if token == "" {
 			continue
 		}
 		reason := "service " + token
-		osFirst := prefix != "" && strings.HasPrefix(lower, prefix+"/")
+		osFirst := prefix != "" && strings.HasPrefix(entry.lower, prefix+"/")
 		if osFirst {
 			reason += " · " + prefix
 		}
-		found = append(found, ranked{protocol.AttackMatch{Name: name, Reason: reason, Port: tokenPorts[token].port}, osFirst})
+		found = append(found, ranked{protocol.AttackMatch{Name: entry.name, Reason: reason, Port: tokenPorts[token].port}, osFirst})
 	}
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].osFirst != found[j].osFirst {
@@ -208,7 +228,11 @@ func matchAttacks(exploits []string, services []*protocol.ServiceState, osName s
 // first substring match otherwise, so the same module never resolves to a
 // different service between runs.
 func matchToken(lower string, tokenPorts map[string]tokHit) string {
-	for _, seg := range strings.Split(lower, "/") {
+	return matchTokenSegments(lower, strings.Split(lower, "/"), tokenPorts)
+}
+
+func matchTokenSegments(lower string, segs []string, tokenPorts map[string]tokHit) string {
+	for _, seg := range segs {
 		if _, ok := tokenPorts[seg]; ok {
 			return seg
 		}
