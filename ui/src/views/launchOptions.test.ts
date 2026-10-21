@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  collectOptions, compatiblePayloadsParams, launchDisabled, missingLaunchOptions, missingRequired, optionKind, payloadGroup,
+  collectOptions, compatiblePayloadsParams, inferServicePort, launchDisabled, missingLaunchOptions,
+  missingRequired, moduleServiceToken, optionKind, payloadGroup,
 } from "./launchOptions";
 
 const defs = {
@@ -134,6 +135,40 @@ describe("launchDisabled", () => {
       busy: false, optionsLoading: false, optionsError: true,
       payloadChosen: false, payloadLoading: false, payloadError: false, missing: [],
     })).toBe(true);
+  });
+});
+
+describe("service port prefill", () => {
+  const services = [
+    { host: "10.0.0.5", port: 2222, name: "ssh" },
+    { host: "10.0.0.5", port: 445, name: "microsoft-ds" },
+    { host: "10.0.0.5", port: 8080, name: "http" },
+    { host: "10.0.0.6", port: 22, name: "ssh" },
+  ];
+
+  it("finds the protocol segment in a module path", () => {
+    expect(moduleServiceToken("windows/smb/ms17_010_eternalblue")).toBe("smb");
+    expect(moduleServiceToken("linux/http/apache_mod_cgi_bash_env_exec")).toBe("http");
+    expect(moduleServiceToken("exploit/multi/handler")).toBeUndefined();
+  });
+
+  it("uses the scanned port, including non-standard SSH", () => {
+    expect(inferServicePort("linux/ssh/ssh_exec", "10.0.0.5", services)).toBe(2222);
+  });
+
+  it("recognizes service aliases", () => {
+    expect(inferServicePort("windows/smb/ms17_010", "10.0.0.5", services)).toBe(445);
+    expect(inferServicePort("linux/http/tomcat", "10.0.0.5", services)).toBe(8080);
+  });
+
+  it("does not borrow a port from another host", () => {
+    expect(inferServicePort("linux/ssh/ssh_exec", "10.0.0.9", services)).toBeUndefined();
+  });
+
+  it("skips closed rows", () => {
+    expect(inferServicePort("linux/ssh/ssh_exec", "10.0.0.5", [
+      { host: "10.0.0.5", port: 2222, name: "ssh", state: "closed" },
+    ])).toBeUndefined();
   });
 });
 

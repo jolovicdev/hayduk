@@ -301,6 +301,11 @@ table.dt .amb { color:var(--amb); }
 .mform { margin-top:14px; display:grid; gap:10px; }
 .frow { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(0,1fr); gap:10px; }
 .frow.even { grid-template-columns:1fr 1fr; }
+/* On a phone the paired fields are narrower than their labels and a
+   textarea wraps a username down to two characters. Stack them instead. */
+@media (max-width:520px) {
+  .modal .frow, .modal .frow.even { grid-template-columns:1fr; }
+}
 .checkline {
   display:flex; align-items:center; gap:8px; cursor:pointer;
   font:400 12.5px var(--sans); color:var(--tx1);

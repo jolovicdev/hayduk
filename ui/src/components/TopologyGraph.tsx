@@ -67,6 +67,7 @@ export function TopologyGraph(props: {
   onLaunch: (host: string) => void;
   onLogin: (host: string) => void;
   onPivot: (sid: string) => void;
+  onScanSubnet: (target: string) => void;
 }) {
   let svgEl!: SVGSVGElement;
   let resizeObserver: ResizeObserver | undefined;
@@ -372,8 +373,13 @@ export function TopologyGraph(props: {
   }
 
   function edgeMenu(edge: RouteEdge, event: MouseEvent) {
-    openContextMenuFor(event,
-      removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute));
+    const removal = removeRouteItems([{ subnet: edge.subnet, sessionId: edge.sessionID }], removeRoute);
+    openContextMenuFor(event, [
+      { head: edge.subnet, sub: "pivot route" },
+      { icon: "wifi-high", label: "Scan this subnet…", fn: () => props.onScanSubnet(edge.subnet) },
+      { sep: true },
+      ...removal.slice(1),
+    ]);
   }
 
   // a routed-network card stands for one unrouted subnet's worth of pivot;
@@ -383,7 +389,13 @@ export function TopologyGraph(props: {
     const routes = campaignState().routes
       .filter(r => !!r && r.subnet === subnet)
       .map(r => ({ subnet: r!.subnet, sessionId: r!.sessionId }));
-    openContextMenuFor(event, removeRouteItems(routes, removeRoute));
+    const removal = removeRouteItems(routes, removeRoute);
+    openContextMenuFor(event, [
+      { head: subnet, sub: "routed network" },
+      { icon: "wifi-high", label: "Scan this subnet…", fn: () => props.onScanSubnet(subnet) },
+      { sep: true },
+      ...removal.slice(1),
+    ]);
   }
 
   function nodeMenu(address: string, event: MouseEvent) {
@@ -403,6 +415,7 @@ export function TopologyGraph(props: {
       });
     }
     items.push(
+      { icon: "wifi-high", label: "Scan services…", fn: () => props.onScanSubnet(address) },
       { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(address) },
       { icon: "key", label: "Login as…", fn: () => props.onLogin(address) },
       { sep: true },

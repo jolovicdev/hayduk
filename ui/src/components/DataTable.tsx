@@ -14,6 +14,9 @@ export function DataTable<T>(props: {
   rows: T[];
   rowKey: (row: T) => string;
   selectedKey?: () => string | undefined;
+  // selectedRow handles tables whose selection is a parent (all services of
+  // a selected host), while rowKey stays unique per row.
+  selectedRow?: (row: T) => boolean;
   emptyTitle: string;
   empty?: string;
   emptyIcon?: string;
@@ -36,7 +39,7 @@ export function DataTable<T>(props: {
           }>
             <For each={props.rows}>{(row) => (
               <tr
-                classList={{ sel: props.selectedKey?.() === props.rowKey(row) }}
+                classList={{ sel: props.selectedRow?.(row) || props.selectedKey?.() === props.rowKey(row) }}
                 onClick={() => props.onRowClick?.(row)}
                 onContextMenu={(e) => props.onRowContextMenu?.(row, e)}
               >

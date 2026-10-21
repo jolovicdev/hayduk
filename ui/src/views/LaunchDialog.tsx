@@ -1,10 +1,12 @@
-import { For, Show, createResource, createSignal } from "solid-js";
+import { For, Show, createMemo, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { FilterSelect } from "../components/FilterSelect";
+import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
 import { CommandError } from "../ws/client";
 import {
-  collectOptions, compatiblePayloadsParams, defaultText, launchDisabled, missingLaunchOptions, optionKind, payloadGroup,
+  collectOptions, compatiblePayloadsParams, defaultText, inferServicePort, launchDisabled,
+  missingLaunchOptions, optionKind, payloadGroup,
 } from "./launchOptions";
 import type { ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
 
@@ -105,12 +107,18 @@ export function LaunchDialog(props: {
   const optional = () => Object.entries(optsMap()).filter(([, o]) => o && !o.required).map(([k]) => k);
   const ordered = () => [...required(), ...optional()];
 
+  // Find attacks carries an explicit matched port; a module opened from the
+  // tree is pointed at the port the scan found for its protocol instead of
+  // the module default.
+  const scannedPort = createMemo(() => props.prefillPort
+    ?? inferServicePort(props.path, props.prefillHost, campaignState().services));
+
   // resolved() is exactly what launch() sends: defaults, the RHOSTS prefill
   // and the operator's edits. Required-option gating uses the same view.
   function resolved(): Record<string, unknown> {
     const base = defaultsFor(optsMap());
     if (props.prefillHost && !base.RHOSTS) base.RHOSTS = props.prefillHost;
-    if (props.prefillPort && optsMap().RPORT) base.RPORT = String(props.prefillPort);
+    if (scannedPort() && optsMap().RPORT) base.RPORT = String(scannedPort());
     return { ...base, ...values() };
   }
 
@@ -178,6 +186,12 @@ export function LaunchDialog(props: {
             <For each={targets()}>{(t, i) => <option value={String(i())}>{i()} · {t}</option>}</For>
           </select>
         </label>
+      </Show>
+
+      <Show when={!props.prefillPort && !!optsMap().RPORT && scannedPort()}>
+        <p class="mnote">
+          RPORT prefilled to {scannedPort()} from the scanned service; edit it below if needed.
+        </p>
       </Show>
 
       <Show when={!options.loading && !options.error && options.latest} fallback={

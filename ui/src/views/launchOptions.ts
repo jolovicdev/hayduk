@@ -1,6 +1,77 @@
 // msf option values must keep their types: rpc_execute rejects "443" where
 // it wants an integer and "true" where it wants a boolean.
 
+import { serviceOpen } from "./serviceState";
+
+export interface LaunchService {
+  host: string;
+  port: number;
+  name?: string;
+  state?: string;
+}
+
+// Module paths carry their protocol in a segment (windows/smb/...,
+// linux/http/...). These are the workspace service names each token can
+// appear as, plus fallback ports for scanners that did not fingerprint a
+// name. Matching the path rather than the module's prose keeps the guess
+// predictable.
+const SERVICE_TOKEN_NAMES: Record<string, string[]> = {
+  ssh: ["ssh"],
+  smb: ["smb", "microsoft-ds", "netbios-ssn"],
+  ftp: ["ftp"],
+  telnet: ["telnet"],
+  smtp: ["smtp"],
+  dns: ["dns", "domain"],
+  http: ["http", "http-proxy", "https", "ssl/http"],
+  mysql: ["mysql", "ssl/mysql"],
+  mssql: ["mssql", "ms-sql-s", "ms-sql-m"],
+  postgres: ["postgres", "postgresql"],
+  rdp: ["rdp", "ms-wbt-server"],
+  vnc: ["vnc"],
+  ldap: ["ldap"],
+  snmp: ["snmp"],
+};
+
+const SERVICE_TOKEN_PORTS: Record<string, number[]> = {
+  ssh: [22], smb: [139, 445], ftp: [21], telnet: [23], smtp: [25],
+  dns: [53], http: [80, 443, 591, 8000, 8080, 8443], mysql: [3306],
+  mssql: [1433], postgres: [5432], rdp: [3389], vnc: [5900],
+  ldap: [389], snmp: [161],
+};
+
+export function moduleServiceToken(name: string): string | undefined {
+  const segments = name.toLowerCase().split("/");
+  for (const token of Object.keys(SERVICE_TOKEN_NAMES)) {
+    if (segments.includes(token)) return token;
+  }
+  return undefined;
+}
+
+// inferServicePort points a module at the port its service was actually
+// found on instead of the module default. Explicit matches (Find attacks)
+// pass their port directly and take precedence in the dialog.
+export function inferServicePort(
+  name: string,
+  host: string | undefined,
+  services: readonly (LaunchService | undefined)[],
+): number | undefined {
+  if (!host) return undefined;
+  const token = moduleServiceToken(name);
+  if (!token) return undefined;
+  const names = SERVICE_TOKEN_NAMES[token] ?? [];
+  const ports = SERVICE_TOKEN_PORTS[token] ?? [];
+  const matches = services
+    .filter((s): s is LaunchService => !!s && s.host === host && serviceOpen(s))
+    .filter(s => {
+      const serviceName = (s.name ?? "").toLowerCase();
+      return (serviceName !== "" && names.some(n => serviceName.includes(n))) || ports.includes(s.port);
+    })
+    .map(s => s.port)
+    .filter(port => port > 0)
+    .sort((a, b) => a - b);
+  return matches[0];
+}
+
 export interface OptionDef {
   type: string;
   required: boolean;

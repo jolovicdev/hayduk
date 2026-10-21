@@ -60,8 +60,13 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
         <label class="field" style="margin-top:4px">
           <b>Login module</b>
           <select value={chosenMod()?.module ?? ""} onChange={(e) => setMod(e.currentTarget.value)}>
-            <For each={modules()}>{(m) => <option value={m.module}>{m.module}</option>}</For>
+            <For each={modules()}>{(m) => (
+              <option value={m.module}>{m.module}{m.port ? ` · port ${m.port}` : ""}</option>
+            )}</For>
           </select>
+          <Show when={chosenMod()?.port}>
+            <span class="fdesc">targets the port this host's scan found</span>
+          </Show>
         </label>
 
         <Show when={creds().length > 0}>

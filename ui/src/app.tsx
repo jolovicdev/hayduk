@@ -384,7 +384,12 @@ export default function App() {
                 flash(`host ${host} selected; right-click a module in the tree to launch against it`);
               }}
               onLogin={(host) => { setSelectedHost(host); setLoginHost(host); }}
-              onPivot={(sid) => setPivotSid(sid)} />
+              onPivot={(sid) => setPivotSid(sid)}
+              onScanSubnet={(target) => {
+                if (!target.includes("/")) setSelectedHost(target);
+                setScanTarget(target);
+                setScan("services");
+              }} />
             <Show when={campaignState().hosts.length === 0}>
               <div class="map-empty">
                 <div class="empty-symbol"><i aria-hidden="true" class="ph ph-graph"></i></div>

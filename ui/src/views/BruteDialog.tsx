@@ -1,11 +1,12 @@
-import { For, Show, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
 import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import {
-  BRUTE_CAP, LOGIN_SCANNERS, attemptOptions, buildBrutePlan, parseLines,
+  BRUTE_CAP, LOGIN_SCANNERS, attemptOptions, buildBrutePlan, defaultScannerForHost, parseLines,
+  servicePortForHost,
 } from "./brute";
 
 const DEFAULT_USERS = "Administrator\nadmin\nuser";
@@ -13,7 +14,10 @@ const DEFAULT_PASSES = "password\n123456\nadmin\nuser\ntest";
 
 export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const [hosts, setHosts] = createSignal(props.host ?? "");
-  const [service, setService] = createSignal(LOGIN_SCANNERS[0]!.service);
+  const [service, setService] = createSignal(
+    defaultScannerForHost(props.host, campaignState().services)?.service ?? LOGIN_SCANNERS[0]!.service,
+  );
+  const [manualPort, setManualPort] = createSignal("");
   const [users, setUsers] = createSignal(DEFAULT_USERS);
   const [passes, setPasses] = createSignal(DEFAULT_PASSES);
   const [addBlank, setAddBlank] = createSignal(true);
@@ -24,19 +28,40 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const [running, setRunning] = createSignal(false);
   const [stopped, setStopped] = createSignal(false);
 
-  const scanner = () => LOGIN_SCANNERS.find(s => s.service === service()) ?? LOGIN_SCANNERS[0]!;
-  const hostList = () => parseLines(hosts());
-  const userList = () => (scanner().userless ? [] : parseLines(users()));
-  const passList = () => parseLines(passes());
+  const scanner = createMemo(() =>
+    LOGIN_SCANNERS.find(s => s.service === service()) ?? LOGIN_SCANNERS[0]!);
+  const hostList = createMemo(() => parseLines(hosts()));
+  const userList = createMemo(() => (scanner().userless ? [] : parseLines(users())));
+  const passList = createMemo(() => parseLines(passes()));
+  // A login scanner defaults to its well-known port. The scan already found
+  // the service somewhere else, so carry that port into every attempt.
+  const scannedPorts = createMemo(() => {
+    const out: Record<string, number> = {};
+    for (const host of hostList()) {
+      const port = servicePortForHost(host, scanner(), campaignState().services);
+      if (port) out[host] = port;
+    }
+    return out;
+  });
+  const portOverride = () => {
+    const text = manualPort().trim();
+    if (!text) return undefined;
+    const port = Number(text);
+    return Number.isInteger(port) && port > 0 && port <= 65535 ? port : undefined;
+  };
+  const portInvalid = () => manualPort().trim() !== "" && portOverride() === undefined;
 
-  const plan = () => buildBrutePlan({
+  // Memoized: progress updates during a run must not rebuild the spray plan
+  // on every render.
+  const plan = createMemo(() => buildBrutePlan({
     hosts: hostList(), users: userList(), passes: passList(),
     module: scanner().module, userless: scanner().userless,
     addBlank: addBlank(), addUserAsPass: addUserAsPass(),
+    port: portOverride(), ports: scannedPorts(),
     cap: BRUTE_CAP,
-  });
+  }));
   const valid = () => hostList().length > 0 && passList().length + (addBlank() ? 1 : 0) > 0
-    && (scanner().userless || userList().length > 0);
+    && (scanner().userless || userList().length > 0) && !portInvalid();
 
   // A login scanner is launched as a job: module.execute returns before the
   // spray has actually finished, and the engine only re-pulls the database
@@ -79,7 +104,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
 
   async function run() {
     const p = plan();
-    if (p.attempts.length === 0) return;
+    if (p.attempts.length === 0 || portInvalid()) return;
     setRunning(true);
     setStopped(false);
     setDone(0);
@@ -95,7 +120,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
         const i = next++;
         const a = p.attempts[i];
         if (!a) break;
-        setCurrent(`${a.user || "(blank)"} @ ${a.host}`);
+        setCurrent(`${a.user || "(blank)"} @ ${a.host}${a.port ? `:${a.port}` : ""}`);
         try {
           await ws.command("module.execute", {
             type: "auxiliary", name: p.module, options: attemptOptions(a, scanner().userless),
@@ -134,12 +159,28 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
           <textarea rows={3} value={hosts()} spellcheck={false}
             placeholder="10.0.0.5" onInput={(e) => setHosts(e.currentTarget.value)} />
         </label>
-        <label class="field">
-          <b>Service</b>
-          <select value={service()} onChange={(e) => setService(e.currentTarget.value)}>
-            <For each={LOGIN_SCANNERS}>{(s) => <option value={s.service}>{s.label}</option>}</For>
-          </select>
-        </label>
+        <div class="frow even">
+          <label class="field">
+            <b>Service</b>
+            <select value={service()} onChange={(e) => setService(e.currentTarget.value)}>
+              <For each={LOGIN_SCANNERS}>{(s) => <option value={s.service}>{s.label}</option>}</For>
+            </select>
+          </label>
+          <label class="field">
+            <b>Port <span class="fdesc">(blank: use the scanned port)</span></b>
+            <input value={manualPort()} inputMode="numeric" placeholder="auto"
+              onInput={(e) => setManualPort(e.currentTarget.value)} autocomplete="off" spellcheck={false} />
+          </label>
+        </div>
+        <Show when={portInvalid()}>
+          <p class="merror">Port must be between 1 and 65535.</p>
+        </Show>
+        <Show when={!manualPort().trim() && Object.keys(scannedPorts()).length > 0}>
+          <p class="mnote">
+            Using scanned port{Object.keys(scannedPorts()).length === 1 ? "" : "s"}:{" "}
+            {Object.entries(scannedPorts()).map(([host, port]) => `${host}:${port}`).join(" · ")}
+          </p>
+        </Show>
         <div class="frow even">
           <label class="field">
             <b>Users <span class="fdesc">(one per line)</span></b>

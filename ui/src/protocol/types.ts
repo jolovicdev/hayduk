@@ -496,6 +496,11 @@ export const MethodCredDelete = "db.cred_delete";
  * Command methods.
  */
 export const MethodLootDownload = "loot.download";
+/**
+ * MethodServicesScan runs a version-detecting nmap scan through the
+ * Metasploit console and imports the results into the workspace.
+ */
+export const MethodServicesScan = "services.scan";
 export interface ConnectParams {
   host: string;
   port: number /* int */;
@@ -537,6 +542,20 @@ export interface WorkspaceSetParams {
 }
 export interface AttacksFindParams {
   host: string;
+}
+/**
+ * ServiceScanParams describes a version-detecting service scan. Ports empty
+ * means nmap's top 1000 TCP ports; SkipDiscovery adds -Pn for hosts that do
+ * not answer ping.
+ */
+export interface ServiceScanParams {
+  target: string;
+  ports?: string;
+  skipDiscovery?: boolean;
+}
+export interface ServiceScanPayload {
+  target: string;
+  ports?: string;
 }
 export interface ReportPayload {
   html: string;
