@@ -227,10 +227,6 @@ func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceSta
 // even when "ssh" appears later in its name - and the lexicographically
 // first substring match otherwise, so the same module never resolves to a
 // different service between runs.
-func matchToken(lower string, tokenPorts map[string]tokHit) string {
-	return matchTokenSegments(lower, strings.Split(lower, "/"), tokenPorts)
-}
-
 func matchTokenSegments(lower string, segs []string, tokenPorts map[string]tokHit) string {
 	for _, seg := range segs {
 		if _, ok := tokenPorts[seg]; ok {
