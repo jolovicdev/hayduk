@@ -43,8 +43,12 @@ export function applyResource(s: CampaignState, msg: any) {
     case "modules": s.modules = msg.modules; break;
     case "moduleRanks": s.moduleRanks = { ...(s.moduleRanks ?? {}), ...(msg.moduleRanks ?? {}) }; break;
     case "operators": s.operators = msg.operators ?? []; break;
-    case "console": s.console = msg.console; break;
-    case "interact": s.interact = msg.interact; break;
+    // Console and interact streams are owned by their dedicated stores.
+    // Dropping their resource updates here avoids replacing the whole
+    // campaign object for bytes that no campaign view reads.
+    case "console":
+    case "interact":
+      break;
     default: console.warn("unknown resource", msg.resource);
   }
 }
