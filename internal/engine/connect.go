@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -111,6 +112,44 @@ func (e *Engine) dial(ctx context.Context, p protocol.ConnectParams) (gomsf.RPCC
 		gomsf.WithSSL(p.SSL), gomsf.WithUsername(p.Username))
 }
 
+// fetchModuleIndex loads the seven module lists concurrently. They are
+// independent RPCs; all goroutines finish before an error is returned so a
+// failed bootstrap never leaves a read in flight against the connection it is
+// about to release.
+func fetchModuleIndex(ctx context.Context, mm *gomsf.ModuleManager) (*protocol.ModuleIndex, error) {
+	modules := &protocol.ModuleIndex{}
+	errs := make(chan error, 7)
+	var wg sync.WaitGroup
+
+	load := func(dst *[]string, fetch func(context.Context) ([]string, error)) {
+		defer wg.Done()
+		names, err := fetch(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		*dst = names
+	}
+
+	wg.Add(7)
+	go load(&modules.Exploits, mm.Exploits)
+	go load(&modules.Auxiliary, mm.Auxiliary)
+	go load(&modules.Post, mm.Post)
+	go load(&modules.Payloads, mm.Payloads)
+	go load(&modules.Encoders, mm.Encoders)
+	go load(&modules.Nops, mm.Nops)
+	go load(&modules.Evasion, mm.Evasion)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return modules, nil
+}
+
 func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen uint64) error {
 	e.eventf(protocol.LevelInfo, "authenticating against %s:%d", p.Host, p.Port)
 	rpc, err := e.dial(ctx, p)
@@ -134,47 +173,35 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.eventf(protocol.LevelInfo, "metasploit %s, loading module list", version.Version)
 
 	mm := gomsf.NewModuleManager(rpc)
-	modules := &protocol.ModuleIndex{}
-	if modules.Exploits, err = mm.Exploits(ctx); err != nil {
-		return err
-	}
-	if modules.Auxiliary, err = mm.Auxiliary(ctx); err != nil {
-		return err
-	}
-	if modules.Post, err = mm.Post(ctx); err != nil {
-		return err
-	}
-	if modules.Payloads, err = mm.Payloads(ctx); err != nil {
-		return err
-	}
-	if modules.Encoders, err = mm.Encoders(ctx); err != nil {
-		return err
-	}
-	if modules.Nops, err = mm.Nops(ctx); err != nil {
-		return err
-	}
-	if modules.Evasion, err = mm.Evasion(ctx); err != nil {
-		return err
+	db := gomsf.NewDbManager(rpc)
+
+	// The seven module lists and the workspace read are independent. Run
+	// them together; the DB page collection still needs the workspace, so it
+	// starts only after this barrier.
+	var (
+		modules   *protocol.ModuleIndex
+		moduleErr error
+		workspace string
+		loadWg    sync.WaitGroup
+	)
+	loadWg.Add(2)
+	go func() {
+		defer loadWg.Done()
+		modules, moduleErr = fetchModuleIndex(ctx, mm)
+	}()
+	go func() {
+		defer loadWg.Done()
+		workspace, _ = db.CurrentWorkspace(ctx) // "" when no db; not fatal
+	}()
+	loadWg.Wait()
+	if moduleErr != nil {
+		return moduleErr
 	}
 
-	db := gomsf.NewDbManager(rpc)
-	workspace, _ := db.CurrentWorkspace(ctx) // "" when no db; not fatal
 	// pages are pinned to the workspace read above for the same reason the
 	// refresh pins its own: a console workspace switch mid-load must not mix
 	// collections, and msf's unpaged reads truncate at 100 rows
-	hosts, err := fetchAllPages(ctx, workspace, db.Hosts)
-	if err != nil {
-		return err
-	}
-	services, err := fetchAllPages(ctx, workspace, db.Services)
-	if err != nil {
-		return err
-	}
-	creds, err := fetchAllPages(ctx, workspace, db.Creds)
-	if err != nil {
-		return err
-	}
-	loots, err := fetchAllPages(ctx, workspace, db.Loots)
+	hosts, services, creds, loots, err := fetchWorkspaceCollections(ctx, db, workspace)
 	if err != nil {
 		return err
 	}

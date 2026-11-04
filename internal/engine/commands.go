@@ -442,12 +442,45 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	normalizeNumericOptions(p.Options)
 	normalizeNumericOptions(p.PayloadOptions)
 
-	mod, err := gomsf.NewModuleWithContext(ctx, rpc, gomsf.ModuleType(p.Type), p.Name)
+	// Exploit and payload metadata are independent; load them at once. The
+	// payload result is consumed below, and cancelLoads plus the buffered
+	// result channel keep an abandoned payload load from outliving the
+	// command.
+	loadCtx, cancelLoads := context.WithCancel(ctx)
+	defer cancelLoads()
+
+	type moduleLoadResult struct {
+		mod *gomsf.Module
+		err error
+	}
+	loadModule := func(modType gomsf.ModuleType, name string) <-chan moduleLoadResult {
+		ch := make(chan moduleLoadResult, 1)
+		go func() {
+			mod, err := gomsf.NewModuleWithContext(loadCtx, rpc, modType, name)
+			ch <- moduleLoadResult{mod: mod, err: err}
+		}()
+		return ch
+	}
+
+	var payloadCh <-chan moduleLoadResult
+	if p.Payload != "" {
+		payloadCh = loadModule(gomsf.PayloadModuleType, p.Payload)
+	}
+
+	mod, err := gomsf.NewModuleWithContext(loadCtx, rpc, gomsf.ModuleType(p.Type), p.Name)
 	if err != nil {
+		cancelLoads()
+		if payloadCh != nil {
+			<-payloadCh
+		}
 		return nil, mapErr(err)
 	}
 	for k, v := range p.Options {
 		if err := mod.SetOption(k, v); err != nil {
+			cancelLoads()
+			if payloadCh != nil {
+				<-payloadCh
+			}
 			return nil, mapErr(err)
 		}
 	}
@@ -460,13 +493,14 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	}
 	var res *gomsf.ModuleExecuteResult
 	if p.Payload != "" {
-		payload, perr := gomsf.NewModuleWithContext(ctx, rpc, gomsf.PayloadModuleType, p.Payload)
-		if perr != nil {
+		payloadRes := <-payloadCh
+		if payloadRes.err != nil {
 			if runKey != "" {
 				e.forgetExploitRun(runKey)
 			}
-			return nil, mapErr(perr)
+			return nil, mapErr(payloadRes.err)
 		}
+		payload := payloadRes.mod
 		for k, v := range p.PayloadOptions {
 			if err := payload.SetOption(k, v); err != nil {
 				if runKey != "" {

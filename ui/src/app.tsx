@@ -256,7 +256,6 @@ export default function App() {
         </div>
 
         <Dropdown id="m-file" label="File">
-          <MenuItemButton icon="plug" label="New connection…" onClick={() => disconnect()} />
           <MenuItemButton icon="x" label="Disconnect" disabled={conn().status === "disconnected"}
             onClick={() => disconnect()} />
           <div class="dsep"></div>
@@ -588,7 +587,7 @@ export default function App() {
       <Show when={showKeys()}>
         <Modal title="Keyboard and mouse" onClose={() => setShowKeys(false)}>
           <div class="klist">
-            <div class="krow"><span class="keys"><kbd>1</kbd><kbd>2</kbd></span>Switch between Topology and Services</div>
+            <div class="krow"><span class="keys"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></span>Switch between Topology, Services and Hosts</div>
             <div class="krow"><span class="keys"><kbd>F</kbd></span>Fit the graph to the view</div>
             <div class="krow"><span class="keys"><kbd>Esc</kbd></span>Close menus and dialogs</div>
             <div class="krow"><span class="keys"><kbd>R-click</kbd></span>Context actions on hosts, modules and table rows</div>
