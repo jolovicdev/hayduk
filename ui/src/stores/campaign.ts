@@ -6,6 +6,7 @@ export function emptyState(): CampaignState {
     hosts: [], services: [], sessions: {}, jobs: {}, routes: [], creds: [], loot: [],
     moduleRanks: {},
     operators: [],
+    operations: [],
     events: [],
   };
 }
@@ -26,6 +27,7 @@ export function normalizeState(raw: any): CampaignState {
     loot: raw?.loot ?? [],
     moduleRanks: raw?.moduleRanks ?? {},
     operators: raw?.operators ?? [],
+    operations: raw?.operations ?? [],
     events: raw?.events ?? [],
   };
 }
@@ -43,6 +45,7 @@ export function applyResource(s: CampaignState, msg: any) {
     case "modules": s.modules = msg.modules; break;
     case "moduleRanks": s.moduleRanks = { ...(s.moduleRanks ?? {}), ...(msg.moduleRanks ?? {}) }; break;
     case "operators": s.operators = msg.operators ?? []; break;
+    case "operations": s.operations = msg.operations ?? []; break;
     // Console and interact streams are owned by their dedicated stores.
     // Dropping their resource updates here avoids replacing the whole
     // campaign object for bytes that no campaign view reads.

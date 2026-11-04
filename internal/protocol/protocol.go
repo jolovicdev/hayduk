@@ -35,6 +35,7 @@ const (
 	ResRoutes      = "routes"
 	ResModuleRanks = "moduleRanks"
 	ResOperators   = "operators"
+	ResOperations  = "operations"
 )
 
 // Error codes.
@@ -143,6 +144,38 @@ type JobState struct {
 	StartedAt time.Time `json:"startedAt,omitzero"`
 }
 
+// Operation kinds and statuses. An operation is one engine-owned long-running
+// task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+// browser command that started it and is visible to every operator.
+const (
+	OpScan     = "scan"
+	OpBrute    = "brute"
+	OpSpray    = "spray"
+	OpHailMary = "hailmary"
+
+	OpRunning  = "running"
+	OpDone     = "done"
+	OpFailed   = "failed"
+	OpCanceled = "canceled"
+)
+
+// OperationState is the wire view of one operation. Total is 0 when the size
+// is not known up front (a service scan); Done may sit below Total when the
+// run ends early.
+type OperationState struct {
+	ID         string    `json:"id"`
+	Kind       string    `json:"kind"`
+	Status     string    `json:"status"`
+	Operator   string    `json:"operator,omitempty"`
+	Workspace  string    `json:"workspace,omitempty"`
+	Target     string    `json:"target,omitempty"`
+	Summary    string    `json:"summary,omitempty"`
+	Done       int       `json:"done"`
+	Total      int       `json:"total"`
+	StartedAt  time.Time `json:"startedAt,omitzero"`
+	FinishedAt time.Time `json:"finishedAt,omitzero"`
+}
+
 // RouteState is one pivot route: a subnet reachable through a session.
 type RouteState struct {
 	Subnet    string `json:"subnet"`
@@ -213,6 +246,7 @@ type CampaignState struct {
 	Interact    *InteractState           `json:"interact"`
 	Events      []*EventEntry            `json:"events"`
 	Operators   []string                 `json:"operators"`
+	Operations  []*OperationState        `json:"operations"`
 }
 
 // ResourceUpdate refreshes one resource. Exactly the field matching Resource
@@ -233,6 +267,7 @@ type ResourceUpdate struct {
 	Console     *ConsoleState            `json:"console,omitempty"`
 	Interact    *InteractState           `json:"interact,omitempty"`
 	Operators   []string                 `json:"operators,omitempty"`
+	Operations  []*OperationState        `json:"operations,omitempty"`
 }
 
 func ConnectionUpdate(c ConnectionState) ResourceUpdate {
@@ -280,6 +315,12 @@ func ModuleRanksUpdate(ranks map[string]string) ResourceUpdate {
 // OperatorsUpdate carries the connected-operator list (team mode).
 func OperatorsUpdate(names []string) ResourceUpdate {
 	return ResourceUpdate{Type: KindResource, Resource: ResOperators, Operators: names}
+}
+
+// OperationsUpdate carries every known operation; the list is small and the
+// client replaces its copy wholesale.
+func OperationsUpdate(ops []*OperationState) ResourceUpdate {
+	return ResourceUpdate{Type: KindResource, Resource: ResOperations, Operations: ops}
 }
 
 func ConsoleUpdate(c *ConsoleState) ResourceUpdate {
@@ -385,6 +426,11 @@ const (
 	// MethodServicesScan runs a version-detecting nmap scan through the
 	// Metasploit console and imports the results into the workspace.
 	MethodServicesScan = "services.scan"
+	// MethodBruteStart runs a login spray as an engine operation, so it
+	// survives the browser tab that started it and is visible to the team.
+	MethodBruteStart = "brute.start"
+	// MethodOperationsCancel cancels a running engine operation.
+	MethodOperationsCancel = "operations.cancel"
 )
 
 type ConnectParams struct {
@@ -449,8 +495,35 @@ type ServiceScanParams struct {
 }
 
 type ServiceScanPayload struct {
-	Target string `json:"target"`
-	Ports  string `json:"ports,omitempty"`
+	Target      string `json:"target"`
+	Ports       string `json:"ports,omitempty"`
+	OperationID string `json:"operationId,omitempty"`
+}
+
+// BruteParams describes a login spray. Users and Passwords are raw lines from
+// the dialog; the engine builds and caps the plan so the run is authoritative
+// on the server. Ports carries a scanned port per host; Port overrides every
+// host when set. Userless scanners (VNC) ignore Users.
+type BruteParams struct {
+	Hosts         []string       `json:"hosts"`
+	Module        string         `json:"module"`
+	Users         []string       `json:"users,omitempty"`
+	Passwords     []string       `json:"passwords,omitempty"`
+	Ports         map[string]int `json:"ports,omitempty"`
+	Port          int            `json:"port,omitempty"`
+	AddBlank      bool           `json:"addBlank,omitempty"`
+	AddUserAsPass bool           `json:"addUserAsPass,omitempty"`
+	Userless      bool           `json:"userless,omitempty"`
+}
+
+type BrutePayload struct {
+	OperationID string `json:"operationId"`
+	Planned     int    `json:"planned"`
+	Capped      int    `json:"capped"`
+}
+
+type OperationRefParams struct {
+	ID string `json:"id"`
 }
 
 type ReportPayload struct {
@@ -463,7 +536,8 @@ type HailMaryParams struct {
 }
 
 type HailMaryPayload struct {
-	Planned int `json:"planned"`
+	Planned     int    `json:"planned"`
+	OperationID string `json:"operationId,omitempty"`
 }
 
 type JobRefParams struct {

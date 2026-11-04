@@ -41,7 +41,7 @@ export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
         maxPerHost: Number(maxPerHost()) || 10,
       });
       props.onClose();
-      flash(`hail mary under way: ${res.planned} launches planned; watch the event log`);
+      flash(`hail mary under way: ${res.planned} launches planned — follow or cancel it in Operations`);
     } catch (e) {
       setError(errorMessage(e));
     } finally {

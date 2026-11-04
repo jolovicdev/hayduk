@@ -347,10 +347,10 @@ func (e *Engine) Disconnect() {
 		e.connecting = false
 	}
 	cancel := e.runCancel
-	scanCancel := e.scanCancel
-	e.scanCancel = nil
-	e.scanRunning = false
-	e.scanSeq++ // an old scan's deferred cleanup must not clear a later one
+	// every in-flight operation belongs to the link being dropped; mark
+	// them canceled now so the table is truthful even before the workers
+	// unwind, then cancel their contexts below
+	opCancels := e.cancelOperationsLocked()
 	dropRPC := e.rpc
 	dropConsoleID := e.consoleID
 	dropRouteCID := ""
@@ -395,8 +395,8 @@ func (e *Engine) Disconnect() {
 		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
 	}
 	e.mu.Unlock()
-	if scanCancel != nil {
-		scanCancel()
+	for _, opCancel := range opCancels {
+		opCancel()
 	}
 	if cancel != nil {
 		cancel()

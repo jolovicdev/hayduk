@@ -129,7 +129,7 @@ func TestServicesScanRejectsInjectionBeforeStarting(t *testing.T) {
 		t.Fatalf("want bad_params, got %+v", eb)
 	}
 	e.mu.Lock()
-	running := e.scanRunning
+	running := e.hasRunningOperationLocked(protocol.OpScan)
 	e.mu.Unlock()
 	if running {
 		t.Fatal("invalid scan started a worker")
@@ -138,9 +138,9 @@ func TestServicesScanRejectsInjectionBeforeStarting(t *testing.T) {
 
 func TestServicesScanHonorsSingleScanSlot(t *testing.T) {
 	e := connectedEngine(t, stdFake())
-	e.mu.Lock()
-	e.scanRunning = true
-	e.mu.Unlock()
+	if _, _, eb := e.beginOperation(protocol.OpScan, "", "default", "10.0.0.1", 0, 0); eb != nil {
+		t.Fatalf("occupy scan slot: %+v", eb)
+	}
 	_, eb := e.Exec(context.Background(), "", protocol.MethodServicesScan,
 		json.RawMessage(`{"target":"10.0.0.1"}`))
 	if eb == nil || eb.Code != protocol.CodeBusy {

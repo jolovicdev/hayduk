@@ -93,6 +93,10 @@ export const ResModuleRanks = "moduleRanks";
  */
 export const ResOperators = "operators";
 /**
+ * Resource names carried by resource updates.
+ */
+export const ResOperations = "operations";
+/**
  * Error codes.
  */
 export const CodeUnknownMethod = "unknown_method";
@@ -231,6 +235,72 @@ export interface JobState {
   startedAt?: string;
 }
 /**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpScan = "scan";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpBrute = "brute";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpSpray = "spray";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpHailMary = "hailmary";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpRunning = "running";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpDone = "done";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpFailed = "failed";
+/**
+ * Operation kinds and statuses. An operation is one engine-owned long-running
+ * task (a service scan, a brute-force spray, a Hail Mary) that outlives the
+ * browser command that started it and is visible to every operator.
+ */
+export const OpCanceled = "canceled";
+/**
+ * OperationState is the wire view of one operation. Total is 0 when the size
+ * is not known up front (a service scan); Done may sit below Total when the
+ * run ends early.
+ */
+export interface OperationState {
+  id: string;
+  kind: string;
+  status: string;
+  operator?: string;
+  workspace?: string;
+  target?: string;
+  summary?: string;
+  done: number /* int */;
+  total: number /* int */;
+  startedAt?: string;
+  finishedAt?: string;
+}
+/**
  * RouteState is one pivot route: a subnet reachable through a session.
  */
 export interface RouteState {
@@ -299,6 +369,7 @@ export interface CampaignState {
   interact?: InteractState;
   events: (EventEntry | undefined)[];
   operators: string[];
+  operations: (OperationState | undefined)[];
 }
 /**
  * ResourceUpdate refreshes one resource. Exactly the field matching Resource
@@ -320,6 +391,7 @@ export interface ResourceUpdate {
   console?: ConsoleState;
   interact?: InteractState;
   operators?: string[];
+  operations?: (OperationState | undefined)[];
 }
 /**
  * EventMsg appends one entry to the operator-visible event log.
@@ -501,6 +573,15 @@ export const MethodLootDownload = "loot.download";
  * Metasploit console and imports the results into the workspace.
  */
 export const MethodServicesScan = "services.scan";
+/**
+ * MethodBruteStart runs a login spray as an engine operation, so it
+ * survives the browser tab that started it and is visible to the team.
+ */
+export const MethodBruteStart = "brute.start";
+/**
+ * MethodOperationsCancel cancels a running engine operation.
+ */
+export const MethodOperationsCancel = "operations.cancel";
 export interface ConnectParams {
   host: string;
   port: number /* int */;
@@ -556,6 +637,32 @@ export interface ServiceScanParams {
 export interface ServiceScanPayload {
   target: string;
   ports?: string;
+  operationId?: string;
+}
+/**
+ * BruteParams describes a login spray. Users and Passwords are raw lines from
+ * the dialog; the engine builds and caps the plan so the run is authoritative
+ * on the server. Ports carries a scanned port per host; Port overrides every
+ * host when set. Userless scanners (VNC) ignore Users.
+ */
+export interface BruteParams {
+  hosts: string[];
+  module: string;
+  users?: string[];
+  passwords?: string[];
+  ports?: { [key: string]: number /* int */};
+  port?: number /* int */;
+  addBlank?: boolean;
+  addUserAsPass?: boolean;
+  userless?: boolean;
+}
+export interface BrutePayload {
+  operationId: string;
+  planned: number /* int */;
+  capped: number /* int */;
+}
+export interface OperationRefParams {
+  id: string;
 }
 export interface ReportPayload {
   html: string;
@@ -566,6 +673,7 @@ export interface HailMaryParams {
 }
 export interface HailMaryPayload {
   planned: number /* int */;
+  operationId?: string;
 }
 export interface JobRefParams {
   id: string;

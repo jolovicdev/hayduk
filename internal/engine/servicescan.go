@@ -173,11 +173,11 @@ func serviceScanFailure(output string) string {
 	return ""
 }
 
-// servicesScan starts an asynchronous version scan. The command returns
-// immediately so a slow scan does not hold the operator's command slot;
-// completion lands in the event log and the Services resource. The scan is
-// anchored to the engine's run context, not the websocket command context,
-// so closing the browser does not abort it.
+// servicesScan starts an asynchronous version scan as an engine operation.
+// The command returns immediately so a slow scan does not hold the operator's
+// command slot; completion lands in the operation, the event log and the
+// Services resource. The scan is anchored to the engine's run context, not the
+// websocket command context, so closing the browser does not abort it.
 func (e *Engine) servicesScan(_ context.Context, operator, ws string, p protocol.ServiceScanParams) (json.RawMessage, *protocol.ErrorBody) {
 	target, err := normalizeScanTargets(p.Target)
 	if err != nil {
@@ -187,55 +187,38 @@ func (e *Engine) servicesScan(_ context.Context, operator, ws string, p protocol
 	if err != nil {
 		return nil, badParam(err.Error())
 	}
-
-	e.mu.Lock()
-	rpc := e.rpc
-	runCtx := e.runCtx
-	if rpc == nil || runCtx == nil {
-		e.mu.Unlock()
+	rpc := e.connectedRPC()
+	if rpc == nil {
 		return nil, notConnected()
 	}
-	if e.scanRunning {
-		e.mu.Unlock()
-		return nil, &protocol.ErrorBody{Code: protocol.CodeBusy, Message: "a service scan is already running"}
+	id, ctx, eb := e.beginOperation(protocol.OpScan, operator, ws, target, 0, 0)
+	if eb != nil {
+		return nil, eb
 	}
-	scanCtx, cancel := context.WithCancel(runCtx)
-	e.scanSeq++
-	scanID := e.scanSeq
-	e.scanRunning = true
-	e.scanCancel = cancel
-	e.mu.Unlock()
-
-	go e.runServiceScan(scanCtx, rpc, scanID, operator, ws, target, ports, p.SkipDiscovery)
-	return mustJSON(protocol.ServiceScanPayload{Target: target, Ports: ports}), nil
+	go e.runServiceScan(ctx, rpc, id, operator, ws, target, ports, p.SkipDiscovery)
+	return mustJSON(protocol.ServiceScanPayload{Target: target, Ports: ports, OperationID: id}), nil
 }
 
-// finishServiceScan releases the scan slot only when this scan still owns
-// it: a disconnect followed by a new scan must not be cleared by the old
-// goroutine's deferred cleanup.
-func (e *Engine) finishServiceScan(id uint64) {
-	e.mu.Lock()
-	if e.scanSeq == id {
-		e.scanRunning = false
-		e.scanCancel = nil
-	}
-	e.mu.Unlock()
-}
+func (e *Engine) runServiceScan(ctx context.Context, rpc gomsf.RPCCaller, opID, operator, ws, target, ports string, skipDiscovery bool) {
+	status, summary := protocol.OpFailed, "service scan failed"
+	defer func() { e.finishOperation(opID, status, summary) }()
 
-func (e *Engine) runServiceScan(ctx context.Context, rpc gomsf.RPCCaller, id uint64, operator, ws, target, ports string, skipDiscovery bool) {
-	defer e.finishServiceScan(id)
 	command := serviceScanCommand(target, ports, skipDiscovery)
 	e.eventfOpIn(ws, operator, protocol.LevelInfo, "service scan started on %s", target)
 
 	output, err := e.runScanConsole(ctx, rpc, command)
 	if err != nil {
 		if ctx.Err() != nil {
+			status = protocol.OpCanceled
+			summary = "service scan canceled"
 			return
 		}
+		summary = "service scan failed: " + err.Error()
 		e.eventfOpIn(ws, operator, protocol.LevelError, "service scan failed: %v", err)
 		return
 	}
 	if failure := serviceScanFailure(output); failure != "" {
+		summary = "service scan failed: " + failure
 		e.eventfOpIn(ws, operator, protocol.LevelError, "service scan failed: %s", failure)
 		return
 	}
@@ -243,21 +226,28 @@ func (e *Engine) runServiceScan(ctx context.Context, rpc gomsf.RPCCaller, id uin
 	before := e.serviceCount()
 	if err := e.refreshDB(ctx); err != nil {
 		if ctx.Err() != nil {
+			status = protocol.OpCanceled
+			summary = "service scan canceled"
 			return
 		}
+		summary = "service scan finished, but the workspace refresh failed: " + err.Error()
 		e.eventfOpIn(ws, operator, protocol.LevelWarn, "service scan finished, but the workspace refresh failed: %v", err)
 		return
 	}
 	after := e.serviceCount()
 	found := openPortCount(output)
+	status = protocol.OpDone
 	switch {
 	case found == 0:
+		summary = "no open ports found; check the target and port range"
 		e.eventfOpIn(ws, operator, protocol.LevelWarn,
 			"service scan finished on %s: no open ports found; check the target and port range", target)
 	case after > before:
+		summary = fmt.Sprintf("%d open port(s), %d new service row(s)", found, after-before)
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess,
 			"service scan finished on %s: %d open port(s) detected, %d new service row(s)", target, found, after-before)
 	default:
+		summary = fmt.Sprintf("%d open port(s) detected", found)
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess,
 			"service scan finished on %s: %d open port(s) detected", target, found)
 	}

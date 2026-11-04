@@ -42,7 +42,7 @@ export function ScanDialog(props: {
         ports: ports().trim(),
         skipDiscovery: skipDiscovery(),
       });
-      flash("service scan started - results land in Services and Events");
+      flash("service scan started — follow it in Operations; results land in Services and Events");
       props.onClose();
     } catch (e) {
       setError(errorMessage(e));

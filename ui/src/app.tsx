@@ -8,6 +8,8 @@ import { ConsoleView } from "./components/ConsoleView";
 import { TopologyGraph } from "./components/TopologyGraph";
 import { SessionsView } from "./views/SessionsView";
 import { JobsView } from "./views/JobsView";
+import { OperationsView } from "./views/OperationsView";
+import { runningCount } from "./views/operations";
 import { CredsView } from "./views/CredsView";
 import { LootView } from "./views/LootView";
 import { EventsView } from "./views/EventsView";
@@ -40,6 +42,7 @@ const notebookTabs: [string, string, string][] = [
   ["sessions", "broadcast", "Sessions"],
   ["listeners", "plug", "Listeners"],
   ["jobs", "gear", "Jobs"],
+  ["operations", "pulse", "Operations"],
   ["creds", "key", "Credentials"],
   ["loot", "archive", "Loot"],
   ["events", "pulse", "Events"],
@@ -134,6 +137,7 @@ export default function App() {
   const modules = createMemo(() => campaignState().modules);
   const liveCount = createMemo(() => Object.keys(sessions()).length);
   const jobCount = createMemo(() => Object.keys(jobs()).length);
+  const runningOps = createMemo(() => runningCount(campaignState().operations));
   const totalModules = createMemo(() => {
     const m = modules();
     if (!m) return 0;
@@ -451,6 +455,9 @@ export default function App() {
               <Show when={id === "jobs" && jobCount() > 0}>
                 <span class="badge jobs">{jobCount()}</span>
               </Show>
+              <Show when={id === "operations" && runningOps() > 0}>
+                <span class="badge">{runningOps()}</span>
+              </Show>
             </button>
           )}</For>
         </div>
@@ -481,6 +488,11 @@ export default function App() {
                 void write(`use ${module}`)
                   .catch((e: any) => flash(e?.message ?? "console write failed"));
               }} />
+            </Show>
+          </div>
+          <div class="nbpane" hidden={tab() !== "operations"}>
+            <Show when={mountedTabs().has("operations")}>
+              <OperationsView active={() => tab() === "operations"} />
             </Show>
           </div>
           <div class="nbpane" hidden={tab() !== "creds"}>

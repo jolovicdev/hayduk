@@ -106,12 +106,10 @@ type Engine struct {
 	operators     map[string]int
 	seq           int64
 	errStreak     int
-	// scanRunning guards the single asynchronous version-scan slot.
-	// scanSeq identifies the current owner so a canceled scan's cleanup
-	// cannot release a scan started after it.
-	scanRunning bool
-	scanSeq     uint64
-	scanCancel  context.CancelFunc
+	// operations are the engine-owned long-running tasks: scans, login
+	// sprays and Hail Marys. opSeq names them.
+	operations map[string]*operation
+	opSeq      uint64
 
 	connecting bool
 	// connectSeq names the connection attempt that owns the connecting slot;
@@ -249,6 +247,7 @@ func (e *Engine) stateLocked() protocol.CampaignState {
 		s.Interact = &protocol.InteractState{SID: e.interactSID, Output: string(e.interactBufs[e.interactSID])}
 	}
 	s.Operators = e.operatorListLocked()
+	s.Operations = e.operationListLocked()
 	return s
 }
 

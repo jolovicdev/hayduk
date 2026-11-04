@@ -4,7 +4,7 @@ import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
 import {
-  BRUTE_CAP, LOGIN_SCANNERS, attemptOptions, buildBrutePlan, defaultScannerForHost, parseLines,
+  BRUTE_CAP, LOGIN_SCANNERS, buildBrutePlan, defaultScannerForHost, parseLines,
   servicePortForHost,
 } from "./brute";
 import { errorMessage } from "../errors";
@@ -23,10 +23,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const [addBlank, setAddBlank] = createSignal(true);
   const [addUserAsPass, setAddUserAsPass] = createSignal(false);
   const [error, setError] = createSignal("");
-  const [done, setDone] = createSignal(0);
-  const [current, setCurrent] = createSignal("");
-  const [running, setRunning] = createSignal(false);
-  const [stopped, setStopped] = createSignal(false);
+  const [busy, setBusy] = createSignal(false);
 
   const scanner = createMemo(() =>
     LOGIN_SCANNERS.find(s => s.service === service()) ?? LOGIN_SCANNERS[0]!);
@@ -51,8 +48,8 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   };
   const portInvalid = () => manualPort().trim() !== "" && portOverride() === undefined;
 
-  // Memoized: progress updates during a run must not rebuild the spray plan
-  // on every render.
+  // Preview only: the engine builds the authoritative plan and applies the
+  // same cap, so a run cannot spray more than the dialog promised.
   const plan = createMemo(() => buildBrutePlan({
     hosts: hostList(), users: userList(), passes: passList(),
     module: scanner().module, userless: scanner().userless,
@@ -63,95 +60,42 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
   const valid = () => hostList().length > 0 && passList().length + (addBlank() ? 1 : 0) > 0
     && (scanner().userless || userList().length > 0) && !portInvalid();
 
-  // A login scanner is launched as a job: module.execute returns before the
-  // spray has actually finished, and the engine only re-pulls the database
-  // on its own periodic tick. Measuring straight away reports a false "no
-  // credentials" while the session and its credential row are still on the
-  // way. Force a refresh, wait for either collection to move, and pull once
-  // more after a session so the credential can land. Stop as soon as the
-  // store moves so a productive run does not sit out the whole window.
-  async function settleLogin(beforeCreds: number, beforeSessions: number, graceMs = 5000) {
-    const refresh = async () => {
-      try {
-        await ws.command("db.refresh", {});
-      } catch (e) {
-        const failure = errorMessage(e);
-        flash(`db refresh failed: ${failure}`);
-      }
-    };
-    const moved = () => campaignState().creds.length > beforeCreds
-      || Object.keys(campaignState().sessions).length > beforeSessions;
-    await refresh();
-    const deadline = Date.now() + graceMs;
-    while (!moved() && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 100));
-    }
-    // the session can open before the credential row is committed; one more
-    // pull gives the row its chance without holding the dialog open long
-    if (campaignState().creds.length === beforeCreds &&
-        Object.keys(campaignState().sessions).length > beforeSessions) {
-      await refresh();
-      const credDeadline = Date.now() + 1500;
-      while (campaignState().creds.length === beforeCreds && Date.now() < credDeadline) {
-        await new Promise(r => setTimeout(r, 100));
-      }
-    }
-    return {
-      creds: campaignState().creds.length - beforeCreds,
-      sessions: Object.keys(campaignState().sessions).length - beforeSessions,
-    };
-  }
-
-  async function run() {
+  async function start() {
     const p = plan();
     if (p.attempts.length === 0 || portInvalid()) return;
-    setRunning(true);
-    setStopped(false);
-    setDone(0);
+    setBusy(true);
     setError("");
-    const credsBefore = campaignState().creds.length;
-    const sessionsBefore = Object.keys(campaignState().sessions).length;
-    let next = 0;
-    let failure = "";
-    // the scanners answer one pair at a time; a few workers keep the spray
-    // moving without flooding the daemon
-    const workers = Array.from({ length: Math.min(3, p.attempts.length) }, async () => {
-      while (!stopped()) {
-        const i = next++;
-        const a = p.attempts[i];
-        if (!a) break;
-        setCurrent(`${a.user || "(blank)"} @ ${a.host}${a.port ? `:${a.port}` : ""}`);
-        try {
-          await ws.command("module.execute", {
-            type: "auxiliary", name: p.module, options: attemptOptions(a, scanner().userless),
-          });
-        } catch (e) {
-          failure = errorMessage(e);
-        }
-        setDone(d => d + 1);
-      }
-    });
-    await Promise.all(workers);
-    setRunning(false);
-    setCurrent("");
-    const found = await settleLogin(credsBefore, sessionsBefore);
-    if (found.creds > 0) {
-      flash(`${found.creds} credential${found.creds === 1 ? "" : "s"} found - see the Credentials tab`);
-    } else if (found.sessions > 0) {
-      flash(`${found.sessions} session${found.sessions === 1 ? "" : "s"} opened - see the Sessions tab`);
-    } else if (failure) {
-      setError(failure);
-    } else {
-      flash(`brute force finished: ${p.attempts.length} attempt${p.attempts.length === 1 ? "" : "s"}, no credentials`);
+    try {
+      const res = await ws.command<{ operationId: string; planned: number; capped: number }>(
+        "brute.start",
+        {
+          hosts: hostList(),
+          module: scanner().module,
+          users: userList(),
+          passwords: passList(),
+          ports: scannedPorts(),
+          port: portOverride() ?? 0,
+          addBlank: addBlank(),
+          addUserAsPass: addUserAsPass(),
+          userless: !!scanner().userless,
+        },
+      );
+      props.onClose();
+      const capped = res.capped > 0 ? `; ${res.capped} beyond the cap skipped` : "";
+      flash(`brute force started: ${res.planned} attempt(s)${capped} — follow or cancel it in Operations`);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
     }
-    props.onClose();
   }
 
   return (
     <Modal title="Brute force logins" onClose={props.onClose} width="560px">
       <p class="mdesc">
         Sprays credential pairs at a login service and stores anything that works in the
-        workspace. Verify authorization before pointing this at a host.
+        workspace. The run continues if you close this dialog; watch it in Operations.
+        Verify authorization before pointing this at a host.
       </p>
       <div class="mform">
         <label class="field">
@@ -206,24 +150,15 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
         </Show>
       </div>
       <Show when={error()}><p class="merror">{error()}</p></Show>
-      <Show when={running()}>
-        <p class="mnote" style="margin-top:12px">
-          {done()}/{plan().attempts.length} attempts · {current()}
-        </p>
-      </Show>
-      <Show when={plan().capped > 0 && !running()}>
+      <Show when={plan().capped > 0 && !busy()}>
         <p class="mwarn" style="margin-top:12px">
           {plan().capped} combination{plan().capped === 1 ? "" : "s"} beyond the {BRUTE_CAP} run cap will not be tried.
         </p>
       </Show>
       <div class="mbtns">
-        <Show when={running()} fallback={
-          <button class="abtn" disabled={!valid()} onClick={() => void run()}>
-            Launch {plan().attempts.length} attempt{plan().attempts.length === 1 ? "" : "s"}
-          </button>
-        }>
-          <button class="abtn" onClick={() => setStopped(true)}>Stop</button>
-        </Show>
+        <button class="abtn" disabled={!valid() || busy()} onClick={() => void start()}>
+          {busy() ? "Starting…" : `Launch ${plan().attempts.length} attempt${plan().attempts.length === 1 ? "" : "s"}`}
+        </button>
       </div>
     </Modal>
   );

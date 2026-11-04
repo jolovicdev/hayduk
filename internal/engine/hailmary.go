@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jolovicdev/hayduk/internal/protocol"
@@ -86,40 +88,60 @@ func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.H
 		planned += len(t.matches)
 	}
 
-	runCtx := e.runContext()
-	go func() {
-		launched := 0
-		for _, t := range targets {
-			if len(t.matches) == 0 {
-				e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary: no matching exploits for %s", t.host.Address)
-				continue
+	id, ctx, eb := e.beginOperation(protocol.OpHailMary, operator, ws,
+		strings.Join(p.Hosts, ","), 0, planned)
+	if eb != nil {
+		return nil, eb
+	}
+	go e.runHailMary(ctx, id, operator, ws, targets, planned)
+
+	return mustJSON(protocol.HailMaryPayload{Planned: planned, OperationID: id}), nil
+}
+
+func (e *Engine) runHailMary(ctx context.Context, opID, operator, ws string, targets []hailMaryTarget, planned int) {
+	status, summary := protocol.OpFailed, "hail mary failed"
+	defer func() { e.finishOperation(opID, status, summary) }()
+
+	launched := 0
+	for _, t := range targets {
+		if len(t.matches) == 0 {
+			e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary: no matching exploits for %s", t.host.Address)
+			continue
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "hail mary on %s: launching %d exploits", t.host.Address, len(t.matches))
+		for _, m := range t.matches {
+			if ctx.Err() != nil {
+				status = protocol.OpCanceled
+				summary = fmt.Sprintf("hail mary canceled after %d of %d launches", launched, planned)
+				e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary aborted after %d launches", launched)
+				return
 			}
-			e.eventfOpIn(ws, operator, protocol.LevelInfo, "hail mary on %s: launching %d exploits", t.host.Address, len(t.matches))
-			for _, m := range t.matches {
-				if runCtx.Err() != nil {
-					e.eventfOpIn(ws, operator, protocol.LevelWarn, "hail mary aborted after %d launches: connection ended", launched)
-					return
-				}
-				options := map[string]interface{}{"RHOSTS": t.host.Address}
-				// attack the port the matching service was found on; the
-				// module default is a guess, the scan is not
-				if m.Port > 0 {
-					options["RPORT"] = m.Port
-				}
-				if _, eb := e.moduleExecute(runCtx, e.connectedRPC(), operator, ws, protocol.ModuleExecuteParams{
-					Type: "exploit", Name: m.Name,
-					Options: options,
-				}); eb == nil {
-					launched++
-				}
-				select {
-				case <-runCtx.Done():
-				case <-time.After(hailMaryPace):
-				}
+			options := map[string]interface{}{"RHOSTS": t.host.Address}
+			// attack the port the matching service was found on; the
+			// module default is a guess, the scan is not
+			if m.Port > 0 {
+				options["RPORT"] = m.Port
+			}
+			if _, eb := e.moduleExecute(ctx, e.connectedRPC(), operator, ws, protocol.ModuleExecuteParams{
+				Type: "exploit", Name: m.Name,
+				Options: options,
+			}); eb == nil {
+				launched++
+			}
+			e.advanceOperation(opID, launched, fmt.Sprintf("launched %d of %d", launched, planned))
+			select {
+			case <-ctx.Done():
+			case <-time.After(hailMaryPace):
 			}
 		}
-		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "hail mary finished: %d of %d planned launches", launched, planned)
-	}()
-
-	return mustJSON(protocol.HailMaryPayload{Planned: planned}), nil
+	}
+	if ctx.Err() != nil {
+		status = protocol.OpCanceled
+		summary = fmt.Sprintf("hail mary canceled after %d of %d launches", launched, planned)
+		e.eventfOpIn(ws, operator, protocol.LevelWarn, "%s", summary)
+		return
+	}
+	status = protocol.OpDone
+	summary = fmt.Sprintf("%d of %d planned launches", launched, planned)
+	e.eventfOpIn(ws, operator, protocol.LevelSuccess, "hail mary finished: %d of %d planned launches", launched, planned)
 }

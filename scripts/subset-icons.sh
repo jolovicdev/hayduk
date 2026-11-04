@@ -27,6 +27,8 @@ names = set()
 for p in src.rglob("*"):
     if p.suffix not in (".ts", ".tsx", ".css"):
         continue
+    if p.name == "types.ts" and p.parent.name == "protocol":
+        continue  # generated constants are data, not icon references
     text = p.read_text()
     names.update(re.findall(r"\bph-([a-z0-9-]+)", text))
     for m in re.finditer(r"([\"'])([a-z0-9][a-z0-9-]*)\1", text):

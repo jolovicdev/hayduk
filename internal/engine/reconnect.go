@@ -19,10 +19,9 @@ func (e *Engine) reconnect() {
 	}
 	gen := e.gen
 	cancel := e.runCancel
-	scanCancel := e.scanCancel
-	e.scanCancel = nil
-	e.scanRunning = false
-	e.scanSeq++
+	// operations hold calls against the dropped link: end them before the
+	// retry loop starts rebuilding
+	opCancels := e.cancelOperationsLocked()
 	// the dropped link owns consoles and a login on the daemon; capture
 	// them before the reset so they can be released, not just forgotten
 	dropRPC := e.rpc
@@ -48,8 +47,8 @@ func (e *Engine) reconnect() {
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	e.mu.Unlock()
-	if scanCancel != nil {
-		scanCancel()
+	for _, opCancel := range opCancels {
+		opCancel()
 	}
 	if cancel != nil {
 		cancel()
