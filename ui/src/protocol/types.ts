@@ -97,6 +97,10 @@ export const ResOperators = "operators";
  */
 export const ResOperations = "operations";
 /**
+ * Resource names carried by resource updates.
+ */
+export const ResListeners = "listeners";
+/**
  * Error codes.
  */
 export const CodeUnknownMethod = "unknown_method";
@@ -283,6 +287,19 @@ export const OpFailed = "failed";
  */
 export const OpCanceled = "canceled";
 /**
+ * ListenerState is one registered multi/handler launch. Job ids are the
+ * daemon's, so the registry is reconciled against the live job list on every
+ * connect.
+ */
+export interface ListenerState {
+  jobId: string;
+  payload?: string;
+  lhost?: string;
+  lport?: number /* int */;
+  operator?: string;
+  startedAt?: string;
+}
+/**
  * OperationState is the wire view of one operation. Total is 0 when the size
  * is not known up front (a service scan); Done may sit below Total when the
  * run ends early.
@@ -370,6 +387,7 @@ export interface CampaignState {
   events: (EventEntry | undefined)[];
   operators: string[];
   operations: (OperationState | undefined)[];
+  listeners: (ListenerState | undefined)[];
 }
 /**
  * ResourceUpdate refreshes one resource. Exactly the field matching Resource
@@ -392,6 +410,7 @@ export interface ResourceUpdate {
   interact?: InteractState;
   operators?: string[];
   operations?: (OperationState | undefined)[];
+  listeners?: (ListenerState | undefined)[];
 }
 /**
  * EventMsg appends one entry to the operator-visible event log.
@@ -582,6 +601,20 @@ export const MethodBruteStart = "brute.start";
  * MethodOperationsCancel cancels a running engine operation.
  */
 export const MethodOperationsCancel = "operations.cancel";
+/**
+ * MethodProfileList returns saved msfrpcd connection profiles (they
+ * carry no password). It works while disconnected.
+ */
+export const MethodProfileList = "profile.list";
+/**
+ * ProfilePayload is one saved connection. Passwords are never stored.
+ */
+export interface ProfilePayload {
+  host: string;
+  port: number /* int */;
+  ssl: boolean;
+  username: string;
+}
 export interface ConnectParams {
   host: string;
   port: number /* int */;

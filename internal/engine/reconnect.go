@@ -38,6 +38,7 @@ func (e *Engine) reconnect() {
 	e.routeConsole = nil
 	e.interactSID = ""
 	e.interactBufs = nil
+	hadListeners := e.clearListenersLocked()
 	p := protocol.ConnectParams{
 		Host: e.conn.Host, Port: e.conn.Port, SSL: e.conn.SSL, Username: e.conn.Username,
 		Password: e.lastPassword,
@@ -46,6 +47,9 @@ func (e *Engine) reconnect() {
 	e.logf(protocol.LevelWarn, "connection lost; reconnecting to %s:%d", p.Host, p.Port)
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+	if hadListeners {
+		e.bus.send(protocol.ListenersUpdate([]*protocol.ListenerState{}))
+	}
 	e.mu.Unlock()
 	for _, opCancel := range opCancels {
 		opCancel()

@@ -36,6 +36,7 @@ const (
 	ResModuleRanks = "moduleRanks"
 	ResOperators   = "operators"
 	ResOperations  = "operations"
+	ResListeners   = "listeners"
 )
 
 // Error codes.
@@ -159,6 +160,18 @@ const (
 	OpCanceled = "canceled"
 )
 
+// ListenerState is one registered multi/handler launch. Job ids are the
+// daemon's, so the registry is reconciled against the live job list on every
+// connect.
+type ListenerState struct {
+	JobID     string    `json:"jobId"`
+	Payload   string    `json:"payload,omitempty"`
+	Lhost     string    `json:"lhost,omitempty"`
+	Lport     int       `json:"lport,omitempty"`
+	Operator  string    `json:"operator,omitempty"`
+	StartedAt time.Time `json:"startedAt,omitzero"`
+}
+
 // OperationState is the wire view of one operation. Total is 0 when the size
 // is not known up front (a service scan); Done may sit below Total when the
 // run ends early.
@@ -247,6 +260,7 @@ type CampaignState struct {
 	Events      []*EventEntry            `json:"events"`
 	Operators   []string                 `json:"operators"`
 	Operations  []*OperationState        `json:"operations"`
+	Listeners   []*ListenerState         `json:"listeners"`
 }
 
 // ResourceUpdate refreshes one resource. Exactly the field matching Resource
@@ -268,6 +282,7 @@ type ResourceUpdate struct {
 	Interact    *InteractState           `json:"interact,omitempty"`
 	Operators   []string                 `json:"operators,omitempty"`
 	Operations  []*OperationState        `json:"operations,omitempty"`
+	Listeners   []*ListenerState         `json:"listeners,omitempty"`
 }
 
 func ConnectionUpdate(c ConnectionState) ResourceUpdate {
@@ -321,6 +336,11 @@ func OperatorsUpdate(names []string) ResourceUpdate {
 // client replaces its copy wholesale.
 func OperationsUpdate(ops []*OperationState) ResourceUpdate {
 	return ResourceUpdate{Type: KindResource, Resource: ResOperations, Operations: ops}
+}
+
+// ListenersUpdate carries the registered handler launches.
+func ListenersUpdate(listeners []*ListenerState) ResourceUpdate {
+	return ResourceUpdate{Type: KindResource, Resource: ResListeners, Listeners: listeners}
 }
 
 func ConsoleUpdate(c *ConsoleState) ResourceUpdate {
@@ -431,7 +451,18 @@ const (
 	MethodBruteStart = "brute.start"
 	// MethodOperationsCancel cancels a running engine operation.
 	MethodOperationsCancel = "operations.cancel"
+	// MethodProfileList returns saved msfrpcd connection profiles (they
+	// carry no password). It works while disconnected.
+	MethodProfileList = "profile.list"
 )
+
+// ProfilePayload is one saved connection. Passwords are never stored.
+type ProfilePayload struct {
+	Host     string `json:"host"`
+	Port     int    `json:"port"`
+	SSL      bool   `json:"ssl"`
+	Username string `json:"username"`
+}
 
 type ConnectParams struct {
 	Host     string `json:"host"`

@@ -89,6 +89,13 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 	// that carries modules and db state to already-connected browsers
 	e.bus.send(protocol.NewSnapshot(e.stateLocked()))
 	e.mu.Unlock()
+	if e.cfg.Store != nil {
+		// Remember the endpoint, never the password: the dialog asks for it
+		// on every fresh browser.
+		_, _ = e.cfg.Store.SaveProfile(protocol.ProfilePayload{
+			Host: p.Host, Port: p.Port, SSL: p.SSL, Username: p.Username,
+		})
+	}
 	cancelAttempt()
 	return nil
 }
@@ -233,6 +240,9 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	// fallback decides. A failed list is non-fatal: the monitor then picks
 	// them up tagged with the current workspace.
 	liveSessions, _ := gomsf.NewSessionManager(rpc).List(ctx)
+	// The job list seeds the listener registry reconciliation: a persisted
+	// handler whose job the daemon no longer has must not survive.
+	liveJobs, jobsErr := gomsf.NewJobManager(rpc).List(ctx)
 	e.mu.Lock()
 	prevTags := make(map[string]sessionTag, len(e.sessionTags))
 	for sid, tag := range e.sessionTags {
@@ -304,13 +314,22 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 		}
 		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
 	}
-	e.jobs = make(map[string]*protocol.JobState)
+	e.jobs = make(map[string]*protocol.JobState, len(liveJobs))
+	if jobsErr == nil {
+		for id, name := range liveJobs {
+			e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
+		}
+	}
+	listenerPersist := e.seedListenersLocked(liveJobs, jobsErr == nil)
 	e.exploitRuns = nil
 	e.earlySessions = nil
 	e.errStreak = 0
 	e.gen = gen + 1
 	e.mu.Unlock()
 	committed = true // the engine owns rpc and both consoles from the swap on
+	if listenerPersist != nil {
+		_ = e.cfg.Store.SaveListeners(listenerPersist)
+	}
 	if oldCancel != nil {
 		oldCancel()
 	}
@@ -369,6 +388,7 @@ func (e *Engine) Disconnect() {
 	e.routes = nil
 	hadSessions := len(e.sessions) > 0
 	hadJobs := len(e.jobs) > 0
+	hadListeners := e.clearListenersLocked()
 	e.sessions = make(map[string]*protocol.SessionState)
 	e.jobs = make(map[string]*protocol.JobState)
 	e.interactSID = ""
@@ -393,6 +413,9 @@ func (e *Engine) Disconnect() {
 	}
 	if hadJobs {
 		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
+	}
+	if hadListeners {
+		e.bus.send(protocol.ListenersUpdate([]*protocol.ListenerState{}))
 	}
 	e.mu.Unlock()
 	for _, opCancel := range opCancels {

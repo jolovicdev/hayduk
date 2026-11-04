@@ -498,7 +498,7 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	// Register before the RPC so sessions and job events that arrive
 	// before its response can be attributed to this launch.
 	var runKey string
-	if p.Type == string(gomsf.ExploitModuleType) && p.Name != "multi/handler" {
+	if p.Type == string(gomsf.ExploitModuleType) && p.Name != handlerModule {
 		runKey = e.beginExploitRun(p.Type+"/"+p.Name, ws, operator)
 	}
 	var res *gomsf.ModuleExecuteResult
@@ -539,6 +539,11 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	}
 	if runKey != "" {
 		e.armExploitRun(runKey, res.UUID, res.JobID)
+	}
+	// A handler launch is a listener: remember what it is listening for and
+	// with which callback so the Listeners view survives a reload.
+	if p.Type == string(gomsf.ExploitModuleType) && p.Name == handlerModule {
+		e.registerListener(operator, res.JobID, p.Payload, p.PayloadOptions)
 	}
 	// Autoroute exists only to change the route table. A job-backed run
 	// kicks the poller again when its job stops, but an inline run has no

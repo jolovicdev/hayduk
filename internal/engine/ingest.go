@@ -207,11 +207,14 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 		e.mu.Unlock()
 		return
 	}
+	var listenerPersist []*protocol.ListenerState
+	listenersChanged := false
 	if started {
 		e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
 	} else {
 		delete(e.jobs, id)
 		e.finishExploitJobLocked(id)
+		listenersChanged, listenerPersist = e.removeListenerLocked(id)
 	}
 	jobs := copyMap(e.jobs)
 	if started {
@@ -220,7 +223,13 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 		e.logf(protocol.LevelInfo, "job %s stopped", id)
 	}
 	e.bus.send(protocol.JobsUpdate(jobs))
+	if listenersChanged {
+		e.bus.send(protocol.ListenersUpdate(deepSlice(e.listeners)))
+	}
 	e.mu.Unlock()
+	if listenerPersist != nil {
+		_ = e.cfg.Store.SaveListeners(listenerPersist)
+	}
 	// autoroute only lives to change the route table; when it finishes the
 	// table changed, so the poller should look now rather than next interval
 	if !started && strings.Contains(name, "manage/autoroute") {

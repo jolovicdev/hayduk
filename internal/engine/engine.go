@@ -15,6 +15,7 @@ import (
 
 	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
+	"github.com/jolovicdev/hayduk/internal/store"
 )
 
 const (
@@ -32,6 +33,9 @@ type Config struct {
 	// RPC, when set, replaces the real client (tests). The engine then never
 	// dials msfrpcd itself.
 	RPC gomsf.RPCCaller
+	// Store, when set, persists the event/audit log, the rank cache, the
+	// listener registry and saved connection profiles.
+	Store *store.Store
 }
 
 func (c Config) withDefaults() Config {
@@ -110,6 +114,9 @@ type Engine struct {
 	// sprays and Hail Marys. opSeq names them.
 	operations map[string]*operation
 	opSeq      uint64
+	// listeners is the multi/handler registry, reconciled against the live
+	// job list on every connect and persisted so it survives a restart.
+	listeners []*protocol.ListenerState
 
 	connecting bool
 	// connectSeq names the connection attempt that owns the connecting slot;
@@ -150,6 +157,15 @@ func New(cfg Config) *Engine {
 		conn:        protocol.ConnectionState{Status: "disconnected"},
 		routeKick:   make(chan struct{}, 1),
 		refreshKick: make(chan struct{}, 1),
+	}
+	if cfg.Store != nil {
+		e.moduleRanks = cfg.Store.LoadRanks()
+		if events, err := cfg.Store.LoadEvents(eventRingCap); err == nil && len(events) > 0 {
+			e.events = events
+			// the audit log's sequence survives restarts: a reconnecting
+			// browser must never see it jump backwards
+			e.seq = events[len(events)-1].Seq
+		}
 	}
 	e.wg.Add(1)
 	go func() {
@@ -248,6 +264,7 @@ func (e *Engine) stateLocked() protocol.CampaignState {
 	}
 	s.Operators = e.operatorListLocked()
 	s.Operations = e.operationListLocked()
+	s.Listeners = emptyIfNil(deepSlice(e.listeners))
 	return s
 }
 
@@ -312,6 +329,9 @@ func (e *Engine) logfIn(ws, operator, level, format string, args ...any) {
 	e.events = append(e.events, entry)
 	if len(e.events) > eventRingCap {
 		e.events = e.events[len(e.events)-eventRingCap:]
+	}
+	if e.cfg.Store != nil {
+		e.cfg.Store.AppendEvent(entry)
 	}
 	e.bus.send(protocol.ServerMessageFromEvent(entry))
 }
@@ -402,6 +422,8 @@ func (e *Engine) Exec(ctx context.Context, operator, method string, params json.
 	case protocol.MethodDisconnect:
 		e.Disconnect()
 		return nil, nil
+	case protocol.MethodProfileList:
+		return mustJSON(e.profiles()), nil
 	case protocol.MethodReportHTML:
 		html, eb := e.reportDocument()
 		if eb != nil {

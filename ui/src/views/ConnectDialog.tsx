@@ -1,7 +1,8 @@
-import { createSignal, Show } from "solid-js";
-import type { ConnectionState } from "../protocol/types";
+import { For, Show, createSignal, onMount } from "solid-js";
+import type { ConnectionState, ProfilePayload } from "../protocol/types";
 import { HaydukMark } from "../components/mark";
 import { events } from "../stores/events";
+import { ws } from "../ws/singleton";
 import { CONNECT_DEFAULTS, friendlyConnectError, loadConnectDefaults, parsePort } from "./connectForm";
 
 export default function ConnectDialog(props: {
@@ -14,6 +15,23 @@ export default function ConnectDialog(props: {
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  // Saved endpoints come from the server store, so a new browser or another
+  // operator sees the team's usual targets; passwords are never stored.
+  const [profiles, setProfiles] = createSignal<ProfilePayload[]>([]);
+  const [profileIdx, setProfileIdx] = createSignal(-1);
+
+  onMount(() => {
+    ws.command<ProfilePayload[]>("profile.list")
+      .then(list => setProfiles(Array.isArray(list) ? list : []))
+      .catch(() => setProfiles([]));
+  });
+
+  function pickProfile(i: number) {
+    setProfileIdx(i);
+    const p = profiles()[i];
+    if (!p) return;
+    setD({ host: p.host, port: String(p.port), ssl: p.ssl, username: p.username });
+  }
 
   const connecting = () => props.conn.status === "connecting";
   const portValid = () => parsePort(d().port) !== undefined;
@@ -67,6 +85,16 @@ export default function ConnectDialog(props: {
         <Show when={connecting()} fallback={
           <>
             <div class="mform">
+              <Show when={profiles().length > 0}>
+                <label class="field"><b>Saved connections <span class="fdesc">(no passwords stored)</span></b>
+                  <select value={String(profileIdx())} onChange={(e) => pickProfile(Number(e.currentTarget.value))}>
+                    <option value="-1">(new connection)</option>
+                    <For each={profiles()}>{(p, i) => (
+                      <option value={String(i())}>{p.username}@{p.host}:{p.port}{p.ssl ? " · ssl" : ""}</option>
+                    )}</For>
+                  </select>
+                </label>
+              </Show>
               <label class="field"><b>Host</b>
                 <input value={d().host}
                   onInput={(e) => setD({ ...d(), host: e.currentTarget.value })} />
