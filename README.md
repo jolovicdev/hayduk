@@ -103,7 +103,7 @@ The network map adapts host columns to the available canvas. Choose **Focus** to
 | Credentials and loot | Review workspace data and use recovered credentials in login workflows. |
 | Hail Mary | Launch matching exploits against selected hosts, with paced launches and an event log. |
 | Reporting | Export a self-contained HTML report for campaign review and client delivery. |
-| Team mode | Share a campaign with multiple operators on a trusted network. |
+| Team mode | Share a campaign with multiple operators: private consoles, shared sessions, team chat, and attributed events. |
 
 ![Hayduk graph focus mode with adaptive subnet layout, host states, and a routed network](docs/topology.png)
 
@@ -141,7 +141,15 @@ Run the downloaded binary with a specific interface address that your operators 
 
 Replace `192.168.1.10` with your machine's address. Team mode requires an explicit, non-loopback address; wildcard addresses such as `0.0.0.0` are refused.
 
-Share the full token URL printed in the terminal. Each operator opens it in a browser and chooses a name. The event log attributes actions to those names.
+Share the full token URL printed in the terminal. Each operator opens it in a browser and chooses a name. From then on the campaign is shared, Armitage-style:
+
+- **One shared backend.** Every operator rides the same msfrpcd link and database: hosts, services, credentials, loot, jobs, sessions, and pivot routes are common to the team.
+- **Private consoles.** Each operator gets their own Metasploit console. Your commands and their output never land in another operator's console tab.
+- **Independent session tabs.** Attach to any session without moving anyone else's view. Session transcripts are shared: everyone viewing a session sees the same history and live output, and one operator closing a tab does not silence another's stream.
+- **Shared event log with attribution.** Actions are logged with the operator who performed them, including who opened each session. The **Events** tab shows who is online.
+- **Team chat.** The chat bar under the event log broadcasts a message to every operator. Chat is internal coordination and stays out of exported reports.
+
+A page refresh or short network blip rejoins under the same name and resumes the same console and session views. Disconnecting from msfrpcd drops the shared link for the whole team, so team mode asks for confirmation first.
 
 Team mode uses one shared token and plain HTTP. Operator names are labels, not verified identities. Treat the token URL like a password and use team mode only on trusted networks. Read the [security policy](SECURITY.md) for the full trust model.
 

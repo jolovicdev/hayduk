@@ -82,7 +82,7 @@ func TestStaleMonitorCloseDoesNotTouchReusedSessionID(t *testing.T) {
 	newMon := &gomsf.EventMonitor{}
 	e.monitor = newMon
 	e.sessions = make(map[string]*protocol.SessionState)
-	e.interactSID = "1"
+	e.interactActive = map[string]string{"": "1"}
 	e.mu.Unlock()
 	e.sessionOpened(newMon, gomsf.Event{SessionID: "1", Session: &gomsf.Session{Type: "meterpreter"}})
 	waitFor(t, func() bool {

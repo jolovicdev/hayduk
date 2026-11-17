@@ -45,6 +45,8 @@
 .ph-fill.ph-caret-down:before { content: "\e136"; }
 .ph.ph-caret-right:before { content: "\e13a"; }
 .ph-fill.ph-caret-right:before { content: "\e13a"; }
+.ph.ph-chat:before { content: "\e15c"; }
+.ph-fill.ph-chat:before { content: "\e15c"; }
 .ph.ph-check:before { content: "\e182"; }
 .ph-fill.ph-check:before { content: "\e182"; }
 .ph.ph-command:before { content: "\e1c4"; }
@@ -89,6 +91,8 @@
 .ph-fill.ph-magnifying-glass:before { content: "\e30c"; }
 .ph.ph-minus:before { content: "\e32a"; }
 .ph-fill.ph-minus:before { content: "\e32a"; }
+.ph.ph-paper-plane-tilt:before { content: "\e398"; }
+.ph-fill.ph-paper-plane-tilt:before { content: "\e398"; }
 .ph.ph-password:before { content: "\e752"; }
 .ph-fill.ph-password:before { content: "\e752"; }
 .ph.ph-pi:before { content: "\ec80"; }

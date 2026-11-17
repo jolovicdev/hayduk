@@ -22,7 +22,14 @@ func (e *Engine) reconnect() {
 	// the dropped link owns consoles and a login on the daemon; capture
 	// them before the reset so they can be released, not just forgotten
 	dropRPC := e.rpc
-	dropConsoleID := e.consoleID
+	dropConsoleIDs := make([]string, 0, len(e.consoles))
+	for _, oc := range e.consoles {
+		dropConsoleIDs = append(dropConsoleIDs, oc.console.CID)
+	}
+	for _, t := range e.consoleTimers {
+		t.Stop()
+	}
+	e.consoleTimers = nil
 	dropRouteCID := ""
 	if e.routeConsole != nil {
 		dropRouteCID = e.routeConsole.CID
@@ -30,10 +37,13 @@ func (e *Engine) reconnect() {
 	e.runCancel = nil
 	e.rpc = nil
 	e.monitor = nil
-	e.console = nil
-	e.consoleID = ""
+	e.consoles = nil
 	e.routeConsole = nil
-	e.interactSID = ""
+	for op := range e.interactActive {
+		e.bus.send(protocol.InteractUpdate(op, &protocol.InteractState{}))
+	}
+	e.interactActive = nil
+	e.attached = nil
 	e.interactBufs = nil
 	p := protocol.ConnectParams{
 		Host: e.conn.Host, Port: e.conn.Port, SSL: e.conn.SSL, Username: e.conn.Username,
@@ -42,14 +52,13 @@ func (e *Engine) reconnect() {
 	e.conn.Status = "reconnecting"
 	e.logf(protocol.LevelWarn, "connection lost; reconnecting to %s:%d", p.Host, p.Port)
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	e.mu.Unlock()
 	if cancel != nil {
 		cancel()
 	}
 	// the daemon is likely the reason we are here; release is bounded and
 	// async so a stalled one cannot slow the retry loop
-	go release(dropRPC, dropConsoleID, dropRouteCID)
+	go release(dropRPC, dropConsoleIDs, dropRouteCID)
 
 	backoff := time.Second
 	const maxBackoff = 10 * time.Second
@@ -75,7 +84,7 @@ func (e *Engine) reconnect() {
 			e.bus.send(protocol.ConnectionUpdate(e.conn))
 			// bootstrap swapped the whole campaign; browsers that stayed
 			// attached through the blip need the full state again
-			e.bus.send(protocol.NewSnapshot(e.stateLocked()))
+			e.broadcastSnapshotsLocked()
 			e.mu.Unlock()
 			return
 		}

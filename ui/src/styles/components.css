@@ -26,6 +26,7 @@
   font:600 10px var(--mono);
 }
 .nbtab .badge.jobs { background:var(--grn-dim); color:var(--grn-tx); }
+.nbtab .badge.chat { background:var(--accent-dim); color:var(--accent); }
 
 /* ---------- filter box ---------- */
 .filterbox { position:relative; }
@@ -227,6 +228,33 @@ table.dt .amb { color:var(--amb); }
 .evline p.ok { color:var(--grn-tx); }
 .evline p.err { color:var(--red-br); }
 .evline p.warn { color:var(--amb); }
+
+/* ---------- team event log: presence strip, chat ---------- */
+.events-wrap { display:flex; flex-direction:column; height:100%; }
+.events-wrap .events { flex:1; min-height:0; overflow:auto; }
+.team-strip { flex:none; display:flex; align-items:center; flex-wrap:wrap; gap:7px;
+  padding:8px 14px; border-bottom:1px solid var(--line);
+  font:500 11px var(--mono); letter-spacing:.05em; color:var(--tx2); }
+.team-strip > i { font-size:14px; color:var(--tx2); }
+.team-strip .team-label { text-transform:uppercase; margin-right:2px; }
+.team-strip .team-empty { font:400 11px var(--sans); letter-spacing:0; }
+.team-strip .opchip { display:inline-flex; align-items:center; gap:6px;
+  font:500 10.5px var(--mono); letter-spacing:.05em; color:var(--tx1);
+  border:1px solid var(--line); border-radius:4px; padding:1px 7px; }
+.team-strip .opchip::before { content:""; width:6px; height:6px; border-radius:50%;
+  background:var(--grn-tx); }
+.team-strip .opchip.me { color:var(--accent); border-color:var(--accent-dim);
+  background:var(--accent-dim); }
+.evline p.chat { color:var(--tx1); }
+.evline p.chat b { color:var(--accent); font-weight:600; margin-right:2px; }
+.chatbar { flex:none; display:flex; gap:8px; padding:8px 10px;
+  border-top:1px solid var(--line); }
+.chatbar input { flex:1; min-width:0; background:var(--well); border:1px solid var(--line);
+  border-radius:6px; padding:7px 12px; color:var(--tx0);
+  font:400 12.5px var(--sans); }
+.chatbar input::placeholder { color:var(--tx2); }
+.chatbar input:focus { outline:none; border-color:var(--accent); }
+.chatbar .abtn { flex:none; }
 
 /* ---------- context menu ---------- */
 .ctx {

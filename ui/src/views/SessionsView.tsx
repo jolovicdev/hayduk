@@ -83,6 +83,9 @@ export function SessionsView(props: {
           { key: "username", label: "User" },
           { key: "targetHost", label: "Host", mono: true },
           { key: "viaExploit", label: "Via", mono: true, render: (r) => <span class="dim">{r.viaExploit}</span> },
+          { key: "openedBy", label: "Operator", render: (r) => r.openedBy
+            ? <span class="opchip" title={`opened by ${r.openedBy}`}>{r.openedBy}</span>
+            : <span class="dim">—</span> },
           { key: "openedAt", label: "Opened", mono: true, render: (r) => ageOf(r.openedAt, now()) },
           {
             key: "actions", label: "", width: "44px",

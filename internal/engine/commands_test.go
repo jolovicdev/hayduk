@@ -209,13 +209,13 @@ func TestWorkspaceSetSerializesWithInFlightRefresh(t *testing.T) {
 func TestReattachPreservesTranscript(t *testing.T) {
 	e := testEngine(t)
 	e.sessions["1"] = &protocol.SessionState{ID: "1", Type: "shell"}
-	if err := e.attach("1"); err != nil {
+	if err := e.attach("", "1"); err != nil {
 		t.Fatal(err)
 	}
 	e.sessionOutput(nil, gomsf.Event{SessionID: "1", Data: "shared transcript\n"})
 	sub := e.Subscribe()
 	defer sub.Stop()
-	if err := e.attach("1"); err != nil {
+	if err := e.attach("", "1"); err != nil {
 		t.Fatal(err)
 	}
 	if got := e.State().Interact.Output; got != "shared transcript\n" {

@@ -62,6 +62,9 @@ type Server struct {
 type engineInterface interface {
 	State() protocol.CampaignState
 	SubscribeSnapshot() (*engine.Subscription, protocol.CampaignState)
+	SubscribeSnapshotFor(operator string) (*engine.Subscription, protocol.CampaignState)
+	ConsoleFor(operator string) *protocol.ConsoleState
+	InteractFor(operator string) *protocol.InteractState
 	Exec(ctx context.Context, operator, method string, params json.RawMessage) (json.RawMessage, *protocol.ErrorBody)
 	OperatorJoin(name string)
 	OperatorLeave(name string)
@@ -256,7 +259,57 @@ type wsConn struct {
 	cancel context.CancelFunc
 	mu     sync.Mutex
 	closed bool
-	wg     sync.WaitGroup
+	// operator is the name this socket joined under; the pump uses it to
+	// keep personal resources (console, interact, snapshots) scoped to
+	// this socket's operator. Guarded by mu.
+	operator string
+	wg       sync.WaitGroup
+}
+
+func (c *wsConn) setOperator(name string) {
+	c.mu.Lock()
+	c.operator = name
+	c.mu.Unlock()
+}
+
+func (c *wsConn) getOperator() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.operator
+}
+
+// messageFor reports whether a broadcast belongs to this socket's operator.
+// Shared resources (events, sessions, hosts, ...) pass for everyone; the
+// personal ones - console and interact updates, console output, snapshots -
+// carry the operator they describe and reach only that operator's sockets.
+func messageFor(operator string, m protocol.ServerMessage) bool {
+	switch v := m.(type) {
+	case protocol.Snapshot:
+		return v.Operator == operator
+	case protocol.ConsoleOutputMsg:
+		return v.Operator == operator
+	case protocol.ResourceUpdate:
+		if v.Resource == protocol.ResConsole || v.Resource == protocol.ResInteract {
+			return v.Operator == operator
+		}
+	}
+	return true
+}
+
+// operatorNameLimit bounds a joined name; names are labels on a trusted
+// network, not identities, but they render in every operator's event log.
+const operatorNameLimit = 32
+
+func validOperatorName(name string) bool {
+	if name == "" || len([]rune(name)) > operatorNameLimit {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *wsConn) close() {
@@ -306,19 +359,7 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 	cmdCtx, cmdCancel := context.WithCancel(context.Background())
 	c := &wsConn{conn: conn, out: make(chan any, 256), done: make(chan struct{}), cancel: cmdCancel}
 
-	// The subscription and the snapshot come out of one engine-lock hold:
-	// broadcasts already folded into the snapshot are suppressed for this
-	// socket by the bus, and everything sent after lands in order behind it.
-	// Neither side of the handshake can starve the other - subscribing alone
-	// would replay pre-snapshot messages (reverting newer state), snapshotting
-	// alone would drop updates that land in between.
-	sub, snap := s.engine.SubscribeSnapshot()
-	// the pump exits on c.done when the connection dies, so the subscription
-	// is released here rather than after the wait
-	defer sub.Stop()
-
 	c.send(protocol.NewHello(s.opts.Version, s.opts.Team))
-	c.send(protocol.NewSnapshot(snap))
 
 	// writer: single goroutine owns conn writes; a write that stalls longer
 	// than the deadline kills the connection instead of freezing every
@@ -335,33 +376,84 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 		}
 	}()
 
-	// pump engine broadcasts into out
-	c.wg.Add(1)
-	go func() {
-		defer c.wg.Done()
-		defer c.close()
-		for {
-			select {
-			case m, ok := <-sub.C():
-				if !ok {
-					return // bus dropped us; the client resnapshots
+	// pump engine broadcasts into out, keeping only what belongs to this
+	// socket's operator: shared resources reach everyone, personal ones
+	// (console, interact, snapshots) reach their owner alone.
+	startPump := func(sub *engine.Subscription) {
+		c.wg.Add(1)
+		go func() {
+			defer c.wg.Done()
+			defer c.close()
+			for {
+				select {
+				case m, ok := <-sub.C():
+					if !ok {
+						return // bus dropped us; the client resnapshots
+					}
+					if messageFor(c.getOperator(), m) {
+						c.send(m)
+					}
+				case <-c.done:
+					return
 				}
-				c.send(m)
-			case <-c.done:
-				return
 			}
-		}
-	}()
+		}()
+	}
 
 	// reader
 	go func() {
 		defer c.close()
 		operator := ""
+		var sub *engine.Subscription
 		defer func() {
+			if sub != nil {
+				sub.Stop()
+			}
 			if operator != "" {
 				s.engine.OperatorLeave(operator)
 			}
 		}()
+
+		// The subscription and the snapshot come out of one engine-lock
+		// hold: broadcasts already folded into the snapshot are suppressed
+		// for this socket by the bus, and everything sent after lands in
+		// order behind it. Neither side of the handshake can starve the
+		// other - subscribing alone would replay pre-snapshot messages
+		// (reverting newer state), snapshotting alone would drop updates
+		// that land in between. Single mode subscribes at once under the
+		// local "" operator; team mode on the first join, so the snapshot
+		// carries the joined operator's console and interact state.
+		subscribe := func(name string) {
+			var snap protocol.CampaignState
+			sub, snap = s.engine.SubscribeSnapshotFor(name)
+			c.send(protocol.NewSnapshotFor(name, snap))
+			startPump(sub)
+		}
+		if !s.opts.Team {
+			subscribe("")
+		}
+
+		// register moves presence to a name and hands the socket that
+		// name's personal state: a full snapshot on the first join, the
+		// console and interact resources on a rename.
+		register := func(name string) {
+			if name == operator {
+				return
+			}
+			if operator != "" {
+				s.engine.OperatorLeave(operator)
+			}
+			operator = name
+			c.setOperator(name)
+			s.engine.OperatorJoin(name)
+			if sub == nil {
+				subscribe(name)
+			} else {
+				c.send(protocol.ConsoleUpdate(name, s.engine.ConsoleFor(name)))
+				c.send(protocol.InteractUpdate(name, s.engine.InteractFor(name)))
+			}
+		}
+
 		conn.SetReadLimit(1 << 20)
 		conn.SetReadDeadline(time.Now().Add(90 * time.Second))
 		conn.SetPongHandler(func(string) error {
@@ -378,27 +470,32 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 			if msg.Type != protocol.KindCommand {
 				continue
 			}
+			name := strings.TrimSpace(msg.Operator)
 			if msg.Method == protocol.MethodOperatorJoin {
 				// explicit presence registration; a join or rename must
 				// not wait for the next command to carry the name
-				if msg.Operator != "" && msg.Operator != operator {
-					if operator != "" {
-						s.engine.OperatorLeave(operator)
-					}
-					operator = msg.Operator
-					s.engine.OperatorJoin(operator)
+				if !validOperatorName(name) {
+					c.send(protocol.ErrorResponse(msg.ID, protocol.CodeBadParams,
+						"operator name must be 1-32 printable characters"))
+					continue
 				}
+				register(name)
 				c.send(protocol.OKResponse(msg.ID, nil))
 				continue
 			}
-			if msg.Operator != "" && msg.Operator != operator {
+			if s.opts.Team && operator == "" {
+				// team commands need an identity: attribution and the
+				// personal console both ride on the joined name
+				if !validOperatorName(name) {
+					c.send(protocol.ErrorResponse(msg.ID, protocol.CodeBadParams,
+						"choose an operator name first"))
+					continue
+				}
+				register(name)
+			} else if name != "" && name != operator && validOperatorName(name) {
 				// a renamed operator (team mode identity switch) moves
 				// presence and attribution; only the current name lingers
-				if operator != "" {
-					s.engine.OperatorLeave(operator)
-				}
-				operator = msg.Operator
-				s.engine.OperatorJoin(operator)
+				register(name)
 			}
 			op := operator
 			select {
@@ -439,7 +536,6 @@ func (s *Server) serveConn(conn *websocket.Conn) {
 	}()
 
 	c.wg.Wait()
-	sub.Stop()
 	cmdCancel()
 	conn.Close()
 }

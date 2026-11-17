@@ -32,11 +32,11 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.Command == "" {
 			return nil, badParam("command is required")
 		}
-		con := e.currentConsole()
-		if con == nil {
-			return nil, notConnected()
+		oc, eb := e.consoleFor(ctx, operator)
+		if eb != nil {
+			return nil, eb
 		}
-		if err := con.Write(ctx, p.Command); err != nil {
+		if err := oc.console.Write(ctx, p.Command); err != nil {
 			return nil, mapErr(err)
 		}
 		// Readiness is restored only when a read issued after this write
@@ -44,18 +44,19 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		// the buffered prompt must not go out here, or browsers accept
 		// input while msf still runs the command.
 		e.mu.Lock()
-		if e.console != nil {
+		if e.consoles[operator] == oc {
 			// msfrpcd's web consoles do not echo commands. Store the echo
-			// in the engine buffer so every browser receives it on replay.
-			// Reuse the trailing idle prompt to avoid displaying it twice.
-			echo := e.consolePrompt + strings.TrimRight(p.Command, "\n") + "\n"
-			if e.consolePrompt != "" && bytes.HasSuffix(e.consoleOut, []byte(e.consolePrompt)) {
-				e.consoleOut = e.consoleOut[:len(e.consoleOut)-len(e.consolePrompt)]
+			// in the engine buffer so the operator's browsers receive it
+			// on replay. Reuse the trailing idle prompt to avoid
+			// displaying it twice.
+			echo := oc.prompt + strings.TrimRight(p.Command, "\n") + "\n"
+			if oc.prompt != "" && bytes.HasSuffix(oc.out, []byte(oc.prompt)) {
+				oc.out = oc.out[:len(oc.out)-len(oc.prompt)]
 			}
-			e.consoleOut = appendCapped(e.consoleOut, []byte(echo))
-			e.bus.send(protocol.ConsoleOutputMsg{Type: protocol.KindConsoleOutput, Data: echo})
-			e.consoleWritePending = true
-			e.consoleWriteGen++
+			oc.out = appendCapped(oc.out, []byte(echo))
+			e.bus.send(protocol.ConsoleOutputMsg{Type: protocol.KindConsoleOutput, Operator: operator, Data: echo})
+			oc.writePending = true
+			oc.writeGen++
 		}
 		e.mu.Unlock()
 		return nil, nil
@@ -65,11 +66,11 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := parseParams(params, &p); eb != nil {
 			return nil, eb
 		}
-		con := e.currentConsole()
-		if con == nil {
-			return nil, notConnected()
+		oc, eb := e.consoleFor(ctx, operator)
+		if eb != nil {
+			return nil, eb
 		}
-		tabs, err := con.Tabs(ctx, p.Line)
+		tabs, err := oc.console.Tabs(ctx, p.Line)
 		if err != nil {
 			return nil, mapErr(err)
 		}
@@ -143,7 +144,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if p.SID == "" {
 			return nil, badParam("sid is required")
 		}
-		if eb := e.attach(p.SID); eb != nil {
+		if eb := e.attach(operator, p.SID); eb != nil {
 			return nil, eb
 		}
 		return nil, nil
@@ -153,7 +154,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := parseParams(params, &p); eb != nil {
 			return nil, eb
 		}
-		e.detach(p.SID)
+		e.detach(operator, p.SID)
 		return nil, nil
 
 	case protocol.MethodSessionWrite:
@@ -507,32 +508,19 @@ func normalizeNumericOptions(options map[string]interface{}) {
 	}
 }
 
-// executeWithPayload mirrors Module.ExecuteWithPayload but drops non-scalar
-// option values before sending: msf's rpc_execute rejects anything that is
-// not a scalar, and payload defaults carry at least one array
-// (AutoLoadExtensions), which would fail every payload launch.
+// executeWithPayload launches the module with the payload's defaults merged
+// under the operator's options. go-msf v2.2.0 drops non-scalar option values
+// before module.execute itself (payload defaults carry at least one array,
+// AutoLoadExtensions, which msf's rpc_execute rejects).
 func executeWithPayload(ctx context.Context, rpc gomsf.RPCCaller, mod, payload *gomsf.Module) (*gomsf.ModuleExecuteResult, error) {
-	options := mod.RunOptions()
-	options["PAYLOAD"] = payload.Name
-	for k, v := range payload.RunOptions() {
-		if _, ok := options[k]; !ok {
-			options[k] = v
-		}
-	}
-	for k, v := range options {
-		switch v.(type) {
-		case nil, string, bool,
-			int, int8, int16, int32, int64,
-			uint, uint8, uint16, uint32, uint64,
-			float32, float64:
-		default:
-			delete(options, k)
-		}
-	}
-	return gomsf.NewModuleManager(rpc).Execute(ctx, mod.ModuleType, mod.Name, options)
+	return mod.ExecuteWithPayload(ctx, payload)
 }
 
-func (e *Engine) attach(sid string) *protocol.ErrorBody {
+// attach opens one operator's view of a session. Transcripts are shared:
+// the first attach anywhere starts a fresh one, and every later attach -
+// by any operator - replays the buffered history. The watch is refcounted
+// across operators, so one detach cannot silence another's live stream.
+func (e *Engine) attach(operator, sid string) *protocol.ErrorBody {
 	e.mu.Lock()
 	if e.sessions[sid] == nil {
 		e.mu.Unlock()
@@ -547,42 +535,58 @@ func (e *Engine) attach(sid string) *protocol.ErrorBody {
 		// cannot be polled back
 		e.interactBufs[sid] = nil
 	}
-	e.interactSID = sid
+	if e.attached == nil {
+		e.attached = make(map[string]map[string]bool)
+	}
+	if e.attached[operator] == nil {
+		e.attached[operator] = make(map[string]bool)
+	}
+	firstHold := !e.sessionHeldLocked(sid)
+	e.attached[operator][sid] = true
+	if e.interactActive == nil {
+		e.interactActive = make(map[string]string)
+	}
+	e.interactActive[operator] = sid
 	mon := e.monitor
 	// the update carries the buffered transcript: browsers replace their
 	// local copy on every interact update and would blank it without this
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{
+	e.bus.send(protocol.InteractUpdate(operator, &protocol.InteractState{
 		SID: sid, Output: string(e.interactBufs[sid]),
 	}))
 	e.mu.Unlock()
-	if mon != nil {
+	if mon != nil && firstHold {
 		mon.WatchSession(sid)
 	}
 	return nil
 }
 
-// detach closes one session console, or the active one when sid is empty.
-// Other attached sessions keep their transcripts and streams.
-func (e *Engine) detach(sid string) {
+// detach closes one operator's session console, or their active one when
+// sid is empty. Their other tabs keep their transcripts, and another
+// operator's view of the same session keeps its transcript and stream.
+func (e *Engine) detach(operator, sid string) {
 	e.mu.Lock()
 	if sid == "" {
-		sid = e.interactSID
+		sid = e.interactActive[operator]
 	}
-	if sid == "" {
+	if sid == "" || !e.attached[operator][sid] {
 		e.mu.Unlock()
 		return
 	}
-	delete(e.interactBufs, sid)
-	wasActive := e.interactSID == sid
+	delete(e.attached[operator], sid)
+	lastHold := !e.sessionHeldLocked(sid)
+	if lastHold {
+		delete(e.interactBufs, sid)
+	}
+	wasActive := e.interactActive[operator] == sid
 	if wasActive {
-		e.interactSID = ""
+		delete(e.interactActive, operator)
 	}
 	mon := e.monitor
 	if wasActive {
-		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
+		e.bus.send(protocol.InteractUpdate(operator, &protocol.InteractState{}))
 	}
 	e.mu.Unlock()
-	if mon != nil {
+	if mon != nil && lastHold {
 		mon.UnwatchSession(sid)
 	}
 }
@@ -673,12 +677,6 @@ func (e *Engine) sessionUpgrade(ctx context.Context, operator, ws string, p prot
 	}
 	e.eventfOpIn(ws, operator, protocol.LevelSuccess, "session %s upgrading to meterpreter via %s:%d", p.SID, p.LHOST, p.LPORT)
 	return nil
-}
-
-func (e *Engine) currentConsole() *gomsf.MsfConsole {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.console
 }
 
 func moduleInfoPayload(info *gomsf.MsfModuleInfo) protocol.ModuleInfoPayload {

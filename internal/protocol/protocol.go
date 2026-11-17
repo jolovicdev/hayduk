@@ -58,6 +58,9 @@ const (
 	LevelSuccess = "success"
 	LevelWarn    = "warn"
 	LevelError   = "error"
+	// LevelChat marks a team chat message: Text is the message itself and
+	// Operator its author. Chat rides the shared event log, Armitage-style.
+	LevelChat = "chat"
 )
 
 const ProtoVersion = 1
@@ -79,12 +82,20 @@ func NewHello(version string, team bool) Hello {
 }
 
 // Snapshot carries the full campaign state, sent on every (re)connect.
+// Operator scopes the personal resources (console, interact) to one team
+// member; empty is the local single-operator view. Each socket receives
+// only its own snapshot.
 type Snapshot struct {
-	Type  string        `json:"type"`
-	State CampaignState `json:"state"`
+	Type     string        `json:"type"`
+	Operator string        `json:"operator,omitempty"`
+	State    CampaignState `json:"state"`
 }
 
-func NewSnapshot(s CampaignState) Snapshot { return Snapshot{Type: KindSnapshot, State: s} }
+func NewSnapshot(s CampaignState) Snapshot { return NewSnapshotFor("", s) }
+
+func NewSnapshotFor(operator string, s CampaignState) Snapshot {
+	return Snapshot{Type: KindSnapshot, Operator: operator, State: s}
+}
 
 // ConnectionState is one of the resources in CampaignState and also rides
 // the connect command response.
@@ -135,6 +146,9 @@ type SessionState struct {
 	// for sessions picked up without one. Reports scope sessions on it.
 	Workspace string    `json:"workspace,omitempty"`
 	OpenedAt  time.Time `json:"openedAt,omitzero"`
+	// OpenedBy names the operator whose launch opened the session (team
+	// mode attribution); empty when unknown.
+	OpenedBy string `json:"openedBy,omitempty"`
 }
 
 type JobState struct {
@@ -216,10 +230,13 @@ type CampaignState struct {
 }
 
 // ResourceUpdate refreshes one resource. Exactly the field matching Resource
-// is set; the rest stay nil and are omitted on the wire.
+// is set; the rest stay nil and are omitted on the wire. Operator scopes the
+// personal resources (console, interact) to one team member; empty is the
+// local single-operator view.
 type ResourceUpdate struct {
 	Type        string                   `json:"type"`
 	Resource    string                   `json:"resource"`
+	Operator    string                   `json:"operator,omitempty"`
 	Connection  *ConnectionState         `json:"connection,omitempty"`
 	Hosts       []*HostState             `json:"hosts,omitempty"`
 	Services    []*ServiceState          `json:"services,omitempty"`
@@ -282,12 +299,12 @@ func OperatorsUpdate(names []string) ResourceUpdate {
 	return ResourceUpdate{Type: KindResource, Resource: ResOperators, Operators: names}
 }
 
-func ConsoleUpdate(c *ConsoleState) ResourceUpdate {
-	return ResourceUpdate{Type: KindResource, Resource: ResConsole, Console: c}
+func ConsoleUpdate(operator string, c *ConsoleState) ResourceUpdate {
+	return ResourceUpdate{Type: KindResource, Resource: ResConsole, Operator: operator, Console: c}
 }
 
-func InteractUpdate(i *InteractState) ResourceUpdate {
-	return ResourceUpdate{Type: KindResource, Resource: ResInteract, Interact: i}
+func InteractUpdate(operator string, i *InteractState) ResourceUpdate {
+	return ResourceUpdate{Type: KindResource, Resource: ResInteract, Operator: operator, Interact: i}
 }
 
 // EventMsg appends one entry to the operator-visible event log.
@@ -300,17 +317,21 @@ type EventMsg struct {
 	Operator string    `json:"operator,omitempty"`
 }
 
-// SessionOutputMsg streams output of the attached session.
+// SessionOutputMsg streams output of the attached session. Session
+// transcripts are shared team-wide: every socket receives them and keeps
+// the sessions it has open.
 type SessionOutputMsg struct {
 	Type string `json:"type"`
 	SID  string `json:"sid"`
 	Data string `json:"data"`
 }
 
-// ConsoleOutputMsg streams console output.
+// ConsoleOutputMsg streams console output. Operator scopes the chunk to one
+// team member's console; empty is the local single-operator console.
 type ConsoleOutputMsg struct {
-	Type string `json:"type"`
-	Data string `json:"data"`
+	Type     string `json:"type"`
+	Operator string `json:"operator,omitempty"`
+	Data     string `json:"data"`
 }
 
 // CommandResponse answers a client command; Data is set when OK.
@@ -367,6 +388,7 @@ const (
 	MethodWorkspaceList   = "workspace.list"
 	MethodWorkspaceSet    = "workspace.set"
 	MethodOperatorJoin    = "operator.join"
+	MethodTeamChat        = "team.chat"
 	MethodDBRefresh       = "db.refresh"
 	MethodAttacksFind     = "attacks.find"
 	MethodReportHTML      = "report.html"
@@ -430,6 +452,12 @@ type SessionUpgradeParams struct {
 
 type WorkspaceSetParams struct {
 	Name string `json:"name"`
+}
+
+// TeamChatParams carries one team chat message, broadcast to every operator
+// through the shared event log.
+type TeamChatParams struct {
+	Text string `json:"text"`
 }
 
 type AttacksFindParams struct {

@@ -14,3 +14,8 @@ node_modules/
 
 # go test binaries
 *.test
+
+# local build and tool caches (not part of the repository)
+.cache/
+.wrangler/
+ui/.claude/

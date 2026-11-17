@@ -25,7 +25,8 @@ import { HailMaryDialog } from "./views/HailMaryDialog";
 import { BruteDialog } from "./views/BruteDialog";
 import { campaignState, protoMismatch, serverVersion, team as teamMode, wsStatus } from "./stores/store";
 import { consoleBusy, consoleOutput, consolePrompt, tabs as consoleTabs, write } from "./stores/console";
-import { attach } from "./stores/interact";
+import { attach, resetInteract } from "./stores/interact";
+import { markChatRead, unreadChat } from "./stores/events";
 import { ws } from "./ws/singleton";
 import { currentOperator } from "./ws/client";
 import { forgetOperator, restoreOperator, saveOperator } from "./ws/operator";
@@ -94,6 +95,7 @@ export default function App() {
   const [bruteOpen, setBruteOpen] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
+  const [confirmTeamDisconnect, setConfirmTeamDisconnect] = createSignal(false);
   const [grid, setGrid] = createSignal(true);
   const [graphFocus, setGraphFocus] = createSignal(false);
   const [workspaces, setWorkspaces] = createSignal<string[]>([]);
@@ -180,6 +182,7 @@ export default function App() {
   function commitOperator() {
     const name = operatorDraft().trim();
     if (!name) return;
+    if (name !== currentOperator()) resetInteract(); // a new identity starts fresh views
     saveOperator(name);
     setOperatorName(name);
     // register presence at once instead of waiting for the next command
@@ -187,8 +190,20 @@ export default function App() {
   }
 
   function disconnect() {
+    // one operator's disconnect drops the shared link for the whole team:
+    // make that consequence explicit before sending it
+    if (teamMode() && conn().status !== "disconnected") {
+      setConfirmTeamDisconnect(true);
+      return;
+    }
     void ws.command("disconnect").catch(() => {});
   }
+
+  // chat arriving while the Events tab is open is read at once; the badge
+  // only counts what landed while another tab was up
+  createEffect(() => {
+    if (tab() === "events" && unreadChat() > 0) markChatRead();
+  });
 
   async function exportReport() {
     try {
@@ -285,10 +300,11 @@ export default function App() {
 
         <span class="spacer"></span>
         <Show when={teamMode()}>
-          <span class="chip" title="Team session: click to change operator name"
+          <span class="chip" title={`Team session: click to change operator name. Online: ${(campaignState().operators ?? []).join(", ") || "nobody"}`}
             onClick={() => {
               const previous = currentOperator();
               forgetOperator(localStorage);
+              resetInteract();
               setOperatorName("");
               setOperatorDraft(previous); // prefill the old name to edit
             }}>
@@ -426,6 +442,9 @@ export default function App() {
               </Show>
               <Show when={id === "jobs" && jobCount() > 0}>
                 <span class="badge jobs">{jobCount()}</span>
+              </Show>
+              <Show when={id === "events" && unreadChat() > 0}>
+                <span class="badge chat" title="Unread team chat">{unreadChat()}</span>
               </Show>
             </button>
           )}</For>
@@ -568,13 +587,30 @@ export default function App() {
             next to your actions in the shared event log.
           </p>
           <div class="mform">
-            <input value={operatorDraft()} placeholder="operator name"
+            <input value={operatorDraft()} placeholder="operator name" maxlength={32}
               onInput={(e) => setOperatorDraft(e.currentTarget.value)}
               onKeyDown={(e) => { if (e.key === "Enter" && operatorDraft().trim()) commitOperator(); }}
               autocomplete="off" spellcheck={false} />
           </div>
           <div class="mbtns">
             <button class="abtn" disabled={!operatorDraft().trim()} onClick={commitOperator}>Join</button>
+          </div>
+        </Modal>
+      </Show>
+
+      <Show when={confirmTeamDisconnect()}>
+        <Modal title="Disconnect the whole team?" onClose={() => setConfirmTeamDisconnect(false)}>
+          <p class="mdesc">
+            This Hayduk shares one msfrpcd link between all operators. Disconnecting drops
+            it for everyone — live sessions, jobs, and consoles go with it. Campaign data
+            and the event log stay.
+          </p>
+          <div class="mbtns">
+            <button class="abtn" onClick={() => setConfirmTeamDisconnect(false)}>Keep connected</button>
+            <button class="abtn red" onClick={() => {
+              setConfirmTeamDisconnect(false);
+              void ws.command("disconnect").catch(() => {});
+            }}>Disconnect team</button>
           </div>
         </Modal>
       </Show>

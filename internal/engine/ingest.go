@@ -55,12 +55,15 @@ func (e *Engine) sessionOpened(m *gomsf.EventMonitor, ev gomsf.Event) {
 	if ev.Session != nil {
 		exploitUUID = ev.Session.ExploitUUID
 	}
-	e.sessionTags[ev.SessionID] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
+	// the launch that produced this session names the operator who gets
+	// the credit in the shared event log
+	operator := e.markExploitSessionLocked(st.ViaExploit, exploitUUID)
+	st.OpenedBy = operator
+	e.sessionTags[ev.SessionID] = sessionTag{workspace: st.Workspace, uuid: st.UUID, operator: operator}
 	e.sessions[ev.SessionID] = st
-	e.markExploitSessionLocked(st.ViaExploit, exploitUUID)
 	sessions := copyMap(e.sessions)
 	host := hostLabel(st.TargetHost)
-	e.logf(protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
+	e.logfOp(operator, protocol.LevelSuccess, "session %s opened (%s) on %s via %s",
 		ev.SessionID, st.Type, host, st.ViaExploit)
 	e.bus.send(protocol.SessionsUpdate(sessions))
 	e.mu.Unlock()
@@ -101,15 +104,26 @@ func (e *Engine) sessionClosed(m *gomsf.EventMonitor, ev gomsf.Event) {
 	e.removeSessionLocked(ev.SessionID)
 	sessions := copyMap(e.sessions)
 	e.logf(protocol.LevelWarn, "session %s closed", ev.SessionID)
-	if _, attached := e.interactBufs[ev.SessionID]; attached {
-		delete(e.interactBufs, ev.SessionID)
-		if e.interactSID == ev.SessionID {
-			e.interactSID = ""
-			e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
-		}
-	}
+	e.dropSessionViewsLocked(ev.SessionID)
 	e.bus.send(protocol.SessionsUpdate(sessions))
 	e.mu.Unlock()
+}
+
+// dropSessionViewsLocked forgets a dead session in every operator's view:
+// attachments go, and each operator whose active console it was hears their
+// own interact clear. Callers hold e.mu.
+func (e *Engine) dropSessionViewsLocked(sid string) {
+	delete(e.interactBufs, sid)
+	for op, sids := range e.attached {
+		if !sids[sid] {
+			continue
+		}
+		delete(sids, sid)
+		if e.interactActive[op] == sid {
+			delete(e.interactActive, op)
+			e.bus.send(protocol.InteractUpdate(op, &protocol.InteractState{}))
+		}
+	}
 }
 
 // reconcileSessions drops sessions the daemon no longer lists. The monitor
@@ -135,23 +149,13 @@ func (e *Engine) reconcileSessions(ctx context.Context) {
 		return
 	}
 	changed := false
-	interactDropped := false
 	for sid, st := range e.sessions {
 		if _, listed := live[sid]; !listed && !st.OpenedAt.After(snapshotAt) {
 			e.removeSessionLocked(sid)
 			e.logf(protocol.LevelWarn, "session %s closed", sid)
-			if _, attached := e.interactBufs[sid]; attached {
-				delete(e.interactBufs, sid)
-				if e.interactSID == sid {
-					e.interactSID = ""
-				}
-				interactDropped = true
-			}
+			e.dropSessionViewsLocked(sid)
 			changed = true
 		}
-	}
-	if interactDropped {
-		e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	}
 	if changed {
 		e.bus.send(protocol.SessionsUpdate(copyMap(e.sessions)))

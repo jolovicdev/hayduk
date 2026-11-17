@@ -4,28 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
 
-// release tears down a dropped msfrpcd session: both consoles destroyed and
+// release tears down a dropped msfrpcd session: every console destroyed and
 // the RPC client logged out. Best effort with a short deadline - the daemon
 // may already be gone or hanging, and cleanup must never wedge the caller.
-func release(rpc gomsf.RPCCaller, consoleID, routeCID string) {
+func release(rpc gomsf.RPCCaller, consoleIDs []string, routeCID string) {
 	if rpc == nil {
 		return
 	}
+	releaseConsoles(rpc, append(consoleIDs, routeCID))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	consoles := gomsf.NewConsoleManager(rpc)
-	if consoleID != "" {
-		_ = consoles.Destroy(ctx, consoleID)
-	}
-	if routeCID != "" {
-		_ = consoles.Destroy(ctx, routeCID)
-	}
 	if c, ok := rpc.(*gomsf.Client); ok {
 		_ = c.Logout(ctx)
 	}
@@ -34,6 +29,12 @@ func release(rpc gomsf.RPCCaller, consoleID, routeCID string) {
 // Connect dials msfrpcd and bootstraps state. It is synchronous: it returns
 // once the snapshot-worthy state is loaded (modules, db, console, monitor).
 func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protocol.ErrorBody {
+	return e.ConnectAs(ctx, p, "")
+}
+
+// ConnectAs is Connect with operator attribution for the shared event log:
+// in team mode the whole team rides the link one operator establishes.
+func (e *Engine) ConnectAs(ctx context.Context, p protocol.ConnectParams, operator string) *protocol.ErrorBody {
 	e.mu.Lock()
 	if e.connecting || e.rpc != nil {
 		e.mu.Unlock()
@@ -82,11 +83,11 @@ func (e *Engine) Connect(ctx context.Context, p protocol.ConnectParams) *protoco
 	e.password = p.Password
 	e.lastPassword = p.Password
 	e.errStreak = 0
-	e.logf(protocol.LevelSuccess, "connected to %s:%d (metasploit %s)", p.Host, p.Port, e.conn.MSFVersion)
+	e.logfOp(operator, protocol.LevelSuccess, "connected to %s:%d (metasploit %s)", p.Host, p.Port, e.conn.MSFVersion)
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
 	// bootstrap swapped the whole campaign; a snapshot is the only message
 	// that carries modules and db state to already-connected browsers
-	e.bus.send(protocol.NewSnapshot(e.stateLocked()))
+	e.broadcastSnapshotsLocked()
 	e.mu.Unlock()
 	cancelAttempt()
 	return nil
@@ -119,11 +120,12 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	}
 	// rpc is authenticated from here on: if this bootstrap does not commit,
 	// its consoles and login must not linger on the daemon
-	var conID, routeID string
+	var conIDs []string
+	var routeID string
 	committed := false
 	defer func() {
 		if !committed {
-			release(rpc, conID, routeID)
+			release(rpc, conIDs, routeID)
 		}
 	}()
 
@@ -181,11 +183,28 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 
 	e.eventf(protocol.LevelInfo, "loaded %d modules, reading database", len(modules.Exploits)+len(modules.Auxiliary)+len(modules.Post)+len(modules.Payloads)+len(modules.Encoders)+len(modules.Nops)+len(modules.Evasion))
 
-	con, err := gomsf.NewConsoleManager(rpc).Create(ctx)
-	if err != nil {
-		return fmt.Errorf("create console: %w", err)
+	// One private console per present operator (team mode); with nobody
+	// joined yet the "" console serves the local single operator. Operators
+	// who join mid-bootstrap get theirs from the post-commit sweep.
+	e.mu.Lock()
+	names := make([]string, 0, len(e.operators))
+	for name := range e.operators {
+		names = append(names, name)
 	}
-	conID = con.ID
+	e.mu.Unlock()
+	if len(names) == 0 {
+		names = []string{""}
+	}
+	sort.Strings(names)
+	consoles := make(map[string]*operatorConsole, len(names))
+	for _, name := range names {
+		con, err := gomsf.NewConsoleManager(rpc).Create(ctx)
+		if err != nil {
+			return fmt.Errorf("create console: %w", err)
+		}
+		conIDs = append(conIDs, con.ID)
+		consoles[name] = &operatorConsole{name: name, console: gomsf.NewMsfConsole(rpc, con.ID)}
+	}
 	// The route poll needs its own console so route tables never leak into
 	// the operator's console stream. Failure is non-fatal: no routes tracked.
 	var routeCon *gomsf.MsfConsole
@@ -214,7 +233,10 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.mu.Unlock()
 	seedSessions := make(map[string]*protocol.SessionState, len(liveSessions))
 	for sid, s := range liveSessions {
-		seedSessions[sid] = sessionState(sid, s, restoreTag(prevTags[sid], s.UUID))
+		tag := restoreTag(prevTags[sid], s.UUID)
+		st := sessionState(sid, s, tag.workspace)
+		st.OpenedBy = tag.operator
+		seedSessions[sid] = st
 	}
 
 	runCtx, cancel := context.WithCancel(context.Background())
@@ -223,8 +245,6 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 		gomsf.WithEventJobInterval(e.cfg.JobInterval),
 		gomsf.WithEventOutputInterval(e.cfg.OutputInterval),
 	)
-	console := gomsf.NewMsfConsole(rpc, con.ID)
-
 	// Commit: swap in the fresh rpc handle and state, then start the loops.
 	// A newer generation (disconnect or another connect that finished first)
 	// discards this attempt instead of clobbering the newer state.
@@ -236,7 +256,15 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	}
 	oldCancel := e.runCancel
 	oldRPC := e.rpc
-	oldConsoleID := e.consoleID
+	oldConsoleIDs := make([]string, 0, len(e.consoles))
+	for _, oc := range e.consoles {
+		oldConsoleIDs = append(oldConsoleIDs, oc.console.CID)
+		oc.cancel()
+	}
+	for _, t := range e.consoleTimers {
+		t.Stop()
+	}
+	e.consoleTimers = nil
 	oldRouteCID := ""
 	if e.routeConsole != nil {
 		oldRouteCID = e.routeConsole.CID
@@ -245,11 +273,10 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.runCtx = runCtx
 	e.runCancel = cancel
 	e.monitor = monitor
-	e.console = console
-	e.consoleID = con.ID
-	e.consoleOut = nil
-	e.consolePrompt = ""
-	e.consoleWritePending = false
+	for _, oc := range consoles {
+		oc.loopCtx, oc.cancel = context.WithCancel(runCtx)
+	}
+	e.consoles = consoles
 	e.routeConsole = routeCon
 	e.routes = nil
 	e.conn.MSFVersion = version.Version
@@ -275,38 +302,56 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 		if e.sessionTags == nil {
 			e.sessionTags = make(map[string]sessionTag)
 		}
-		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID}
+		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID, operator: st.OpenedBy}
 	}
 	e.jobs = make(map[string]*protocol.JobState)
 	e.exploitRuns = nil
 	e.earlySessions = nil
 	e.errStreak = 0
 	e.gen = gen + 1
+	// operators who joined while this bootstrap was loading still need
+	// their private console on the new link
+	var missing []string
+	for name := range e.operators {
+		if e.consoles[name] == nil {
+			missing = append(missing, name)
+		}
+	}
 	e.mu.Unlock()
-	committed = true // the engine owns rpc and both consoles from the swap on
+	committed = true // the engine owns rpc and the consoles from the swap on
 	if oldCancel != nil {
 		oldCancel()
 	}
-	go release(oldRPC, oldConsoleID, oldRouteCID)
+	go release(oldRPC, oldConsoleIDs, oldRouteCID)
 
 	if workspace == "" {
 		e.eventf(protocol.LevelWarn, "msf database not connected; hosts and credentials views will stay empty")
 	}
 
 	go e.ingest(monitor, monitor.C())
-	go e.consoleLoop(runCtx, monitor, console)
+	for _, oc := range consoles {
+		go e.consoleLoop(oc.loopCtx, monitor, oc)
+	}
 	if routeCon != nil {
 		go e.routeLoop(runCtx, monitor, routeCon)
 	}
 	go e.refreshLoop(runCtx)
 	go e.rankPrefetch(runCtx, rpc)
+	for _, name := range missing {
+		go e.ensureConsole(runCtx, name)
+	}
 	return nil
 }
 
 // Disconnect drops the msfrpcd link. Discovered data (hosts, creds, events)
-// is kept; live state (sessions, jobs, console) dies with the link and is
+// is kept; live state (sessions, jobs, consoles) dies with the link and is
 // rebuilt on next connect.
-func (e *Engine) Disconnect() {
+func (e *Engine) Disconnect() { e.DisconnectAs("") }
+
+// DisconnectAs is Disconnect with operator attribution: in team mode one
+// operator's disconnect drops the shared link for everyone, and the event
+// log says who did it.
+func (e *Engine) DisconnectAs(operator string) {
 	e.mu.Lock()
 	e.gen++ // invalidates any bootstrap or refresh still in flight
 	if e.connecting {
@@ -321,7 +366,14 @@ func (e *Engine) Disconnect() {
 	}
 	cancel := e.runCancel
 	dropRPC := e.rpc
-	dropConsoleID := e.consoleID
+	dropConsoleIDs := make([]string, 0, len(e.consoles))
+	for _, oc := range e.consoles {
+		dropConsoleIDs = append(dropConsoleIDs, oc.console.CID)
+	}
+	for _, t := range e.consoleTimers {
+		t.Stop()
+	}
+	e.consoleTimers = nil
 	dropRouteCID := ""
 	if e.routeConsole != nil {
 		dropRouteCID = e.routeConsole.CID
@@ -329,10 +381,7 @@ func (e *Engine) Disconnect() {
 	e.runCancel = nil
 	e.rpc = nil
 	e.monitor = nil
-	e.console = nil
-	e.consoleID = ""
-	e.consolePrompt = ""
-	e.consoleWritePending = false
+	e.consoles = nil
 	e.routeConsole = nil
 	hadRoutes := len(e.routes) > 0
 	e.routes = nil
@@ -340,7 +389,13 @@ func (e *Engine) Disconnect() {
 	hadJobs := len(e.jobs) > 0
 	e.sessions = make(map[string]*protocol.SessionState)
 	e.jobs = make(map[string]*protocol.JobState)
-	e.interactSID = ""
+	// every operator's session view dies with the link; each socket hears
+	// its own interact clear
+	for op := range e.interactActive {
+		e.bus.send(protocol.InteractUpdate(op, &protocol.InteractState{}))
+	}
+	e.interactActive = nil
+	e.attached = nil
 	e.interactBufs = nil
 	// Clear pending runs so their timers cannot warn after disconnect.
 	e.exploitRuns = nil
@@ -348,12 +403,15 @@ func (e *Engine) Disconnect() {
 	if e.conn.Status != "disconnected" {
 		e.conn.Status = "disconnected"
 		e.conn.Error = ""
-		e.logf(protocol.LevelInfo, "disconnected from %s:%d", e.conn.Host, e.conn.Port)
+		if operator != "" {
+			e.logfOp(operator, protocol.LevelWarn, "disconnected the team from %s:%d", e.conn.Host, e.conn.Port)
+		} else {
+			e.logf(protocol.LevelInfo, "disconnected from %s:%d", e.conn.Host, e.conn.Port)
+		}
 	}
 	e.password = ""
 	e.lastPassword = ""
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
-	e.bus.send(protocol.InteractUpdate(&protocol.InteractState{}))
 	if hadRoutes {
 		e.bus.send(protocol.RoutesUpdate([]*protocol.RouteState{}))
 	}
@@ -369,7 +427,7 @@ func (e *Engine) Disconnect() {
 	}
 	// consoles destroyed and the client logged out only after the operator
 	// saw the disconnect; bounded so a dead daemon cannot wedge this call
-	release(dropRPC, dropConsoleID, dropRouteCID)
+	release(dropRPC, dropConsoleIDs, dropRouteCID)
 }
 
 func hostStates(in []*gomsf.Host) []*protocol.HostState {

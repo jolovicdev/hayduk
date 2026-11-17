@@ -4,12 +4,15 @@ import { ws } from "../ws/singleton";
 
 const [list, setList] = createSignal<EventEntry[]>([]);
 const [gap, setGap] = createSignal(false);
+// chat that landed while the Events tab was closed; the tab badge shows it
+const [unreadChat, setUnreadChat] = createSignal(0);
 let lastSeq = 0;
 const CAP = 2000;
 
 export function appendEvent(m: EventMsg) {
   if (lastSeq && m.seq !== lastSeq + 1) setGap(true);
   lastSeq = m.seq;
+  if (m.level === "chat") setUnreadChat(n => n + 1);
   setList(prev => {
     const next = [...prev, {
       seq: m.seq,
@@ -29,7 +32,11 @@ export function syncEvents(entries: EventEntry[] | undefined) {
   setList(entries ?? []);
 }
 
+export function markChatRead() {
+  setUnreadChat(0);
+}
+
 ws.on("event", appendEvent);
 ws.on("snapshot", (m) => syncEvents(m.state?.events));
 
-export { list as events, gap as eventGap };
+export { list as events, gap as eventGap, unreadChat };

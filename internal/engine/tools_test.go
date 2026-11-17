@@ -468,15 +468,15 @@ func TestMultiAttachKeepsTranscripts(t *testing.T) {
 	e.mu.Lock()
 	mon := e.monitor
 	e.mu.Unlock()
-	if eb := e.attach("1"); eb != nil {
+	if eb := e.attach("", "1"); eb != nil {
 		t.Fatal(eb)
 	}
 	e.sessionOutput(mon, gomsf.Event{SessionID: "1", Data: "one\n"})
-	if eb := e.attach("2"); eb != nil {
+	if eb := e.attach("", "2"); eb != nil {
 		t.Fatal(eb)
 	}
 	e.sessionOutput(mon, gomsf.Event{SessionID: "2", Data: "two\n"})
-	if eb := e.attach("1"); eb != nil {
+	if eb := e.attach("", "1"); eb != nil {
 		t.Fatal(eb)
 	}
 	st := e.State()
@@ -484,7 +484,7 @@ func TestMultiAttachKeepsTranscripts(t *testing.T) {
 		t.Fatalf("interact after switching back: %+v", st.Interact)
 	}
 	// closing the other tab must not touch the active transcript
-	e.detach("2")
+	e.detach("", "2")
 	st = e.State()
 	if st.Interact == nil || st.Interact.SID != "1" {
 		t.Fatalf("interact after detaching other tab: %+v", st.Interact)

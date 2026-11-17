@@ -152,6 +152,11 @@ export const LevelWarn = "warn";
  * Event levels.
  */
 export const LevelError = "error";
+/**
+ * LevelChat marks a team chat message: Text is the message itself and
+ * Operator its author. Chat rides the shared event log, Armitage-style.
+ */
+export const LevelChat = "chat";
 export const ProtoVersion = 1;
 /**
  * ServerMessage is any server→client message value. The bus and server move
@@ -169,9 +174,13 @@ export interface Hello {
 }
 /**
  * Snapshot carries the full campaign state, sent on every (re)connect.
+ * Operator scopes the personal resources (console, interact) to one team
+ * member; empty is the local single-operator view. Each socket receives
+ * only its own snapshot.
  */
 export interface Snapshot {
   type: string;
+  operator?: string;
   state: CampaignState;
 }
 /**
@@ -224,6 +233,11 @@ export interface SessionState {
    */
   workspace?: string;
   openedAt?: string;
+  /**
+   * OpenedBy names the operator whose launch opened the session (team
+   * mode attribution); empty when unknown.
+   */
+  openedBy?: string;
 }
 export interface JobState {
   id: string;
@@ -302,11 +316,14 @@ export interface CampaignState {
 }
 /**
  * ResourceUpdate refreshes one resource. Exactly the field matching Resource
- * is set; the rest stay nil and are omitted on the wire.
+ * is set; the rest stay nil and are omitted on the wire. Operator scopes the
+ * personal resources (console, interact) to one team member; empty is the
+ * local single-operator view.
  */
 export interface ResourceUpdate {
   type: string;
   resource: string;
+  operator?: string;
   connection?: ConnectionState;
   hosts?: (HostState | undefined)[];
   services?: (ServiceState | undefined)[];
@@ -333,7 +350,9 @@ export interface EventMsg {
   operator?: string;
 }
 /**
- * SessionOutputMsg streams output of the attached session.
+ * SessionOutputMsg streams output of the attached session. Session
+ * transcripts are shared team-wide: every socket receives them and keeps
+ * the sessions it has open.
  */
 export interface SessionOutputMsg {
   type: string;
@@ -341,10 +360,12 @@ export interface SessionOutputMsg {
   data: string;
 }
 /**
- * ConsoleOutputMsg streams console output.
+ * ConsoleOutputMsg streams console output. Operator scopes the chunk to one
+ * team member's console; empty is the local single-operator console.
  */
 export interface ConsoleOutputMsg {
   type: string;
+  operator?: string;
   data: string;
 }
 /**
@@ -436,6 +457,10 @@ export const MethodWorkspaceSet = "workspace.set";
  * Command methods.
  */
 export const MethodOperatorJoin = "operator.join";
+/**
+ * Command methods.
+ */
+export const MethodTeamChat = "team.chat";
 /**
  * Command methods.
  */
@@ -534,6 +559,13 @@ export interface SessionUpgradeParams {
 }
 export interface WorkspaceSetParams {
   name: string;
+}
+/**
+ * TeamChatParams carries one team chat message, broadcast to every operator
+ * through the shared event log.
+ */
+export interface TeamChatParams {
+  text: string;
 }
 export interface AttacksFindParams {
   host: string;

@@ -850,7 +850,7 @@ func TestReconnectReleasesOldConsoles(t *testing.T) {
 }
 
 func TestReleaseBestEffort(t *testing.T) {
-	release(nil, "0", "1") // a dropped link without a client must not panic
+	release(nil, []string{"0"}, "1") // a dropped link without a client must not panic
 
 	fake := stdFake()
 	var mu sync.Mutex
@@ -871,7 +871,7 @@ func TestReleaseBestEffort(t *testing.T) {
 		return map[string]interface{}{"result": "success"}, nil
 	})
 
-	release(fake, "7", "8")
+	release(fake, []string{"7"}, "8")
 	mu.Lock()
 	defer mu.Unlock()
 	if !destroyed["7"] || !destroyed["8"] {
@@ -1399,9 +1399,9 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 	defer sub.Stop()
 
 	e.mu.Lock()
-	con := e.console
+	oc := e.consoles[""]
 	e.mu.Unlock()
-	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	e.consoleRead(oc, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration(oc))
 	// consume the seed read's consoleOutput first; bus delivery is async
 	select {
 	case m := <-sub.C():
@@ -1460,15 +1460,15 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 	write()
 	expectEcho()
 	expectQuiet()
-	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	e.consoleRead(oc, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration(oc))
 	expectRestore()
 
 	// a read issued before the write describes the old console. With
 	// background output on it, its update must still not carry a prompt:
 	// browsers would read one as ready while the command runs
-	staleGen := e.consoleGeneration()
+	staleGen := e.consoleGeneration(oc)
 	write()
-	e.consoleRead(con, &gomsf.ConsoleReadResult{Data: "background output\n", Prompt: "msf > ", Busy: false}, staleGen)
+	e.consoleRead(oc, &gomsf.ConsoleReadResult{Data: "background output\n", Prompt: "msf > ", Busy: false}, staleGen)
 	deadline := time.After(5 * time.Second)
 	for {
 		var sawUpdate bool
@@ -1506,7 +1506,7 @@ func TestConsoleWriteRestoresReadinessOnlyAfterIdleRead(t *testing.T) {
 		default:
 		}
 	}
-	e.consoleRead(con, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration())
+	e.consoleRead(oc, &gomsf.ConsoleReadResult{Prompt: "msf > ", Busy: false}, e.consoleGeneration(oc))
 	expectRestore()
 }
 

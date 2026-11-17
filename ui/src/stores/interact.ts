@@ -82,8 +82,22 @@ export async function detach(targetSid?: string) {
     return next;
   });
   if (sid() === target) {
-    setSid(tabs().at(-1) ?? "");
+    // fall back to the last remaining tab and re-attach it: the engine's
+    // active session for this operator must follow the visible one
+    const fallback = tabs().at(-1) ?? "";
+    setSid(fallback);
+    if (fallback) void attach(fallback).catch(() => {});
   }
+}
+
+// resetInteract drops every local session view. A team identity switch
+// starts a fresh operator on the server: the old name's attachments are
+// not this name's to show.
+export function resetInteract() {
+  setTabs([]);
+  saveTabs();
+  setOutputs({});
+  setSid("");
 }
 
 export function activateTab(sessionId: string) {

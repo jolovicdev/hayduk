@@ -21,6 +21,13 @@ const (
 	eventRingCap   = 2000
 	streamCap      = 64 << 10 // console/interact byte buffers
 	errStreakLimit = 3        // consecutive monitor errors before reconnect
+	// consoleLinger keeps a departed operator's console and session
+	// attachments alive briefly: a page refresh or short network blip
+	// rejoining under the same name resumes the same transcript instead
+	// of starting over. Presence itself drops at once.
+	consoleLinger = 30 * time.Second
+	// chatMaxLen bounds one team chat message.
+	chatMaxLen = 2000
 )
 
 type Config struct {
@@ -29,6 +36,9 @@ type Config struct {
 	OutputInterval  time.Duration
 	RefreshInterval time.Duration
 	RouteInterval   time.Duration
+	// ConsoleLinger is how long a departed operator's console and session
+	// attachments survive for a rejoin under the same name; tests shrink it.
+	ConsoleLinger time.Duration
 	// RPC, when set, replaces the real client (tests). The engine then never
 	// dials msfrpcd itself.
 	RPC gomsf.RPCCaller
@@ -50,6 +60,9 @@ func (c Config) withDefaults() Config {
 	if c.RouteInterval <= 0 {
 		c.RouteInterval = 10 * time.Second
 	}
+	if c.ConsoleLinger <= 0 {
+		c.ConsoleLinger = consoleLinger
+	}
 	return c
 }
 
@@ -63,9 +76,13 @@ type Engine struct {
 	runCtx       context.Context
 	runCancel    context.CancelFunc
 	monitor      *gomsf.EventMonitor
-	console      *gomsf.MsfConsole
-	consoleID    string
 	routeConsole *gomsf.MsfConsole
+	// consoles holds one private msf console per operator, Armitage-style:
+	// team members never share a console stream. The "" key is the local
+	// single-operator console. consoleTimers holds the linger timer of
+	// each departed operator whose console has not been dropped yet.
+	consoles      map[string]*operatorConsole
+	consoleTimers map[string]*time.Timer
 
 	conn          protocol.ConnectionState
 	hosts         []*protocol.HostState
@@ -77,21 +94,15 @@ type Engine struct {
 	loot          []*protocol.LootState
 	modules       *protocol.ModuleIndex
 	moduleRanks   map[string]string
-	consoleOut    []byte
-	consolePrompt string
-	// consoleWritePending marks a written command whose completion no read
-	// has confirmed yet: readiness is restored to browsers only after a read
-	// reports the console idle, never straight off the write. Reads and
-	// writes race on the daemon, so consoleWriteGen separates reads issued
-	// before a write (which describe the old console) from reads issued
-	// after it - only the latter may acknowledge completion.
-	consoleWritePending bool
-	consoleWriteGen     uint64
-	interactSID         string
-	// interactBufs holds one transcript per attached session: operators
-	// keep several session consoles open, and switching the active tab
-	// must not erase the others. interactSID names the active one.
-	interactBufs map[string][]byte
+	// interactActive names each operator's active session console, and
+	// attached tracks every session an operator holds open. Both are
+	// per-operator so one team member's attach or detach never moves
+	// another's view. interactBufs holds one shared transcript per
+	// attached session: everyone viewing a session sees the same history
+	// and live output, and switching the active tab erases nothing.
+	interactActive map[string]string
+	attached       map[string]map[string]bool
+	interactBufs   map[string][]byte
 	// sessionTags remembers the workspace each live session was opened
 	// under, keyed by session id and validated by uuid: ids are per-daemon
 	// counters and get reused, so attribution carries across a reconnect
@@ -120,6 +131,9 @@ type Engine struct {
 	// toolsMu serializes one-shot session commands and utility consoles:
 	// both briefly own a stream the monitor also reads.
 	toolsMu sync.Mutex
+	// consoleMu serializes operator console creation so two joins for one
+	// name cannot race into two daemon consoles.
+	consoleMu sync.Mutex
 	// gen counts connection attempts that took effect (commits, teardowns).
 	// Async work started under one generation must not commit under a later
 	// one: a disconnect or a newer connection invalidates it.
@@ -190,11 +204,48 @@ func (e *Engine) Subscribe() *Subscription {
 // bus cutoff read here then cannot fall between a state change and its
 // message.
 func (e *Engine) SubscribeSnapshot() (*Subscription, protocol.CampaignState) {
+	return e.SubscribeSnapshotFor("")
+}
+
+// SubscribeSnapshotFor is SubscribeSnapshot with the personal resources
+// (console, interact) of one operator: a team socket subscribes under its
+// operator name once it has joined.
+func (e *Engine) SubscribeSnapshotFor(operator string) (*Subscription, protocol.CampaignState) {
 	e.mu.Lock()
 	id, ch := e.bus.subscribe()
-	s := e.stateLocked()
+	s := e.stateForLocked(operator)
 	e.mu.Unlock()
 	return &Subscription{ch: ch, id: id, bus: e.bus}, s
+}
+
+// ConsoleFor and InteractFor return one operator's personal resources, for
+// the server to hand a socket that just joined or renamed.
+func (e *Engine) ConsoleFor(operator string) *protocol.ConsoleState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.consoleStateForLocked(operator)
+}
+
+func (e *Engine) InteractFor(operator string) *protocol.InteractState {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.interactStateForLocked(operator)
+}
+
+func (e *Engine) consoleStateForLocked(operator string) *protocol.ConsoleState {
+	oc := e.consoles[operator]
+	if oc == nil {
+		return nil
+	}
+	return &protocol.ConsoleState{Output: string(oc.out)}
+}
+
+func (e *Engine) interactStateForLocked(operator string) *protocol.InteractState {
+	sid := e.interactActive[operator]
+	if sid == "" {
+		return nil
+	}
+	return &protocol.InteractState{SID: sid, Output: string(e.interactBufs[sid])}
 }
 
 // State returns a deep copy safe to hand to another goroutine.
@@ -204,8 +255,15 @@ func (e *Engine) State() protocol.CampaignState {
 	return e.stateLocked()
 }
 
-// stateLocked is State for callers already holding e.mu.
+// stateLocked is State for callers already holding e.mu: the local
+// single-operator view.
 func (e *Engine) stateLocked() protocol.CampaignState {
+	return e.stateForLocked("")
+}
+
+// stateForLocked is the snapshot view of one operator: shared campaign
+// resources plus that operator's personal console and interact state.
+func (e *Engine) stateForLocked(operator string) protocol.CampaignState {
 	s := protocol.CampaignState{
 		Connection:  e.conn,
 		Modules:     e.modules,
@@ -232,14 +290,20 @@ func (e *Engine) stateLocked() protocol.CampaignState {
 		c := *v
 		s.Jobs[k] = &c
 	}
-	if e.consoleID != "" {
-		s.Console = &protocol.ConsoleState{Output: string(e.consoleOut)}
-	}
-	if e.interactSID != "" {
-		s.Interact = &protocol.InteractState{SID: e.interactSID, Output: string(e.interactBufs[e.interactSID])}
-	}
+	s.Console = e.consoleStateForLocked(operator)
+	s.Interact = e.interactStateForLocked(operator)
 	s.Operators = e.operatorListLocked()
 	return s
+}
+
+// broadcastSnapshotsLocked swaps the whole campaign into every browser: one
+// snapshot per view, the local "" view plus each present operator's personal
+// view. Sockets keep only their own. Callers hold e.mu.
+func (e *Engine) broadcastSnapshotsLocked() {
+	e.bus.send(protocol.NewSnapshot(e.stateForLocked("")))
+	for name := range e.operators {
+		e.bus.send(protocol.NewSnapshotFor(name, e.stateForLocked(name)))
+	}
 }
 
 func emptyIfNil[T any](in []*T) []*T {
@@ -337,6 +401,9 @@ func (e *Engine) eventfOpIn(ws, operator, level, format string, args ...any) {
 
 // OperatorJoin and OperatorLeave track connected operators (team mode). The
 // operators resource fires when a name's connection count crosses zero.
+// Presence owns the operator's personal resources: the first connection
+// under a name gets a private msf console, and the last one's departure
+// schedules its console and session attachments for release after a linger.
 func (e *Engine) OperatorJoin(name string)  { e.operatorDelta(name, 1) }
 func (e *Engine) OperatorLeave(name string) { e.operatorDelta(name, -1) }
 
@@ -350,25 +417,129 @@ func (e *Engine) operatorDelta(name string, delta int) {
 	}
 	next := e.operators[name] + delta
 	changed := false
+	becamePresent, becameAbsent := false, false
 	switch {
 	case next <= 0 && e.operators[name] > 0:
 		delete(e.operators, name)
 		e.logf(protocol.LevelInfo, "operator %s left", name)
 		changed = true
+		becameAbsent = true
 	case next > 0 && e.operators[name] == 0:
 		e.operators[name] = next
 		e.logf(protocol.LevelInfo, "operator %s joined", name)
 		changed = true
+		becamePresent = true
 	default:
 		if next > 0 {
 			e.operators[name] = next
+		}
+	}
+	if becamePresent {
+		// a rejoin inside the linger resumes the kept console
+		if t := e.consoleTimers[name]; t != nil {
+			t.Stop()
+			delete(e.consoleTimers, name)
 		}
 	}
 	list := e.operatorListLocked()
 	if changed {
 		e.bus.send(protocol.OperatorsUpdate(list))
 	}
+	rpc, runCtx := e.rpc, e.runCtx
 	e.mu.Unlock()
+	if becamePresent && rpc != nil {
+		e.ensureConsole(runCtx, name)
+	}
+	if becameAbsent {
+		e.scheduleConsoleDrop(name)
+	}
+}
+
+// scheduleConsoleDrop arms the linger timer for a departed operator. The
+// timer identity is recorded so a rejoin-and-leave cycle cannot have an
+// older timer drop the newer stay.
+func (e *Engine) scheduleConsoleDrop(name string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.operators[name] > 0 {
+		return // already rejoined
+	}
+	var timer *time.Timer
+	timer = time.AfterFunc(e.cfg.ConsoleLinger, func() { e.dropOperatorConsole(name, timer) })
+	if e.consoleTimers == nil {
+		e.consoleTimers = make(map[string]*time.Timer)
+	}
+	if old := e.consoleTimers[name]; old != nil {
+		old.Stop()
+	}
+	e.consoleTimers[name] = timer
+}
+
+// dropOperatorConsole releases a departed operator's console and session
+// attachments once the linger expired. Shared transcripts and watches
+// survive while another operator still holds the session.
+func (e *Engine) dropOperatorConsole(name string, timer *time.Timer) {
+	e.mu.Lock()
+	if e.consoleTimers[name] != timer || e.operators[name] > 0 {
+		e.mu.Unlock()
+		return
+	}
+	delete(e.consoleTimers, name)
+	oc := e.consoles[name]
+	delete(e.consoles, name)
+	cid := ""
+	if oc != nil {
+		oc.cancel()
+		cid = oc.console.CID
+	}
+	unwatch := e.detachOperatorLocked(name)
+	rpc, mon := e.rpc, e.monitor
+	e.mu.Unlock()
+	if cid != "" && rpc != nil {
+		go releaseConsoles(rpc, []string{cid})
+	}
+	if mon != nil {
+		for _, sid := range unwatch {
+			mon.UnwatchSession(sid)
+		}
+	}
+}
+
+// detachOperatorLocked removes every session attachment of one operator
+// and returns the sessions nobody holds anymore (their transcripts were
+// dropped and their watches must end). Callers hold e.mu.
+func (e *Engine) detachOperatorLocked(name string) []string {
+	var unwatch []string
+	for sid := range e.attached[name] {
+		if !e.sessionHeldByOtherLocked(name, sid) {
+			delete(e.interactBufs, sid)
+			unwatch = append(unwatch, sid)
+		}
+	}
+	delete(e.attached, name)
+	delete(e.interactActive, name)
+	return unwatch
+}
+
+// sessionHeldByOtherLocked reports whether any operator other than name
+// still holds sid open. Callers hold e.mu.
+func (e *Engine) sessionHeldByOtherLocked(name, sid string) bool {
+	for op, sids := range e.attached {
+		if op != name && sids[sid] {
+			return true
+		}
+	}
+	return false
+}
+
+// sessionHeldLocked reports whether any operator holds sid open.
+func (e *Engine) sessionHeldLocked(sid string) bool {
+	for _, sids := range e.attached {
+		if sids[sid] {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) operatorListLocked() []string {
@@ -395,12 +566,31 @@ func (e *Engine) Exec(ctx context.Context, operator, method string, params json.
 		if !validPort(p.Port) {
 			return nil, badParam("port must be between 1 and 65535")
 		}
-		if eb := e.Connect(ctx, p); eb != nil {
+		if eb := e.ConnectAs(ctx, p, operator); eb != nil {
 			return nil, eb
 		}
 		return mustJSON(e.snapshotConn()), nil
 	case protocol.MethodDisconnect:
-		e.Disconnect()
+		e.DisconnectAs(operator)
+		return nil, nil
+	case protocol.MethodTeamChat:
+		// chat is team coordination, not framework work: it flows even
+		// while the msfrpcd link is down
+		var p protocol.TeamChatParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		text := strings.TrimSpace(p.Text)
+		if text == "" {
+			return nil, badParam("text is required")
+		}
+		if len([]rune(text)) > chatMaxLen {
+			return nil, badParam("message too long")
+		}
+		if operator == "" {
+			return nil, badParam("chat needs an operator name")
+		}
+		e.eventfOpIn("", operator, protocol.LevelChat, "%s", text)
 		return nil, nil
 	case protocol.MethodReportHTML:
 		html, eb := e.reportDocument()
@@ -457,16 +647,17 @@ func (e *Engine) connectedRPC() gomsf.RPCCaller {
 type sessionTag struct {
 	workspace string
 	uuid      string
+	operator  string
 }
 
-// restoreTag returns the remembered workspace when the uuid matches the
+// restoreTag returns the remembered attribution when the uuid matches the
 // live session's. A reused id (different uuid) or a missing uuid on either
 // side restores nothing: the host-membership fallback decides.
-func restoreTag(tag sessionTag, uuid string) string {
+func restoreTag(tag sessionTag, uuid string) sessionTag {
 	if tag.uuid == "" || uuid == "" || tag.uuid != uuid {
-		return ""
+		return sessionTag{}
 	}
-	return tag.workspace
+	return tag
 }
 
 // dispatchScope captures the rpc handle together with the workspace a command
@@ -476,15 +667,6 @@ func (e *Engine) dispatchScope() (gomsf.RPCCaller, string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	return e.rpc, e.conn.Workspace
-}
-
-// consoleGeneration snapshots the write generation for a read about to be
-// issued: the read may acknowledge a pending write only when the generation
-// still matches, i.e. no write landed after the read was issued.
-func (e *Engine) consoleGeneration() uint64 {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	return e.consoleWriteGen
 }
 
 var ansiRe = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)

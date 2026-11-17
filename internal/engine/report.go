@@ -307,6 +307,11 @@ func (e *Engine) reportDocument() (string, *protocol.ErrorBody) {
 		if v == nil {
 			continue
 		}
+		// team chat is internal coordination, not campaign history: it
+		// never rides into a client report
+		if v.Level == protocol.LevelChat {
+			continue
+		}
 		// events inherit the workspace they were recorded under: one
 		// client's history must never ride into another client's report.
 		// Untagged entries are framework-wide and pre-connection ones.
