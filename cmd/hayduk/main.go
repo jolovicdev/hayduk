@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/jolovicdev/hayduk/internal/engine"
@@ -21,6 +22,16 @@ import (
 
 var version = "0.2.0"
 
+// operatorFlags collects repeatable --operator name=token assignments.
+type operatorFlags []string
+
+func (o *operatorFlags) String() string { return strings.Join(*o, ",") }
+
+func (o *operatorFlags) Set(value string) error {
+	*o = append(*o, value)
+	return nil
+}
+
 func main() {
 	listen := flag.String("listen", "127.0.0.1:0", "host:port to bind")
 	team := flag.Bool("team", false, "shared campaign for several operators on a trusted network")
@@ -29,6 +40,10 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "do not open a browser")
 	noPersist := flag.Bool("no-persist", false, "do not write the campaign audit log or saved state to disk")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for the campaign audit log and saved state")
+	tlsCert := flag.String("tls-cert", "", "TLS certificate file (PEM); serves the UI over HTTPS")
+	tlsKey := flag.String("tls-key", "", "TLS private key file (PEM)")
+	var operatorSpecs operatorFlags
+	flag.Var(&operatorSpecs, "operator", "name=token binding a named operator to an access token (team mode; repeatable)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -62,6 +77,17 @@ func main() {
 		}
 	}
 
+	if (*tlsCert == "") != (*tlsKey == "") {
+		fmt.Fprintln(os.Stderr, "hayduk: --tls-cert and --tls-key must be given together")
+		os.Exit(1)
+	}
+
+	operators, err := parseOperatorTokens(operatorSpecs, *team)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "hayduk:", err)
+		os.Exit(1)
+	}
+
 	tokenBytes := make([]byte, 16)
 	if _, err := rand.Read(tokenBytes); err != nil {
 		fmt.Fprintln(os.Stderr, "hayduk: cannot generate token:", err)
@@ -84,13 +110,18 @@ func main() {
 	eng := engine.New(engine.Config{Store: st})
 	defer eng.Shutdown()
 
-	opts := server.Options{Version: version, Team: *team}
+	opts := server.Options{Version: version, Team: *team, Operators: operators}
 	if *dev {
 		opts.DevUpstream = *devUpstream
 	}
 	srv := server.New(eng, token, opts)
 
-	url, err := srv.Listen(*listen)
+	var url string
+	if *tlsCert != "" {
+		url, err = srv.ListenTLS(*listen, *tlsCert, *tlsKey)
+	} else {
+		url, err = srv.Listen(*listen)
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "hayduk: listen:", err)
 		os.Exit(1)
@@ -98,6 +129,10 @@ func main() {
 
 	fmt.Println("hayduk", version, "-", url)
 	fmt.Println(url + "/?token=" + token)
+	for _, spec := range operatorSpecs {
+		name, tok, _ := strings.Cut(spec, "=")
+		fmt.Println("operator "+strings.TrimSpace(name)+":", url+"/?token="+strings.TrimSpace(tok))
+	}
 	if st != nil {
 		fmt.Println("state directory:", st.Dir())
 	}
@@ -150,6 +185,39 @@ func loopbackOnly(host string) bool {
 		}
 	}
 	return len(addrs) > 0
+}
+
+// parseOperatorTokens validates the repeatable --operator flags. The tokens
+// are access secrets, so they must be long enough to resist guessing, unique,
+// and each name may appear once.
+func parseOperatorTokens(specs []string, team bool) (map[string]string, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	if !team {
+		return nil, fmt.Errorf("--operator needs --team: per-operator tokens exist to share one campaign")
+	}
+	operators := make(map[string]string, len(specs))
+	names := make(map[string]bool, len(specs))
+	for _, spec := range specs {
+		name, token, ok := strings.Cut(spec, "=")
+		name, token = strings.TrimSpace(name), strings.TrimSpace(token)
+		if !ok || name == "" || token == "" {
+			return nil, fmt.Errorf("--operator wants name=token, got %q", spec)
+		}
+		if len(token) < 16 {
+			return nil, fmt.Errorf("operator %q has a token shorter than 16 characters", name)
+		}
+		if names[name] {
+			return nil, fmt.Errorf("operator %q is given more than once", name)
+		}
+		if _, exists := operators[token]; exists {
+			return nil, fmt.Errorf("operator %q reuses another operator's token", name)
+		}
+		operators[token] = name
+		names[name] = true
+	}
+	return operators, nil
 }
 
 // defaultDataDir is the per-user directory for the audit log and saved

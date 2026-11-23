@@ -12,7 +12,10 @@ import "@fontsource/ibm-plex-mono/latin-600.css";
 import "./styles/icons.css";
 import "./styles/tokens.css";
 import "./styles/layout.css";
-import "./styles/components.css";
+import "./styles/controls.css";
+import "./styles/topology.css";
+import "./styles/workbench.css";
+import "./styles/modals.css";
 
 import App from "./app";
 

@@ -179,6 +179,12 @@ export interface Hello {
   proto: number /* int */;
   version: string;
   team: boolean;
+  /**
+   * Identity is the operator name bound to this connection's access token
+   * (per-operator tokens in team mode). Empty for the shared token, where
+   * the browser picks its own label.
+   */
+  identity?: string;
 }
 /**
  * Snapshot carries the full campaign state, sent on every (re)connect.

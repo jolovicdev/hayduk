@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createSignal } from "solid-js";
+import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildModuleTree, filterTree, visibleChildren, type TreeNode } from "./tree";
 import { rankChip } from "./rank";
 import { copyWithFeedback } from "../clipboard";
@@ -7,8 +7,28 @@ import { openContextMenuFor } from "./contextmenu";
 import { EmptyState } from "./EmptyState";
 
 export function ModuleTree(props: { onLaunch: (type: string, path: string) => void }) {
+  const [draft, setDraft] = createSignal("");
   const [query, setQuery] = createSignal("");
   const [open, setOpen] = createSignal(new Set<string>(["exploit"]));
+  let debounceTimer: number | undefined;
+
+  function onFilterInput(value: string) {
+    setDraft(value);
+    if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+    if (!value.trim()) {
+      setQuery("");
+      return;
+    }
+    // Debounce tree filtering across 7,000+ modules so keystrokes stay instant.
+    debounceTimer = window.setTimeout(() => {
+      debounceTimer = undefined;
+      setQuery(value);
+    }, 75);
+  }
+
+  onCleanup(() => {
+    if (debounceTimer !== undefined) window.clearTimeout(debounceTimer);
+  });
 
   const modules = createMemo(() => campaignState().modules);
   const root = createMemo(() => {
@@ -59,8 +79,8 @@ export function ModuleTree(props: { onLaunch: (type: string, path: string) => vo
         <nav class="tree" classList={{ filtered: !!query() && keep().size === 0 }}>
           <div class="filterbox">
             <i aria-hidden="true" class="ph ph-magnifying-glass"></i>
-            <input placeholder="Filter modules" value={query()}
-              onInput={(e) => setQuery(e.currentTarget.value)} autocomplete="off" spellcheck={false}
+            <input placeholder="Filter modules" value={draft()}
+              onInput={(e) => onFilterInput(e.currentTarget.value)} autocomplete="off" spellcheck={false}
               aria-label="Filter modules" />
           </div>
           <ul>

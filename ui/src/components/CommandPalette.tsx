@@ -1,5 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { campaignState } from "../stores/store";
+import { buildModuleIndex, searchModuleIndex } from "./moduleIndex";
 
 export interface PaletteItem {
   id: string;
@@ -9,16 +10,6 @@ export interface PaletteItem {
   kind: string;
   run: () => void;
 }
-
-const MODULE_BUCKETS: readonly { prop: "exploits" | "auxiliary" | "post" | "payloads" | "encoders" | "nops" | "evasion"; type: string }[] = [
-  { prop: "exploits", type: "exploit" },
-  { prop: "auxiliary", type: "auxiliary" },
-  { prop: "post", type: "post" },
-  { prop: "payloads", type: "payload" },
-  { prop: "encoders", type: "encoder" },
-  { prop: "evasion", type: "evasion" },
-  { prop: "nops", type: "nop" },
-];
 
 export function CommandPalette(props: {
   connected: boolean;
@@ -103,6 +94,8 @@ export function CommandPalette(props: {
     return out;
   });
 
+  const moduleIndex = createMemo(() => buildModuleIndex(campaignState().modules));
+
   const results = createMemo<PaletteItem[]>(() => {
     const q = query().trim().toLowerCase();
     const terms = q ? q.split(/\s+/) : [];
@@ -114,30 +107,15 @@ export function CommandPalette(props: {
         });
 
     if (q.length >= 2 && props.connected) {
-      const mods = campaignState().modules;
-      if (mods) {
-        const modHits: PaletteItem[] = [];
-        for (const bucket of MODULE_BUCKETS) {
-          const list = mods[bucket.prop];
-          if (!list) continue;
-          for (const path of list) {
-            const full = `${bucket.type}/${path}`.toLowerCase();
-            if (terms.every(t => full.includes(t))) {
-              modHits.push({
-                id: `mod-${bucket.type}-${path}`,
-                icon: "rocket-launch",
-                label: path,
-                sub: bucket.type,
-                kind: "MODULE",
-                run: () => props.onLaunchModule(bucket.type, path),
-              });
-              if (modHits.length >= 24) break;
-            }
-          }
-          if (modHits.length >= 24) break;
-        }
-        return [...matched.slice(0, 14), ...modHits];
-      }
+      const modHits: PaletteItem[] = searchModuleIndex(moduleIndex(), terms, 24).map(m => ({
+        id: `mod-${m.type}-${m.path}`,
+        icon: "rocket-launch",
+        label: m.path,
+        sub: m.type,
+        kind: "MODULE",
+        run: () => props.onLaunchModule(m.type, m.path),
+      }));
+      return [...matched.slice(0, 14), ...modHits];
     }
 
     return matched.slice(0, 32);

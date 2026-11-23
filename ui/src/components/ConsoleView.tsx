@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
+import { Show, createEffect, createSignal, on } from "solid-js";
 import { applyCompletion, pushHistory, recallHistory } from "./consoleInput";
 
 export function ConsoleView(props: {
@@ -18,33 +18,27 @@ export function ConsoleView(props: {
   const [histIdx, setHistIdx] = createSignal(-1);
   let scrollEl: HTMLDivElement | undefined;
   let inputEl: HTMLInputElement | undefined;
-  let pinned = true;
-  let scrollFrame = 0;
-
-  const lines = createMemo(() => props.output().split("\n"));
-
-  // Autoscroll only while the operator is already at the bottom, and after
-  // the new lines have been laid out. Scrolling up must not be yanked back
-  // by the next console chunk.
-  createEffect(() => {
-    lines();
-    if (!pinned || !scrollEl) return;
-    cancelAnimationFrame(scrollFrame);
-    scrollFrame = requestAnimationFrame(() => {
-      if (pinned && scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
-    });
-  });
-  onCleanup(() => cancelAnimationFrame(scrollFrame));
+  let stickToBottom = true;
 
   function onScroll() {
     if (!scrollEl) return;
-    pinned = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 24;
+    const distance = scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight;
+    stickToBottom = distance <= 48;
   }
+
+  createEffect(() => {
+    props.output();
+    if (scrollEl && stickToBottom) {
+      scrollEl.scrollTop = scrollEl.scrollHeight;
+    }
+  });
 
   createEffect(on(() => props.target?.() ?? "", () => {
     setInput("");
     setHistory([]);
     setHistIdx(-1);
+    stickToBottom = true;
+    if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight;
   }, { defer: true }));
 
   function submit() {
@@ -54,6 +48,7 @@ export function ConsoleView(props: {
       setInput("");
       return;
     }
+    stickToBottom = true;
     props.write(cmd, props.target?.());
     setHistory(h => pushHistory(h, cmd));
     setHistIdx(-1);
@@ -94,11 +89,17 @@ export function ConsoleView(props: {
   }
 
   return (
-    <div class="console" ref={scrollEl} onClick={() => inputEl?.focus()} onScroll={onScroll}>
-      <For each={lines()}>{(l) => <div class="cl out">{l || "\u00a0"}</div>}</For>
+    <div class="console" ref={scrollEl} onScroll={onScroll} onClick={(e) => {
+      // Allow dragging to select terminal text without hijacking focus.
+      if (window.getSelection()?.toString()) return;
+      if (e.target !== inputEl) inputEl?.focus();
+    }}>
+      <Show when={props.output()}>
+        <pre class="console-out">{props.output()}</pre>
+      </Show>
       <div class="inputline">
         <span class="pr">{props.prompt}</span>
-        <Show when={!props.busy} fallback={<span>framework is busy</span>}>
+        <Show when={!props.busy} fallback={<span class="cl dim">framework is busy</span>}>
           <input ref={inputEl} value={input()}
             onInput={(e) => setInput(e.currentTarget.value)}
             onKeyDown={(e) => void onKey(e)}

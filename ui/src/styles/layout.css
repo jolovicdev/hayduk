@@ -599,7 +599,7 @@
 .graph-focused .nsp { display: none; }
 
 /* ---------- responsive ---------- */
-@media (max-width: 1220px) {
+@media (max-width: 1280px) {
   .telemetry { display: none; }
 }
 @media (max-width: 1000px) {
@@ -608,13 +608,25 @@
     height: auto;
     min-height: 100dvh;
     grid-template-columns: 220px minmax(0, 1fr);
-    grid-template-rows: 40px 440px 260px 260px 24px;
+    grid-template-rows: 40px minmax(360px, 52dvh) minmax(200px, auto) minmax(240px, 34dvh) 24px;
     grid-template-areas:
       "men men"
       "left stage"
       "right right"
       "nb nb"
       "st st";
+  }
+  .app.no-left {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+  .app.no-right {
+    grid-template-rows: 40px minmax(360px, 58dvh) 0 minmax(240px, 34dvh) 24px;
+  }
+  .app.nb-max {
+    height: 100dvh;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 40px 0 0 minmax(0, 1fr) 24px;
+    grid-template-areas: "men" "stage" "right" "nb" "st";
   }
   .splitter { display: none; }
   .right { border-left: 0; border-top: 1px solid var(--line); }
@@ -630,12 +642,19 @@
 @media (max-width: 640px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto 380px 260px 280px 280px auto;
+    grid-template-rows: auto 360px auto auto 280px auto;
     grid-template-areas: "men" "stage" "right" "left" "nb" "st";
   }
+  .app.no-left, .app.no-right, .app.no-left.no-right {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .menubar { flex-wrap: wrap; height: auto; padding: 6px 8px; gap: 4px; }
-  .left { border-right: 0; border-top: 1px solid var(--line); }
+  .brand { margin-right: 6px; padding-right: 8px; }
+  .left { border-right: 0; border-top: 1px solid var(--line); max-height: 280px; }
+  .right { max-height: 300px; }
   .bar-actions { display: none; }
   .status { flex-wrap: wrap; height: auto; padding: 4px 8px; }
   .status .addr, .status .ver { display: none; }
+  .nbtabs { scrollbar-width: none; }
+  .nbtabs::-webkit-scrollbar { display: none; }
 }

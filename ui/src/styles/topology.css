@@ -1,0 +1,167 @@
+/* ---------- topology canvas ---------- */
+.stagebody.gridbg #topo {
+  background-image: radial-gradient(circle, #1e232c 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+#topo { background-color: var(--bg0); shape-rendering: geometricPrecision; }
+#topo text { user-select: none; pointer-events: none; }
+
+/* subnet frame */
+#topo .topo-zone-panel { fill: #0d1015; fill-opacity: .92; stroke: #222731; stroke-width: 1; }
+#topo .topo-zone-band { fill: #12161d; }
+#topo .topo-zone-rule { stroke: #1e242e; stroke-width: 1; }
+#topo .topo-zone-icon { fill: #7c8799; }
+#topo .topo-zone-link { fill: none; stroke: #5f6a7d; stroke-width: 1.2; }
+#topo .topo-zone-name { fill: #dfe5f0; font: 600 11.5px var(--mono); letter-spacing: .04em; }
+#topo .topo-zone-meta { fill: #8490a4; font: 500 10px var(--mono); letter-spacing: .05em; }
+#topo .topo-zone-route-note { fill: var(--route); font: 500 9.5px var(--mono); letter-spacing: .05em; }
+
+/* pivot routes */
+#topo .topo-route-port { fill: var(--route); stroke: var(--bg0); stroke-width: 2.5; }
+#topo .topo-route-halo, #topo .topo-route-line { fill: none; stroke-linejoin: round; }
+#topo .topo-route-halo { stroke: var(--bg0); stroke-width: 6; }
+#topo .topo-route-line { stroke: var(--route); stroke-width: 1.5; stroke-dasharray: 5 4; stroke-linecap: square; }
+#topo #topo-route-arrow path { fill: var(--route); }
+#topo .topo-route-label rect { fill: #121728; stroke: var(--route-line); stroke-width: 1; }
+#topo .topo-route-label text { fill: #b4c6ff; text-anchor: middle; font: 600 9.5px var(--mono); letter-spacing: .05em; }
+#topo .topo-routes g, #topo .topo-ghost { cursor: context-menu; }
+
+/* host nodes */
+#topo .topo-node { cursor: grab; outline: none; }
+#topo .topo-node:active { cursor: grabbing; }
+#topo .topo-node-shell {
+  fill: #14181f;
+  stroke: #2a313e;
+  stroke-width: 1;
+  filter: url(#topo-node-shadow);
+  transition: stroke .12s, fill .12s;
+}
+#topo .topo-node:hover .topo-node-shell { fill: #191e27; stroke: #4b5568; }
+#topo .topo-node.access .topo-node-shell { fill: #111c19; stroke: #295947; }
+#topo .topo-node.access:hover .topo-node-shell { fill: #152420; stroke: #34d399; }
+#topo .topo-node.login .topo-node-shell { fill: #1a1711; stroke: #634d1d; }
+#topo .topo-node.login:hover .topo-node-shell { fill: #211d15; stroke: var(--amb); }
+#topo .topo-node.selected .topo-node-shell,
+#topo .topo-node:focus-visible .topo-node-shell {
+  stroke: var(--tx0);
+  stroke-width: 1.5;
+  fill: #1b2029;
+}
+#topo .topo-node.access.selected .topo-node-shell { fill: #152520; stroke: var(--grn-tx); }
+
+#topo .topo-node-rail { fill: #3c4454; }
+#topo .topo-node.access .topo-node-rail { fill: var(--grn-tx); }
+#topo .topo-node.login .topo-node-rail { fill: var(--amb); }
+#topo .topo-node.selected .topo-node-rail { fill: var(--tx0); }
+#topo .topo-node.access.selected .topo-node-rail { fill: var(--grn-tx); }
+
+#topo .topo-node-divider { stroke: #222833; stroke-width: 1; }
+#topo .topo-node.access .topo-node-divider { stroke: #1e3a30; }
+#topo .topo-node.login .topo-node-divider { stroke: #3b3019; }
+
+#topo .topo-os-pill { fill: #1c222c; stroke: #2f3746; stroke-width: 1; }
+#topo .topo-os-pill.win { fill: #132135; stroke: #284770; }
+#topo .topo-os-pill.linux { fill: #232015; stroke: #4d4525; }
+#topo .topo-node-os { fill: #9ba5b7; font: 600 9.5px var(--mono); letter-spacing: .06em; }
+#topo .topo-node-os.win { fill: #8bb8f8; }
+#topo .topo-node-os.linux { fill: #e3c978; }
+
+#topo .topo-node-svcs-top { fill: #8b96aa; font: 500 10px var(--mono); }
+#topo .topo-node-name { fill: #f2f5fa; font: 600 13.5px var(--sans); }
+#topo .topo-node-address { fill: #9ba7ba; font: 400 11.5px var(--mono); }
+#topo .topo-host-status { fill: #586274; }
+#topo .topo-host-state { fill: #8a94a6; font: 500 10px var(--mono); }
+#topo .topo-host-services { fill: #6b7588; font: 400 10px var(--mono); }
+#topo .access .topo-host-status { fill: var(--grn-tx); }
+#topo .access .topo-host-state { fill: var(--grn-tx); }
+#topo .login .topo-host-status, #topo .login .topo-host-state { fill: var(--amb); }
+
+/* routed ghost network */
+#topo .topo-ghost-shell { fill: #111524; stroke: var(--route-line); stroke-width: 1; stroke-dasharray: 5 4; }
+#topo .topo-ghost-icon-bg { fill: #182038; stroke: var(--route-line); }
+#topo .topo-ghost-icon { fill: var(--route); }
+#topo .topo-ghost-link { fill: none; stroke: var(--route); stroke-width: 1.25; }
+#topo .topo-ghost-kicker { fill: #8ca5f5; font: 600 9.5px var(--mono); letter-spacing: .06em; }
+#topo .topo-ghost-address { fill: #dde6ff; font: 600 12.5px var(--mono); }
+#topo .topo-ghost-meta { fill: #7c8eb8; font: 400 10px var(--mono); }
+
+/* map sub-bars */
+.map-context {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  font: 500 10.5px var(--mono);
+  color: var(--tx2);
+  background: rgba(14, 16, 20, .85);
+  border-bottom: 1px solid var(--cardline);
+}
+.map-context > span { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.map-context-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--grn-tx); }
+.map-context-divider { color: var(--line-hi); margin: 0 2px; }
+.map-context button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font: 500 11px var(--sans);
+  height: 20px;
+  border-radius: var(--r-xs);
+  padding: 0 7px;
+  color: var(--tx1);
+}
+.map-context button:hover:not(:disabled) { background: var(--bg3); color: var(--tx0); }
+.map-context button i { font-size: 12px; width: 12px; height: 12px; }
+.map-context-hint { color: var(--amb); font: 500 10px var(--mono); }
+
+.map-scale {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  font: 500 10px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--tx2);
+}
+
+.legend {
+  position: absolute;
+  inset: auto 0 0;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 10px;
+  background: rgba(14, 16, 20, .88);
+  border-top: 1px solid var(--cardline);
+  font: 500 10px var(--mono);
+  color: var(--tx2);
+  user-select: none;
+  pointer-events: none;
+}
+.legend i.sw {
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+}
+.legend .dot { background: var(--grn-tx); }
+.legend .sq { background: var(--amb); }
+.legend .neutral { background: #4b5568; }
+.legend .dash { width: 11px; height: 0; border-top: 2px dashed var(--route); border-radius: 0; vertical-align: 2px; }
+
+/* dense-map LOD */
+#topo.lod .topo-hosts { display: none; }
+#topo .topo-chips .topo-zone-chip { cursor: pointer; }
+#topo .topo-chips .topo-zone-chip-name { fill: var(--tx1); font: 600 11.5px var(--mono); }
+#topo .topo-chips .topo-zone-chip:focus-visible { outline: 1px solid var(--tx0); outline-offset: 2px; }
+#topo .topo-chips .topo-zone-chip:hover .topo-zone-chip-name,
+#topo .topo-chips .topo-zone-chip:focus-visible .topo-zone-chip-name { fill: var(--tx0); }
+#topo .topo-zone-chip:hover .topo-zone-chip-hit,
+#topo .topo-zone-chip:focus-visible .topo-zone-chip-hit { fill: rgba(255, 255, 255, .06); }
+
+
+#topo.panning .topo-node-shell { transition: none; }

@@ -77,6 +77,10 @@ type Hello struct {
 	Proto   int    `json:"proto"`
 	Version string `json:"version"`
 	Team    bool   `json:"team"`
+	// Identity is the operator name bound to this connection's access token
+	// (per-operator tokens in team mode). Empty for the shared token, where
+	// the browser picks its own label.
+	Identity string `json:"identity,omitempty"`
 }
 
 func NewHello(version string, team bool) Hello {

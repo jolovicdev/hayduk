@@ -5,12 +5,12 @@ import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } fro
 import { serviceOpen } from "../views/serviceState";
 import { osBadge } from "../views/os";
 import { flash } from "../statusflash";
+import { errorMessage } from "../errors";
 import { copyWithFeedback } from "../clipboard";
 import { openContextMenuFor } from "./contextmenu";
 import {
   NH,
   NW,
-  cidrCovers,
   fitLabel,
   geometrySignature,
   layoutHosts,
@@ -18,44 +18,24 @@ import {
   layoutWithHeld,
   pivotPath,
   subnetGroups,
-  subnetKey,
   type GroupBounds,
   type LayoutPlan,
   type Position,
 } from "./graph/layout";
+import {
+  GHOST_H,
+  GHOST_W,
+  LOD_SCALE,
+  computeChipLayout,
+  computeGhosts,
+  computeRouteEdges,
+  computeRoutedGroups,
+  computeWorldBounds,
+  type RouteEdge,
+  type Viewport,
+} from "./graph/routing";
 import { loadPositions, pruneStale, savePositions } from "./graph/positions";
 import { clamp } from "../stores/panels";
-
-const GHOST_W = 220, GHOST_H = 100, GHOST_GAP = 18;
-// below this zoom the host cards render smaller than their own text; the
-// map switches to readable subnet summaries instead
-const LOD_SCALE = 0.3;
-
-interface Viewport extends Position { s: number }
-
-interface Ghost extends Position {
-  label: string;
-}
-
-interface RouteEdge {
-  sessionID: string;
-  subnet: string;
-  // group is the subnet-group key this edge lands on; "" for ghost edges,
-  // which land on a routed-network card instead of a host group.
-  group: string;
-  from: Position;
-  to: Position;
-  lane: number;
-  label: Position;
-  labelW: number;
-}
-
-interface WorldBounds extends Position { w: number; h: number }
-
-// "SESSION <id>" chips sized to their text so longer ids do not overflow
-function routeLabelWidth(sessionId: string): number {
-  return Math.max(64, 40 + sessionId.length * 7);
-}
 
 export function TopologyGraph(props: {
   selected: () => string | undefined;
@@ -69,31 +49,23 @@ export function TopologyGraph(props: {
   let svgEl!: SVGSVGElement;
   let resizeObserver: ResizeObserver | undefined;
   let fitFrame = 0;
+  let moveFrame = 0;
 
   const [view, setView] = createSignal<Viewport>({ x: 0, y: 0, s: 1 });
   const [sticky, setSticky] = createSignal(loadPositions());
-  // A drag updates only this transient position. Committing it to sticky on
-  // drop runs the layout once, not on every pointermove.
   const [dragPosition, setDragPosition] = createSignal<(Position & { address: string }) | null>(null);
   const [canvas, setCanvas] = createSignal({ width: 900, height: 500 });
-  // the scale the last fit settled on; drives the dense-map hint. Zoom and
-  // pan by the operator do not change it.
   const [fittedScale, setFittedScale] = createSignal(0);
-  // Manual zoom, pan, or drag suspends automatic fitting and layout changes
-  // so discovery does not move hosts the operator is viewing.
   const [userMoved, setUserMoved] = createSignal(false);
 
   const hosts = createMemo(() => campaignState().hosts.filter((h): h is HostState => !!h));
   const hostsByAddress = createMemo(() => new Map(hosts().map(h => [h.address, h] as const)));
-  // Host info changes (a ripened fingerprint, a new note) must not re-run the
-  // layout. The geometry signature gates the slot list on the address set;
-  // the memo returns the same array when that set is unchanged, so downstream
-  // layout/group computations stay put.
   const hostGeometry = createMemo(() => hosts().map(h => h.address).join("\x1f"));
   const hostSlots = createMemo(() => {
     const key = hostGeometry();
     return key === "" ? [] : key.split("\x1f").map(address => ({ address }));
   });
+
   let heldPlan: LayoutPlan = { columns: 3, groupColumns: 1 };
   const plan = createMemo(() => {
     const routeWidth = campaignState().routes.length > 0 ? GHOST_W + 100 : 0;
@@ -102,8 +74,7 @@ export function TopologyGraph(props: {
     heldPlan = layoutPlan(hostSlots(), Math.max(16, canvas().width - 48), Math.max(16, canvas().height - 48), routeWidth);
     return heldPlan;
   });
-  // Preserve existing host positions during manual navigation. Newly
-  // discovered hosts receive free slots until the operator fits again.
+
   const positions = createMemo<Map<string, Position>>(prev => {
     const columns = plan().columns;
     const groupColumns = plan().groupColumns;
@@ -114,6 +85,7 @@ export function TopologyGraph(props: {
     }
     return layoutHosts(hostSlots(), sticky(), columns, groupColumns);
   });
+
   const serviceCounts = createMemo(() => {
     const counts = new Map<string, number>();
     for (const service of campaignState().services) {
@@ -121,39 +93,9 @@ export function TopologyGraph(props: {
     }
     return counts;
   });
-  const groups = createMemo(() => subnetGroups(hostSlots(), positions()));
 
-  // Subnet chips keep a constant screen size below the LOD threshold.
-  // Place overlapping chips in rows, then columns when the canvas is full.
-  const chipLayout = createMemo(() => {
-    const camera = view();
-    const placed: { x1: number; y1: number; x2: number; y2: number }[] = [];
-    const out = new Map<string, { x: number; y: number }>();
-    if (camera.s >= LOD_SCALE) return out;
-    const limit = canvas().height - 20;
-    const halfW = 78, halfH = 16;
-    const chips = [...groups()].map(([key, group]) => ({
-      key,
-      x: camera.x + (group.x + group.w / 2) * camera.s,
-      y: camera.y + (group.y + group.h / 2) * camera.s,
-    })).sort((a, b) => a.y - b.y);
-    for (const chip of chips) {
-      for (let column = 0; column < 6; column++) {
-        const x = chip.x + column * 170;
-        let y = column === 0 ? chip.y : 16;
-        while (placed.some(r =>
-          x - halfW < r.x2 && x + halfW > r.x1 && y - halfH < r.y2 && y + halfH > r.y1,
-        )) y += 34;
-        if (y + halfH <= limit || column === 5) {
-          y = Math.min(y, Math.max(16, limit - halfH));
-          placed.push({ x1: x - halfW, y1: y - halfH, x2: x + halfW, y2: y + halfH });
-          out.set(chip.key, { x, y });
-          break;
-        }
-      }
-    }
-    return out;
-  });
+  const groups = createMemo(() => subnetGroups(hostSlots(), positions()));
+  const chipLayout = createMemo(() => computeChipLayout(view(), groups(), canvas().height));
 
   const access = createMemo(() => {
     const sessions = sessionsByHostMemo();
@@ -164,110 +106,9 @@ export function TopologyGraph(props: {
     });
   });
 
-  // Every route paired with the host groups its CIDR actually covers -
-  // strict membership, so a /8 reaches every group inside it and an
-  // unparseable or non-IPv4 route reaches none instead of sweeping the
-  // shared "other" rail into ROUTED.
-  const routedGroups = createMemo(() => {
-    const state = campaignState();
-    const pairs: { route: { subnet: string; sessionId: string }; covered: Set<string> }[] = [];
-    for (const route of state.routes) {
-      if (!route?.subnet || !route.sessionId) continue;
-      const covered = new Set<string>();
-      for (const host of hostSlots()) {
-        if (cidrCovers(route.subnet, host.address)) covered.add(subnetKey(host.address));
-      }
-      pairs.push({ route: { subnet: route.subnet, sessionId: route.sessionId }, covered });
-    }
-    return pairs;
-  });
-
-  const ghosts = createMemo(() => {
-    const result = new Map<string, Ghost>();
-    const groupMap = groups();
-    const hostPositions = positions();
-    const state = campaignState();
-    const right = Math.max(0, ...[...groupMap.values()].map(group => group.x + group.w)) + 100;
-
-    for (const { route, covered } of routedGroups()) {
-      // a route that reaches discovered hosts draws real edges to those
-      // groups; only an entirely undiscovered network gets a ghost card
-      if (covered.size > 0 || result.has(route.subnet)) continue;
-
-      const session = state.sessions[route.sessionId];
-      const sourceHost = session?.targetHost || session?.sessionHost;
-      const source = sourceHost ? hostPositions.get(sourceHost) : undefined;
-      let y = source ? source.y + NH / 2 - GHOST_H / 2 : result.size * (GHOST_H + GHOST_GAP);
-      const previous = [...result.values()].at(-1);
-      if (previous) y = Math.max(y, previous.y + GHOST_H + GHOST_GAP);
-      result.set(route.subnet, { label: route.subnet, x: right, y });
-    }
-
-    return result;
-  });
-
-  const routes = createMemo<RouteEdge[]>(() => {
-    const state = campaignState();
-    const hostPositions = positions();
-    const groupMap = groups();
-    const ghostMap = ghosts();
-    const result: RouteEdge[] = [];
-
-    // Every edge gets its own lane: one route can cover several groups,
-    // and edges sharing a lane would draw on top of each other.
-    const rightEdge = Math.max(0, ...[...groupMap.values()].map(group => group.x + group.w));
-    const nextLane = () => rightEdge + 48 + result.length * 14;
-
-    for (const { route, covered } of routedGroups()) {
-      const session = state.sessions[route.sessionId];
-      const sourceHost = session?.targetHost || session?.sessionHost;
-      const source = sourceHost ? hostPositions.get(sourceHost) : undefined;
-      if (!source) continue;
-      const from = { x: source.x + NW / 2, y: source.y + NH };
-
-      let drawn = false;
-      for (const key of covered) {
-        const group = groupMap.get(key);
-        if (!group) continue;
-        const lane = nextLane();
-        const to = { x: group.x + group.w, y: group.y + 30 };
-        result.push({
-          sessionID: route.sessionId,
-          subnet: route.subnet,
-          group: key,
-          from,
-          to,
-          lane,
-          label: { x: lane, y: to.y - 30 },
-          labelW: routeLabelWidth(route.sessionId),
-        });
-        drawn = true;
-      }
-      if (drawn) continue;
-
-      const ghost = ghostMap.get(route.subnet);
-      if (ghost) {
-        const lane = nextLane();
-        const to = { x: ghost.x, y: ghost.y + GHOST_H / 2 };
-        result.push({
-          sessionID: route.sessionId,
-          subnet: route.subnet,
-          group: "",
-          from,
-          to,
-          lane,
-          label: { x: ghost.x + GHOST_W / 2, y: ghost.y - 30 },
-          labelW: routeLabelWidth(route.sessionId),
-        });
-      }
-    }
-
-    return result;
-  });
-
-  // A group earns its ROUTED badge from a drawn edge, not from CIDR math
-  // alone: when the owning session's host is unknown no edge can be drawn,
-  // and badging the group would claim a pivot the map does not show.
+  const routedGroups = createMemo(() => computeRoutedGroups(campaignState().routes, hostSlots()));
+  const ghosts = createMemo(() => computeGhosts(routedGroups(), groups(), positions(), campaignState().sessions));
+  const routes = createMemo(() => computeRouteEdges(routedGroups(), groups(), positions(), ghosts(), campaignState().sessions));
   const routedKeys = createMemo(() => {
     const keys = new Set<string>();
     for (const edge of routes()) {
@@ -275,53 +116,27 @@ export function TopologyGraph(props: {
     }
     return keys;
   });
-
-  const worldBounds = createMemo<WorldBounds | undefined>(() => {
-    const boxes = [
-      ...[...groups().values()].map(group => ({ x: group.x, y: group.y, w: group.w, h: group.h })),
-      ...[...ghosts().values()].map(ghost => ({ x: ghost.x, y: ghost.y, w: GHOST_W, h: GHOST_H })),
-    ];
-    if (boxes.length === 0) return undefined;
-
-    let minX = Math.min(...boxes.map(box => box.x));
-    let minY = Math.min(...boxes.map(box => box.y));
-    let maxX = Math.max(...boxes.map(box => box.x + box.w));
-    let maxY = Math.max(...boxes.map(box => box.y + box.h));
-    for (const route of routes()) {
-      maxX = Math.max(maxX, route.lane + 10, route.label.x + route.labelW / 2);
-      minX = Math.min(minX, route.label.x - route.labelW / 2);
-      minY = Math.min(minY, route.label.y);
-      minX = Math.min(minX, route.from.x, route.to.x);
-      minY = Math.min(minY, route.from.y, route.to.y);
-      maxX = Math.max(maxX, route.from.x, route.to.x);
-      maxY = Math.max(maxY, route.from.y + 18, route.to.y);
-    }
-    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
-  });
+  const worldBounds = createMemo(() => computeWorldBounds(groups(), ghosts(), routes()));
 
   function fit() {
     if (!svgEl) return;
-    // Recompute the automatic layout before measuring its bounds.
     setUserMoved(false);
     const bounds = worldBounds();
     if (!bounds) return;
     const rect = svgEl.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const pad = { left: 24, right: 24, top: 24, bottom: 24 };
-    // Keep the usable dimensions positive when the stage is smaller than
-    // its padding; a negative scale would flip the graph.
-    const availW = Math.max(16, rect.width - pad.left - pad.right);
-    const availH = Math.max(16, rect.height - pad.top - pad.bottom);
+    const pad = 24;
+    const availW = Math.max(16, rect.width - pad * 2);
+    const availH = Math.max(16, rect.height - pad * 2);
     const scale = Math.min(availW / bounds.w, availH / bounds.h, 1.12);
     setView({
       s: scale,
-      x: pad.left + (availW - bounds.w * scale) / 2 - bounds.x * scale,
-      y: pad.top + (availH - bounds.h * scale) / 2 - bounds.y * scale,
+      x: pad + (availW - bounds.w * scale) / 2 - bounds.x * scale,
+      y: pad + (availH - bounds.h * scale) / 2 - bounds.y * scale,
     });
     setFittedScale(scale);
   }
 
-  // Zoom above the LOD threshold so the subnet's host cards are visible.
   function focusZone(group: GroupBounds) {
     if (!svgEl) return;
     const rect = svgEl.getBoundingClientRect();
@@ -348,8 +163,6 @@ export function TopologyGraph(props: {
     const focusX = x ?? rect.width / 2;
     const focusY = y ?? rect.height / 2;
     const current = view();
-    // the floor sits below any fitted scale so zooming out from a huge
-    // campaign's fit never jumps the view
     const scale = clamp(current.s * multiplier, 0.005, 4);
     setUserMoved(true);
     setView({
@@ -365,20 +178,9 @@ export function TopologyGraph(props: {
     zoom(event.deltaY < 0 ? 1.12 : 1 / 1.12, event.clientX - rect.left, event.clientY - rect.top);
   }
 
-  function toWorld(clientX: number, clientY: number): Position {
-    const rect = svgEl.getBoundingClientRect();
-    const current = view();
-    return {
-      x: (clientX - rect.left - current.x) / current.s,
-      y: (clientY - rect.top - current.y) / current.s,
-    };
-  }
-
-  // Engine events report the route outcome. A rejected launch must also
-  // display its command error.
   function removeRoute(route: { subnet: string; sessionId: string }) {
     runAutoroute(autorouteRemove(route.sessionId, parseRouteTarget(route.subnet)))
-      .catch((e: any) => flash(e?.message ?? `could not remove route ${route.subnet}`));
+      .catch((e) => flash(errorMessage(e) || `could not remove route ${route.subnet}`));
   }
 
   function edgeMenu(edge: RouteEdge, event: MouseEvent) {
@@ -391,14 +193,11 @@ export function TopologyGraph(props: {
     ]);
   }
 
-  // a routed-network card stands for one unrouted subnet's worth of pivot;
-  // offer every session routing it, since several pivots can cover the same
-  // network
   function ghostMenu(subnet: string, event: MouseEvent) {
-    const routes = campaignState().routes
+    const matched = campaignState().routes
       .filter(r => !!r && r.subnet === subnet)
       .map(r => ({ subnet: r!.subnet, sessionId: r!.sessionId }));
-    const removal = removeRouteItems(routes, removeRoute, false);
+    const removal = removeRouteItems(matched, removeRoute, false);
     openContextMenuFor(event, [
       { head: subnet, sub: "routed network" },
       { icon: "wifi-high", label: "Scan this subnet…", fn: () => props.onScanSubnet(subnet) },
@@ -434,11 +233,36 @@ export function TopologyGraph(props: {
   }
 
   interface PanState { startX: number; startY: number; viewX: number; viewY: number; moved: boolean }
-  interface DragState { address: string; dx: number; dy: number; startX: number; startY: number; moved: boolean; origin: Position; snapshot: Map<string, Position> }
+  interface DragState {
+    address: string; dx: number; dy: number; startX: number; startY: number;
+    moved: boolean; rectLeft: number; rectTop: number;
+  }
   interface ChipTap { key: string; startX: number; startY: number; moved: boolean }
   let pan: PanState | undefined;
   let drag: DragState | undefined;
   let chipTap: ChipTap | undefined;
+  let pendingClient: { x: number; y: number } | null = null;
+
+  function applyPendingMove() {
+    moveFrame = 0;
+    const pt = pendingClient;
+    if (!pt) return;
+    pendingClient = null;
+    if (drag?.moved) {
+      const current = view();
+      const wx = (pt.x - drag.rectLeft - current.x) / current.s;
+      const wy = (pt.y - drag.rectTop - current.y) / current.s;
+      setDragPosition({ address: drag.address, x: wx - drag.dx, y: wy - drag.dy });
+      return;
+    }
+    if (pan?.moved) {
+      setView(current => ({
+        ...current,
+        x: pan!.viewX + pt.x - pan!.startX,
+        y: pan!.viewY + pt.y - pan!.startY,
+      }));
+    }
+  }
 
   function onPointerDown(event: PointerEvent) {
     if (event.button !== 0) return;
@@ -448,18 +272,21 @@ export function TopologyGraph(props: {
     }
     const node = (event.target as Element).closest<SVGGElement>(".topo-node");
     if (node?.dataset.address) {
-      const point = toWorld(event.clientX, event.clientY);
+      const rect = svgEl.getBoundingClientRect();
+      const current = view();
+      const wx = (event.clientX - rect.left - current.x) / current.s;
+      const wy = (event.clientY - rect.top - current.y) / current.s;
       const position = positions().get(node.dataset.address);
       if (!position) return;
       drag = {
         address: node.dataset.address,
-        dx: point.x - position.x,
-        dy: point.y - position.y,
+        dx: wx - position.x,
+        dy: wy - position.y,
         startX: event.clientX,
         startY: event.clientY,
         moved: false,
-        origin: { x: position.x, y: position.y },
-        snapshot: new Map(sticky()),
+        rectLeft: rect.left,
+        rectTop: rect.top,
       };
     } else if (!chipTap) {
       const current = view();
@@ -481,36 +308,37 @@ export function TopologyGraph(props: {
       return;
     }
     if (drag) {
-      if (Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 4) drag.moved = true;
+      if (!drag.moved && Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY) > 4) {
+        drag.moved = true;
+        setUserMoved(true);
+      }
       if (!drag.moved) return;
-      setUserMoved(true);
-      // Move only the dragged node while the gesture is live. Updating
-      // sticky here would re-run layout/groups/routes at pointer rate.
-      const point = toWorld(event.clientX, event.clientY);
-      setDragPosition({ address: drag.address, x: point.x - drag.dx, y: point.y - drag.dy });
+      pendingClient = { x: event.clientX, y: event.clientY };
+      if (!moveFrame) moveFrame = requestAnimationFrame(applyPendingMove);
       return;
     }
-
     if (pan) {
-      if (Math.abs(event.clientX - pan.startX) + Math.abs(event.clientY - pan.startY) > 4) pan.moved = true;
-      if (pan.moved) setUserMoved(true);
-      setView(current => ({
-        ...current,
-        x: pan!.viewX + event.clientX - pan!.startX,
-        y: pan!.viewY + event.clientY - pan!.startY,
-      }));
+      if (!pan.moved && Math.abs(event.clientX - pan.startX) + Math.abs(event.clientY - pan.startY) > 4) {
+        pan.moved = true;
+        setUserMoved(true);
+      }
+      if (!pan.moved) return;
+      pendingClient = { x: event.clientX, y: event.clientY };
+      if (!moveFrame) moveFrame = requestAnimationFrame(applyPendingMove);
     }
   }
 
   function endPointer() {
+    if (moveFrame) {
+      cancelAnimationFrame(moveFrame);
+      applyPendingMove();
+    }
     if (chipTap && !chipTap.moved) {
       const group = groups().get(chipTap.key);
       if (group) focusZone(group);
     }
     if (drag && !drag.moved) props.onSelect(drag.address);
     if (drag?.moved) {
-      // Commit the transient drag once, at drop. Then forget hosts that
-      // left the workspace; storage failures are fine.
       const dropped = dragPosition();
       const committed = new Map(sticky());
       if (dropped && dropped.address === drag.address) {
@@ -526,24 +354,20 @@ export function TopologyGraph(props: {
     chipTap = undefined;
     drag = undefined;
     pan = undefined;
+    pendingClient = null;
     svgEl.classList.remove("panning");
   }
 
-  // a cancelled pointer (touch takeover, palm, stylus) is not a click and
-  // not a dropped node: abort and restore the pre-drag layout
   function cancelPointer() {
-    if (drag) {
-      // the pre-drag slot must return even for hosts that had no saved
-      // position: the held-positions memo would otherwise keep the
-      // dragged coordinates, so the origin is pinned over the snapshot
-      const restored = new Map(drag.snapshot);
-      if (!restored.has(drag.address)) restored.set(drag.address, drag.origin);
-      setSticky(restored);
-      setDragPosition(null);
+    if (moveFrame) {
+      cancelAnimationFrame(moveFrame);
+      moveFrame = 0;
     }
+    setDragPosition(null);
     chipTap = undefined;
     drag = undefined;
     pan = undefined;
+    pendingClient = null;
     svgEl.classList.remove("panning");
   }
 
@@ -555,7 +379,6 @@ export function TopologyGraph(props: {
     resizeObserver = new ResizeObserver(() => {
       const rect = svgEl.getBoundingClientRect();
       setCanvas({ width: rect.width, height: rect.height });
-      // Resizing must preserve the operator's suspension of automatic fitting.
       if (!userMoved()) scheduleFit();
     });
     resizeObserver.observe(svgEl);
@@ -563,14 +386,13 @@ export function TopologyGraph(props: {
 
     onCleanup(() => {
       cancelAnimationFrame(fitFrame);
+      cancelAnimationFrame(moveFrame);
       resizeObserver?.disconnect();
       window.removeEventListener("hayduk:fit", fitEvent);
       window.removeEventListener("hayduk:zoom", zoomEvent);
     });
   });
 
-  // The signature excludes resource updates that do not affect geometry.
-  // Manual navigation suspends fitting until the operator explicitly fits again.
   const geometry = createMemo(() => {
     const state = campaignState();
     return geometrySignature(state.hosts, state.routes, state.sessions);
@@ -581,189 +403,187 @@ export function TopologyGraph(props: {
 
   return (
     <>
-    <div class="map-context">
-      <span><span class="map-context-dot"></span>{groups().size} subnet{groups().size === 1 ? "" : "s"}<span class="map-context-divider">/</span>{hosts().length} hosts</span>
-      <Show when={hosts().length > 0 && fittedScale() > 0 && fittedScale() < 0.1}>
-        <span class="map-context-hint" role="status">
-          dense map at this size — zoom into a subnet, or use the Services view
-        </span>
-      </Show>
-      <button onClick={() => { setSticky(new Map()); savePositions(new Map()); scheduleFit(); }} title="Arrange hosts to fit the canvas; replaces saved positions">
-        <i aria-hidden="true" class="ph ph-graph"></i>Arrange hosts
-      </button>
-    </div>
-    <svg
-      id="topo"
-      ref={svgEl}
-      role="group"
-      aria-label="Campaign network topology"
-      classList={{ lod: view().s < LOD_SCALE }}
-      onWheel={onWheel}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={endPointer}
-      onPointerCancel={cancelPointer}
-    >
-      <defs>
-        <filter id="topo-node-shadow" x="-15%" y="-15%" width="130%" height="145%">
-          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity=".42" />
-        </filter>
-        <marker id="topo-route-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
-          <path d="M 0 0 L 7 3.5 L 0 7 z" />
-        </marker>
-      </defs>
+      <div class="map-context">
+        <span><span class="map-context-dot"></span>{groups().size} subnet{groups().size === 1 ? "" : "s"}<span class="map-context-divider">/</span>{hosts().length} hosts</span>
+        <Show when={hosts().length > 0 && fittedScale() > 0 && fittedScale() < 0.1}>
+          <span class="map-context-hint" role="status">
+            dense map at this size — zoom into a subnet, or use the Services view
+          </span>
+        </Show>
+        <button onClick={() => { setSticky(new Map()); savePositions(new Map()); scheduleFit(); }} title="Arrange hosts to fit the canvas; replaces saved positions">
+          <i aria-hidden="true" class="ph ph-graph"></i>Arrange hosts
+        </button>
+      </div>
+      <svg
+        id="topo"
+        ref={svgEl}
+        role="group"
+        aria-label="Campaign network topology"
+        classList={{ lod: view().s < LOD_SCALE }}
+        onWheel={onWheel}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={endPointer}
+        onPointerCancel={cancelPointer}
+      >
+        <defs>
+          <filter id="topo-node-shadow" x="-15%" y="-15%" width="130%" height="145%">
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity=".42" />
+          </filter>
+          <marker id="topo-route-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+            <path d="M 0 0 L 7 3.5 L 0 7 z" />
+          </marker>
+        </defs>
 
-      <Show when={worldBounds()}>
-        <g transform={`translate(${view().x} ${view().y}) scale(${view().s})`}>
-          <g class="topo-zones">
-            <For each={[...groups().keys()]}>{(key) => {
-              const group = () => groups().get(key)!;
-              return (
-              <g class="topo-zone">
-                <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="4" />
-                <rect class="topo-zone-band" x={group().x + 1} y={group().y + 1} width={group().w - 2} height="42" rx="3" />
-                <path class="topo-zone-rule" d={`M ${group().x} ${group().y + 43} H ${group().x + group().w}`} />
-                <g transform={`translate(${group().x + 14} ${group().y + 11})`}>
-                  <circle class="topo-zone-icon" cx="4" cy="11" r="1.8" />
-                  <circle class="topo-zone-icon" cx="13" cy="6" r="1.8" />
-                  <circle class="topo-zone-icon" cx="13" cy="16" r="1.8" />
-                  <path class="topo-zone-link" d="M 5.6 10.1 L 11.4 6.9 M 5.6 11.9 L 11.4 15.1" />
-                </g>
-                <text class="topo-zone-name" x={group().x + 38} y={group().y + 26}>
-                  {key === "other" ? "OTHER HOSTS" : `${key}.0/24`}
-                </text>
-                <text class="topo-zone-meta" x={group().x + group().w - 14} y={group().y + 26} text-anchor="end">
-                  {group().count} {group().count === 1 ? "HOST" : "HOSTS"}
-                </text>
-                <Show when={routedKeys().has(key)}>
-                  <text class="topo-zone-route-note" x={group().x + 38} y={group().y + 38}>ROUTED VIA PIVOT</text>
-                  <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 22} r="3.5" />
-                </Show>
-
-              </g>
-              );}}</For>
-          </g>
-
-          <g class="topo-routes">
-            <For each={routes()}>{route => (
-              <g onContextMenu={event => edgeMenu(route, event)}>
-                <path class="topo-route-halo" d={pivotPath(route.from, route.to, route.lane)} />
-                <path class="topo-route-line" d={pivotPath(route.from, route.to, route.lane)} marker-end="url(#topo-route-arrow)" />
-                <g class="topo-route-label" transform={`translate(${route.label.x} ${route.label.y})`}>
-                  <rect x={-route.labelW / 2} width={route.labelW} height="19" rx="3" />
-                  <text x="0" y="13">SESSION {route.sessionID}</text>
-                </g>
-              </g>
-            )}</For>
-          </g>
-
-          <g class="topo-hosts">
-            <For each={hosts().map(h => h.address)}>{address => {
-              const host = () => hostsByAddress().get(address)!;
-              const position = () => {
-                const moving = dragPosition();
-                return moving?.address === address ? moving : positions().get(address);
-              };
-              const hostAccess = () => access()(address);
-              const badge = () => osBadge(host());
-              const osText = () => fitLabel(badge().label, 14);
-              const osWidth = () => Math.max(40, osText().length * 6.4 + 14);
-              const svcCount = () => serviceCounts().get(address) ?? 0;
-              return (
-                <Show when={position()}>{point => (
-                  <g
-                    class="topo-node"
-                    classList={{
-                      selected: props.selected() === address,
-                      access: hostAccess().sessions.length > 0,
-                      login: hostAccess().login && hostAccess().sessions.length === 0,
-                    }}
-                    data-address={address}
-                    transform={`translate(${point().x} ${point().y})`}
-                    tabIndex={0}
-                    role="button"
-                    aria-label={`${host().name || address}, ${address}`}
-                    onContextMenu={event => nodeMenu(address, event)}
-                    onKeyDown={event => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault(); // Space would scroll the stage
-                        props.onSelect(address);
-                      }
-                    }}
-                  >
-                    <title>{`${host().name || address} · ${address}`}</title>
-                    <rect class="topo-node-shell" width={NW} height={NH} rx="4" />
-                    <rect class="topo-node-rail" x="0.5" y="0.5" width="3" height={NH - 1} rx="1.5" />
-                    <path class="topo-node-divider" d={`M 4 88 H ${NW}`} />
-                    <rect class={`topo-os-pill ${badge().key}`} x="14" y="12" width={osWidth()} height="18" rx="2" />
-                    <text class={`topo-node-os ${badge().key}`} x="21" y="24">{osText()}</text>
-                    <text class="topo-node-svcs-top" x={NW - 12} y="24" text-anchor="end">
-                      {svcCount()} {svcCount() === 1 ? "PORT" : "PORTS"}
+        <Show when={worldBounds()}>
+          <g transform={`translate(${view().x} ${view().y}) scale(${view().s})`}>
+            <g class="topo-zones">
+              <For each={[...groups().keys()]}>{(key) => {
+                const group = () => groups().get(key)!;
+                return (
+                  <g class="topo-zone">
+                    <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="4" />
+                    <rect class="topo-zone-band" x={group().x + 1} y={group().y + 1} width={group().w - 2} height="42" rx="3" />
+                    <path class="topo-zone-rule" d={`M ${group().x} ${group().y + 43} H ${group().x + group().w}`} />
+                    <g transform={`translate(${group().x + 14} ${group().y + 11})`}>
+                      <circle class="topo-zone-icon" cx="4" cy="11" r="1.8" />
+                      <circle class="topo-zone-icon" cx="13" cy="6" r="1.8" />
+                      <circle class="topo-zone-icon" cx="13" cy="16" r="1.8" />
+                      <path class="topo-zone-link" d="M 5.6 10.1 L 11.4 6.9 M 5.6 11.9 L 11.4 15.1" />
+                    </g>
+                    <text class="topo-zone-name" x={group().x + 38} y={group().y + 26}>
+                      {key === "other" ? "OTHER HOSTS" : `${key}.0/24`}
                     </text>
-                    <text class="topo-node-name" x="14" y="53">{fitLabel(host().name || address, 24)}</text>
-                    <text class="topo-node-address" x="14" y="72">{fitLabel(address, 26)}</text>
-                    <circle class="topo-host-status" cx="18" cy="106" r="3" />
-                    <text class="topo-host-state" x="27" y="109.5">
-                      {hostAccess().sessions.length > 0
-                        ? `${hostAccess().sessions.length} LIVE SESSION${hostAccess().sessions.length === 1 ? "" : "S"}`
-                        : hostAccess().login ? "LOGIN AVAILABLE" : "DISCOVERED"}
+                    <text class="topo-zone-meta" x={group().x + group().w - 14} y={group().y + 26} text-anchor="end">
+                      {group().count} {group().count === 1 ? "HOST" : "HOSTS"}
                     </text>
+                    <Show when={routedKeys().has(key)}>
+                      <text class="topo-zone-route-note" x={group().x + 38} y={group().y + 38}>ROUTED VIA PIVOT</text>
+                      <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 22} r="3.5" />
+                    </Show>
                   </g>
-                )}</Show>
-              );
+                );
+              }}</For>
+            </g>
+
+            <g class="topo-routes">
+              <For each={routes()}>{route => (
+                <g onContextMenu={event => edgeMenu(route, event)}>
+                  <path class="topo-route-halo" d={pivotPath(route.from, route.to, route.lane)} />
+                  <path class="topo-route-line" d={pivotPath(route.from, route.to, route.lane)} marker-end="url(#topo-route-arrow)" />
+                  <g class="topo-route-label" transform={`translate(${route.label.x} ${route.label.y})`}>
+                    <rect x={-route.labelW / 2} width={route.labelW} height="19" rx="3" />
+                    <text x="0" y="13">SESSION {route.sessionID}</text>
+                  </g>
+                </g>
+              )}</For>
+            </g>
+
+            <g class="topo-hosts">
+              <For each={hosts().map(h => h.address)}>{address => {
+                const host = () => hostsByAddress().get(address)!;
+                const position = () => {
+                  const live = dragPosition();
+                  return live && live.address === address ? live : positions().get(address);
+                };
+                const hostAccess = () => access()(address);
+                const badge = () => osBadge(host());
+                const osText = () => fitLabel(badge().label, 14);
+                const osWidth = () => Math.max(40, osText().length * 6.4 + 14);
+                const svcCount = () => serviceCounts().get(address) ?? 0;
+                return (
+                  <Show when={position()}>{point => (
+                    <g
+                      class="topo-node"
+                      classList={{
+                        selected: props.selected() === address,
+                        access: hostAccess().sessions.length > 0,
+                        login: hostAccess().login && hostAccess().sessions.length === 0,
+                      }}
+                      data-address={address}
+                      transform={`translate(${point().x} ${point().y})`}
+                      tabIndex={0}
+                      role="button"
+                      aria-label={`${host().name || address}, ${address}`}
+                      onContextMenu={event => nodeMenu(address, event)}
+                      onKeyDown={event => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          props.onSelect(address);
+                        }
+                      }}
+                    >
+                      <title>{`${host().name || address} · ${address}`}</title>
+                      <rect class="topo-node-shell" width={NW} height={NH} rx="4" />
+                      <rect class="topo-node-rail" x="0.5" y="0.5" width="3" height={NH - 1} rx="1.5" />
+                      <path class="topo-node-divider" d={`M 4 88 H ${NW}`} />
+                      <rect class={`topo-os-pill ${badge().key}`} x="14" y="12" width={osWidth()} height="18" rx="2" />
+                      <text class={`topo-node-os ${badge().key}`} x="21" y="24">{osText()}</text>
+                      <text class="topo-node-svcs-top" x={NW - 12} y="24" text-anchor="end">
+                        {svcCount()} {svcCount() === 1 ? "PORT" : "PORTS"}
+                      </text>
+                      <text class="topo-node-name" x="14" y="53">{fitLabel(host().name || address, 24)}</text>
+                      <text class="topo-node-address" x="14" y="72">{fitLabel(address, 26)}</text>
+                      <circle class="topo-host-status" cx="18" cy="106" r="3" />
+                      <text class="topo-host-state" x="27" y="109.5">
+                        {hostAccess().sessions.length > 0
+                          ? `${hostAccess().sessions.length} LIVE SESSION${hostAccess().sessions.length === 1 ? "" : "S"}`
+                          : hostAccess().login ? "LOGIN AVAILABLE" : "DISCOVERED"}
+                      </text>
+                    </g>
+                  )}</Show>
+                );
+              }}</For>
+            </g>
+
+            <g class="topo-ghosts">
+              <For each={Array.from(ghosts().keys())}>{(key) => (
+                <g class="topo-ghost" transform={`translate(${ghosts().get(key)!.x} ${ghosts().get(key)!.y})`}
+                  onContextMenu={event => ghostMenu(key, event)}>
+                  <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="4" />
+                  <g transform="translate(14 31)">
+                    <rect class="topo-ghost-icon-bg" width="30" height="30" rx="4" />
+                    <circle class="topo-ghost-icon" cx="9" cy="15" r="2" />
+                    <circle class="topo-ghost-icon" cx="21" cy="9" r="2" />
+                    <circle class="topo-ghost-icon" cx="21" cy="21" r="2" />
+                    <path class="topo-ghost-link" d="M 11 14 L 19 10 M 11 16 L 19 20" />
+                  </g>
+                  <text class="topo-ghost-kicker" x="56" y="28">ROUTED NETWORK</text>
+                  <text class="topo-ghost-address" x="56" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
+                  <text class="topo-ghost-meta" x="56" y="74">Awaiting discovery</text>
+                </g>
+              )}</For>
+            </g>
+          </g>
+        </Show>
+
+        <Show when={chipLayout().size > 0}>
+          <g class="topo-chips">
+            <For each={[...groups().keys()]}>{(key) => {
+              const chip = () => chipLayout().get(key);
+              const count = () => groups().get(key)?.count ?? 0;
+              return <Show when={chip()}>{(c) => (
+                <g class="topo-zone-chip" role="button" tabIndex={0} data-zone={key}
+                  aria-label={`Zoom to ${key === "other" ? "other hosts" : `subnet ${key}.0/24`}`}
+                  transform={`translate(${c().x} ${c().y})`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      const group = groups().get(key);
+                      if (group) focusZone(group);
+                    }
+                  }}>
+                  <rect class="topo-zone-chip-hit" x="-78" y="-16" width="156" height="32" rx="4" fill="transparent" />
+                  <text class="topo-zone-chip-name" text-anchor="middle" y="4">
+                    {key === "other" ? "Other hosts" : `${key}.0/24`} · {count()}
+                  </text>
+                </g>
+              )}</Show>;
             }}</For>
           </g>
-
-          <g class="topo-ghosts">
-            <For each={Array.from(ghosts().keys())}>{(key) => (
-              <g class="topo-ghost" transform={`translate(${ghosts().get(key)!.x} ${ghosts().get(key)!.y})`}
-                onContextMenu={event => ghostMenu(key, event)}>
-                <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="4" />
-                <g transform="translate(14 31)">
-                  <rect class="topo-ghost-icon-bg" width="30" height="30" rx="4" />
-                  <circle class="topo-ghost-icon" cx="9" cy="15" r="2" />
-                  <circle class="topo-ghost-icon" cx="21" cy="9" r="2" />
-                  <circle class="topo-ghost-icon" cx="21" cy="21" r="2" />
-                  <path class="topo-ghost-link" d="M 11 14 L 19 10 M 11 16 L 19 20" />
-                </g>
-                <text class="topo-ghost-kicker" x="56" y="28">ROUTED NETWORK</text>
-                <text class="topo-ghost-address" x="56" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
-                <text class="topo-ghost-meta" x="56" y="74">Awaiting discovery</text>
-              </g>
-            )}</For>
-          </g>
-        </g>
-      </Show>
-
-      <Show when={chipLayout().size > 0}>
-        {/* Subnet keys preserve chip elements and focus across updates.
-            Handle taps on pointer-up because SVG pointer capture redirects clicks. */}
-        <g class="topo-chips">
-          <For each={[...groups().keys()]}>{(key) => {
-            const chip = () => chipLayout().get(key);
-            const count = () => groups().get(key)?.count ?? 0;
-            return <Show when={chip()}>{(c) => (
-              <g class="topo-zone-chip" role="button" tabIndex={0} data-zone={key}
-                aria-label={`Zoom to ${key === "other" ? "other hosts" : `subnet ${key}.0/24`}`}
-                transform={`translate(${c().x} ${c().y})`}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" || e.key === " ") {
-                    e.preventDefault(); // Space would scroll the stage
-                    const group = groups().get(key);
-                    if (group) focusZone(group);
-                  }
-                }}>
-                <rect class="topo-zone-chip-hit" x="-78" y="-16" width="156" height="32" rx="8" fill="transparent" />
-                <text class="topo-zone-chip-name" text-anchor="middle" y="4">
-                  {key === "other" ? "Other hosts" : `${key}.0/24`} · {count()}
-                </text>
-              </g>
-            )}</Show>;
-          }}</For>
-        </g>
-      </Show>
-    </svg>
-    <output class="map-scale" aria-label="Graph zoom">{Math.round(view().s * 100)}%</output>
+        </Show>
+      </svg>
+      <output class="map-scale" aria-label="Graph zoom">{Math.round(view().s * 100)}%</output>
     </>
   );
 }
