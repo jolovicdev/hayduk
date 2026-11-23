@@ -468,3 +468,58 @@ func TestIntegrationTeamSharedSession(t *testing.T) {
 		t.Fatalf("stop session: %+v", eb)
 	}
 }
+
+// Requires a reachable lab target through MSF_SCAN_TARGET (for example the
+// vulnbox IP printed by scripts/msf/up.sh --with-vulnbox).
+func TestIntegrationServiceScanFingerprints(t *testing.T) {
+	target := os.Getenv("MSF_SCAN_TARGET")
+	if target == "" {
+		t.Skip("MSF_SCAN_TARGET not set")
+	}
+	e := New(Config{})
+	t.Cleanup(e.Shutdown)
+	sub := e.Subscribe()
+	defer sub.Stop()
+	if err := e.Connect(context.Background(), integrationEnv(t)); err != nil {
+		t.Fatalf("connect: %+v", err)
+	}
+
+	_, eb := e.Exec(context.Background(), "integration-op", protocol.MethodServicesScan,
+		json.RawMessage(`{"target":"`+target+`","ports":"80"}`))
+	if eb != nil {
+		t.Fatalf("services.scan: %+v", eb)
+	}
+	deadline := time.After(2 * time.Minute)
+	finished := false
+	for !finished {
+		select {
+		case m := <-sub.C():
+			ev, ok := m.(protocol.EventMsg)
+			if !ok || !strings.Contains(ev.Text, "service scan") {
+				continue
+			}
+			if strings.Contains(ev.Text, "failed") {
+				t.Fatalf("scan event: %s", ev.Text)
+			}
+			finished = strings.Contains(ev.Text, "finished")
+		case <-deadline:
+			for _, ev := range e.State().Events {
+				t.Logf("event: %s", ev.Text)
+			}
+			t.Fatal("service scan did not finish within two minutes")
+		}
+	}
+
+	var found *protocol.ServiceState
+	for _, s := range e.State().Services {
+		if s != nil && s.Host == target && s.Port == 80 && s.State == "open" {
+			found = s
+		}
+	}
+	if found == nil {
+		t.Fatalf("open port 80 missing from %d services", len(e.State().Services))
+	}
+	if !strings.Contains(strings.ToLower(found.Info), "apache") && !strings.Contains(strings.ToLower(found.Name), "http") {
+		t.Fatalf("service was not fingerprinted: %+v", found)
+	}
+}

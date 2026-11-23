@@ -28,7 +28,7 @@ func TestSnapshotGolden(t *testing.T) {
 		Connection: ConnectionState{Status: "connected", Workspace: "default"},
 		Sessions:   map[string]*SessionState{"1": {ID: "1", Type: "meterpreter", TargetHost: "10.0.0.1"}},
 	}))
-	want := `{"type":"snapshot","state":{"connection":{"status":"connected","host":"","port":0,"ssl":false,"username":"","msfVersion":"","workspace":"default"},"hosts":null,"services":null,"sessions":{"1":{"id":"1","type":"meterpreter","targetHost":"10.0.0.1"}},"jobs":null,"routes":null,"creds":null,"loot":null,"modules":null,"moduleRanks":null,"console":null,"interact":null,"events":null,"operators":null}}`
+	want := `{"type":"snapshot","state":{"connection":{"status":"connected","host":"","port":0,"ssl":false,"username":"","msfVersion":"","workspace":"default"},"hosts":null,"services":null,"sessions":{"1":{"id":"1","type":"meterpreter","targetHost":"10.0.0.1"}},"jobs":null,"routes":null,"creds":null,"loot":null,"modules":null,"moduleRanks":null,"console":null,"interact":null,"events":null,"operators":null,"operations":null,"listeners":null}}`
 	if got != want {
 		t.Fatalf("snapshot:\n got %s\nwant %s", got, want)
 	}

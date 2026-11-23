@@ -1,4 +1,4 @@
-import { Show, createSignal } from "solid-js";
+import { Show, createMemo, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { openContextMenu, openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
@@ -14,16 +14,17 @@ import type { SessionState } from "../protocol/types";
 export function SessionsView(props: {
   onInteract: (sid: string) => void;
   onScanSubnet?: (subnet: string) => void;
+  active?: () => boolean;
 }) {
   const [upgrading, setUpgrading] = createSignal<string | undefined>(undefined);
   const [pivoting, setPivoting] = createSignal<string | undefined>(undefined);
   // ages are rendered from wall-clock time; without a tick they freeze at
   // whatever moment the sessions map last changed
-  const now = createNowSignal();
-  const rows = () =>
+  const now = createNowSignal(30_000, () => props.active?.() ?? true);
+  const rows = createMemo(() =>
     Object.values(campaignState().sessions)
       .filter((s): s is SessionState => !!s)
-      .sort((a, b) => Number(a.id) - Number(b.id));
+      .sort((a, b) => Number(a.id) - Number(b.id)));
 
   function menuItems(row: SessionState): Parameters<typeof openContextMenuFor>[1] {
     const items: Parameters<typeof openContextMenuFor>[1] = [

@@ -31,7 +31,7 @@ describe("events store team chat", () => {
     appendEvent({ type: "event", seq: 2, time: "", level: "chat", text: "pivot up", operator: "dana" });
     appendEvent({ type: "event", seq: 3, time: "", level: "chat", text: "nice", operator: "mile" });
     expect(unreadChat()).toBe(2);
-    expect(events().at(-1)?.operator).toBe("mile");
+    expect(events()[0]?.operator).toBe("mile");
     markChatRead();
     expect(unreadChat()).toBe(0);
   });

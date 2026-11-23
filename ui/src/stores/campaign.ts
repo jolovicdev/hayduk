@@ -1,4 +1,4 @@
-import type { CampaignState, CredState, HostState, SessionState } from "../protocol/types";
+import type { CampaignState, CredState, SessionState } from "../protocol/types";
 
 export function emptyState(): CampaignState {
   return {
@@ -6,6 +6,8 @@ export function emptyState(): CampaignState {
     hosts: [], services: [], sessions: {}, jobs: {}, routes: [], creds: [], loot: [],
     moduleRanks: {},
     operators: [],
+    operations: [],
+    listeners: [],
     events: [],
   };
 }
@@ -26,6 +28,8 @@ export function normalizeState(raw: any): CampaignState {
     loot: raw?.loot ?? [],
     moduleRanks: raw?.moduleRanks ?? {},
     operators: raw?.operators ?? [],
+    operations: raw?.operations ?? [],
+    listeners: raw?.listeners ?? [],
     events: raw?.events ?? [],
   };
 }
@@ -43,8 +47,14 @@ export function applyResource(s: CampaignState, msg: any) {
     case "modules": s.modules = msg.modules; break;
     case "moduleRanks": s.moduleRanks = { ...(s.moduleRanks ?? {}), ...(msg.moduleRanks ?? {}) }; break;
     case "operators": s.operators = msg.operators ?? []; break;
-    case "console": s.console = msg.console; break;
-    case "interact": s.interact = msg.interact; break;
+    case "operations": s.operations = msg.operations ?? []; break;
+    case "listeners": s.listeners = msg.listeners ?? []; break;
+    // Console and interact streams are owned by their dedicated stores.
+    // Dropping their resource updates here avoids replacing the whole
+    // campaign object for bytes that no campaign view reads.
+    case "console":
+    case "interact":
+      break;
     default: console.warn("unknown resource", msg.resource);
   }
 }
@@ -73,10 +83,4 @@ export function credsByHost(s: CampaignState): Map<string, CredState[]> {
   return m;
 }
 
-export function liveSessions(s: CampaignState): SessionState[] {
-  return Object.values(s.sessions).filter((x): x is SessionState => !!x);
-}
 
-export function hostsWithAccess(s: CampaignState, byHost: Map<string, SessionState[]>): HostState[] {
-  return s.hosts.filter((h): h is HostState => !!h && (byHost.get(h.address)?.length ?? 0) > 0);
-}

@@ -1,6 +1,44 @@
 // msf option values must keep their types: rpc_execute rejects "443" where
 // it wants an integer and "true" where it wants a boolean.
 
+import { SERVICE_NAMES, SERVICE_PORTS, matchingServicePort } from "./serviceCatalog";
+
+export interface LaunchService {
+  host: string;
+  port: number;
+  name?: string;
+  state?: string;
+}
+
+// Module paths carry their protocol in a segment (windows/smb/...,
+// linux/http/...). These are the workspace service names each token can
+// appear as, plus fallback ports for scanners that did not fingerprint a
+// name. Matching the path rather than the module's prose keeps the guess
+// predictable.
+export function moduleServiceToken(name: string): string | undefined {
+  const segments = name.toLowerCase().split("/");
+  for (const token of Object.keys(SERVICE_NAMES)) {
+    if (segments.includes(token)) return token;
+  }
+  return undefined;
+}
+
+// inferServicePort points a module at the port its service was actually
+// found on instead of the module default. Explicit matches (Find attacks)
+// pass their port directly and take precedence in the dialog.
+export function inferServicePort(
+  name: string,
+  host: string | undefined,
+  services: readonly (LaunchService | undefined)[],
+): number | undefined {
+  if (!host) return undefined;
+  const token = moduleServiceToken(name);
+  if (!token) return undefined;
+  const names = SERVICE_NAMES[token] ?? [];
+  const ports = SERVICE_PORTS[token] ?? [];
+  return matchingServicePort(host, names, ports, services);
+}
+
 export interface OptionDef {
   type: string;
   required: boolean;

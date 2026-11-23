@@ -1,4 +1,4 @@
-import { Show, createEffect, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { FilterSelect } from "../components/FilterSelect";
 import { Modal } from "../components/modal";
@@ -6,37 +6,17 @@ import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState } from "../stores/store";
 import { createNowSignal } from "../stores/now";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import { copyWithFeedback } from "../clipboard";
 import { ageOf } from "./format";
 import { jobRows, type JobRow } from "./jobs";
 import { PayloadDialog } from "./PayloadDialog";
-import type { SessionState } from "../protocol/types";
+import type { ListenerState, SessionState } from "../protocol/types";
+import { errorMessage } from "../errors";
+import { listenerRows } from "./listeners";
 
-// A handler job only names its module; the payload and callback address are
-// gone by the time job.list answers. The launch details are kept here so the
-// table can show what each listener was started with.
-interface ListenerLaunch {
-  jobId: string;
-  payload: string;
-  lhost: string;
-  lport: number;
-}
-
-function loadLaunches(): ListenerLaunch[] {
-  try {
-    const parsed: unknown = JSON.parse(localStorage.getItem("hayduk.listeners") ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((v): v is ListenerLaunch =>
-      !!v && typeof v === "object" && typeof (v as ListenerLaunch).payload === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-export function ListenersView(props: { onInteract: (sid: string) => void }) {
-  const now = createNowSignal(10_000);
-  const [launches, setLaunches] = createSignal<ListenerLaunch[]>(loadLaunches());
+export function ListenersView(props: { onInteract: (sid: string) => void; active?: () => boolean }) {
+  const now = createNowSignal(10_000, () => props.active?.() ?? true);
   const [starting, setStarting] = createSignal(false);
   const [showGenerate, setShowGenerate] = createSignal(false);
   const [payload, setPayload] = createSignal("");
@@ -45,18 +25,22 @@ export function ListenersView(props: { onInteract: (sid: string) => void }) {
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
 
-  const payloads = () => (campaignState().modules?.payloads ?? [])
-    .filter(p => p.includes("meterpreter") || p.includes("shell"));
+  const modules = createMemo(() => campaignState().modules);
+  const jobs = createMemo(() => campaignState().jobs);
+  const sessions = createMemo(() => campaignState().sessions);
+  const listeners = createMemo(() => campaignState().listeners);
+  const payloads = createMemo(() => (modules()?.payloads ?? [])
+    .filter(p => p.includes("meterpreter") || p.includes("shell")));
   createEffect(() => {
     if (!payload() && payloads().length > 0) {
       setPayload(payloads().find(p => p.includes("linux/x64/meterpreter/reverse_tcp")) ?? payloads()[0]!);
     }
   });
 
-  const handlers = () => jobRows(campaignState().jobs).filter(r => r.module.includes("multi/handler"));
-  const handlerSessions = () => Object.values(campaignState().sessions)
-    .filter((s): s is SessionState => !!s && (s.viaExploit ?? "").includes("multi/handler"));
-  const launchFor = (jobId: string) => launches().find(l => l.jobId === jobId);
+  const rows = createMemo(() => listenerRows(jobRows(jobs()), listeners()));
+  const handlerSessions = createMemo(() => Object.values(sessions())
+    .filter((s): s is SessionState => !!s && (s.viaExploit ?? "").includes("multi/handler")));
+  const launchFor = (jobId: string) => listeners().find(l => l?.jobId === jobId);
   // a launch knows its payload but not its job's sessions; the payload is as
   // close to a link as the daemon's job and session records come
   const sessionsFor = (job: JobRow) => handlerSessions()
@@ -65,33 +49,22 @@ export function ListenersView(props: { onInteract: (sid: string) => void }) {
       return !launch || !s.viaPayload || s.viaPayload === launch.payload;
     });
 
-  function saveLaunches(next: ListenerLaunch[]) {
-    setLaunches(next);
-    try {
-      localStorage.setItem("hayduk.listeners", JSON.stringify(next.slice(-24)));
-    } catch { /* storage unavailable */ }
-  }
-
   const valid = () => payload() !== "" && lhost().trim() !== "" && Number(lport()) > 0;
 
   async function start() {
     setBusy(true);
     setError("");
     try {
-      const res = await ws.command<{ jobId: number; uuid: string }>("module.execute", {
+      await ws.command("module.execute", {
         type: "exploit", name: "multi/handler",
         options: { ExitOnSession: false },
         payload: payload(),
         payloadOptions: { LHOST: lhost().trim(), LPORT: Number(lport()) },
       });
-      saveLaunches([...launches(), {
-        jobId: String(res.jobId), payload: payload(),
-        lhost: lhost().trim(), lport: Number(lport()),
-      }]);
       setStarting(false);
       flash(`listener starting for ${payload()}`);
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -100,7 +73,6 @@ export function ListenersView(props: { onInteract: (sid: string) => void }) {
   async function stop(jobId: string) {
     try {
       await ws.command("job.stop", { id: jobId });
-      saveLaunches(launches().filter(l => l.jobId !== jobId));
     } catch (e: any) {
       flash(e?.message ?? `could not stop listener ${jobId}`);
     }
@@ -118,7 +90,7 @@ export function ListenersView(props: { onInteract: (sid: string) => void }) {
       </div>
 
       <DataTable
-        rows={handlers()}
+        rows={rows()}
         rowKey={(r) => r.id}
         emptyTitle="No listeners running"
         emptyIcon="plug"

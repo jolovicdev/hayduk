@@ -5,10 +5,10 @@ import { openContextMenuFor } from "../components/contextmenu";
 import { copyWithFeedback } from "../clipboard";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import type { CredState } from "../protocol/types";
 import { LoginDialog } from "./LoginDialog";
+import { errorMessage } from "../errors";
 
 export function CredsView() {
   const rows = () => campaignState().creds.filter((c): c is CredState => !!c);
@@ -32,7 +32,7 @@ export function CredsView() {
       });
       setAdding(false);
     } catch (e) {
-      setError(e instanceof CommandError ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

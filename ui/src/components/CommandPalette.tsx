@@ -70,6 +70,7 @@ export function CommandPalette(props: {
       { id: "tab-sessions", icon: "broadcast", label: "Sessions", kind: "DOCK", run: () => props.onAction("tab:sessions") },
       { id: "tab-listeners", icon: "plug", label: "Listeners", kind: "DOCK", run: () => props.onAction("tab:listeners") },
       { id: "tab-jobs", icon: "gear", label: "Background jobs", kind: "DOCK", run: () => props.onAction("tab:jobs") },
+      { id: "tab-ops", icon: "pulse", label: "Operations", kind: "DOCK", run: () => props.onAction("tab:ops") },
       { id: "tab-creds", icon: "key", label: "Credentials", kind: "DOCK", run: () => props.onAction("tab:creds") },
       { id: "tab-loot", icon: "archive", label: "Loot", kind: "DOCK", run: () => props.onAction("tab:loot") },
       { id: "tab-events", icon: "pulse", label: "Event log", kind: "DOCK", run: () => props.onAction("tab:events") },

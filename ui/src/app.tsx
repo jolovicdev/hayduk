@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createSignal, on, onCleanup, onMount } from "solid-js";
+import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import ConnectDialog from "./views/ConnectDialog";
 import { ContextMenuRoot, closeContextMenu, openContextMenu } from "./components/contextmenu";
 import { Dropdown, MenuItemButton } from "./components/dropdown";
@@ -9,6 +9,7 @@ import { TopologyGraph } from "./components/TopologyGraph";
 import { CommandPalette } from "./components/CommandPalette";
 import { SessionsView } from "./views/SessionsView";
 import { JobsView } from "./views/JobsView";
+import { OperationsView } from "./views/OperationsView";
 import { CredsView } from "./views/CredsView";
 import { LootView } from "./views/LootView";
 import { EventsView } from "./views/EventsView";
@@ -24,6 +25,7 @@ import { LoginDialog } from "./views/LoginDialog";
 import { FindAttacksDialog } from "./views/FindAttacksDialog";
 import { HailMaryDialog } from "./views/HailMaryDialog";
 import { BruteDialog } from "./views/BruteDialog";
+import { runningCount } from "./views/operations";
 import { campaignState, protoMismatch, serverVersion, team as teamMode, wsStatus } from "./stores/store";
 import { consoleBusy, consoleOutput, consolePrompt, tabs as consoleTabs, write } from "./stores/console";
 import { attach, resetInteract } from "./stores/interact";
@@ -32,6 +34,7 @@ import { ws } from "./ws/singleton";
 import { currentOperator } from "./ws/client";
 import { forgetOperator, restoreOperator, saveOperator } from "./ws/operator";
 import { flash } from "./statusflash";
+import { errorMessage } from "./errors";
 import { HaydukMark } from "./components/mark";
 import { switchWorkspaceAction } from "./appActions";
 import { DEFAULT_PANELS, clamp, clampNotebook, clampPanels, type PanelSizes } from "./stores/panels";
@@ -42,9 +45,10 @@ const notebookTabs: [string, string, string][] = [
   ["sessions", "broadcast", "Sessions"],
   ["listeners", "plug", "Listeners"],
   ["jobs", "gear", "Jobs"],
+  ["ops", "pulse", "Operations"],
   ["creds", "key", "Credentials"],
   ["loot", "archive", "Loot"],
-  ["events", "pulse", "Events"],
+  ["events", "chat", "Events"],
 ];
 
 function loadPanels(): PanelSizes {
@@ -121,16 +125,23 @@ export default function App() {
     setPanels(p => ({ ...p, nb: clampNotebook(p.nb - dy, window.innerHeight) }));
   }
 
-  const conn = () => campaignState().connection;
-  const connected = () => conn().status === "connected";
-  const liveCount = () => Object.keys(campaignState().sessions).length;
-  const jobCount = () => Object.keys(campaignState().jobs).length;
-  const totalModules = () => {
-    const m = campaignState().modules;
+  const conn = createMemo(() => campaignState().connection);
+  const connected = createMemo(() => conn().status === "connected");
+  const sessions = createMemo(() => campaignState().sessions);
+  const jobs = createMemo(() => campaignState().jobs);
+  const modules = createMemo(() => campaignState().modules);
+  const hosts = createMemo(() => campaignState().hosts);
+  const services = createMemo(() => campaignState().services);
+  const creds = createMemo(() => campaignState().creds);
+  const liveCount = createMemo(() => Object.keys(sessions()).length);
+  const jobCount = createMemo(() => Object.keys(jobs()).length);
+  const runningOps = createMemo(() => runningCount(campaignState().operations));
+  const totalModules = createMemo(() => {
+    const m = modules();
     if (!m) return 0;
     return [m.exploits, m.auxiliary, m.post, m.payloads, m.encoders, m.nops, m.evasion]
       .reduce((a, v) => a + (v?.length ?? 0), 0);
-  };
+  });
 
   function selectHost(addr: string | undefined) {
     setSelectedHost(addr);
@@ -140,7 +151,7 @@ export default function App() {
   function openInteract(sid: string) {
     attach(sid).then(
       () => { setGraphFocus(false); setTab("interact"); },
-      (e: any) => flash(e?.message ?? `could not attach to session ${sid}`),
+      (e) => flash(errorMessage(e) || `could not attach to session ${sid}`),
     );
   }
 
@@ -214,8 +225,8 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
       flash("report exported");
-    } catch (e: any) {
-      flash(e.message ?? "report export failed");
+    } catch (e) {
+      flash(errorMessage(e) || "report export failed");
     }
   }
 
@@ -288,7 +299,6 @@ export default function App() {
 
           <nav class="mnav" aria-label="Main menu">
             <Dropdown id="m-file" label="File">
-              <MenuItemButton icon="plug" label="New connection…" onClick={() => disconnect()} />
               <MenuItemButton icon="x" label="Disconnect" disabled={conn().status === "disconnected"}
                 onClick={() => disconnect()} />
               <div class="dsep"></div>
@@ -343,16 +353,16 @@ export default function App() {
 
           <div class="telemetry" aria-label="Campaign telemetry">
             <button class="tstat" onClick={() => { setNbMax(false); setStage("topo"); }} title="View hosts on topology">
-              HOSTS <b>{campaignState().hosts.length}</b>
+              HOSTS <b>{hosts().length}</b>
             </button>
             <button class="tstat" onClick={() => { setNbMax(false); setStage("svc"); }} title="View discovered services">
-              SVCS <b>{campaignState().services.length}</b>
+              SVCS <b>{services().length}</b>
             </button>
             <button class="tstat" classList={{ live: liveCount() > 0 }} onClick={() => { setGraphFocus(false); setTab("sessions"); }} title="View live sessions">
               <span class="tdot"></span>SESSIONS <b>{liveCount()}</b>
             </button>
             <button class="tstat" onClick={() => { setGraphFocus(false); setTab("creds"); }} title="View recovered credentials">
-              CREDS <b>{campaignState().creds.length}</b>
+              CREDS <b>{creds().length}</b>
             </button>
           </div>
 
@@ -454,8 +464,9 @@ export default function App() {
                   flash(`host ${host} selected; launch a module from the tree or Ctrl+K`);
                 }}
                 onLogin={(host) => { selectHost(host); setLoginHost(host); }}
-                onPivot={(sid) => setPivotSid(sid)} />
-              <Show when={campaignState().hosts.length === 0}>
+                onPivot={(sid) => setPivotSid(sid)}
+                onScanSubnet={(target) => { setScanTarget(target); setScan("services"); }} />
+              <Show when={hosts().length === 0}>
                 <div class="map-empty">
                   <div class="empty-symbol"><i aria-hidden="true" class="ph ph-graph"></i></div>
                   <h2>No hosts in workspace</h2>
@@ -506,6 +517,9 @@ export default function App() {
                 <Show when={id === "jobs" && jobCount() > 0}>
                   <span class="badge jobs">{jobCount()}</span>
                 </Show>
+                <Show when={id === "ops" && runningOps() > 0}>
+                  <span class="badge jobs" title="Running operations">{runningOps()}</span>
+                </Show>
                 <Show when={id === "events" && unreadChat() > 0}>
                   <span class="badge chat" title="Unread team chat">{unreadChat()}</span>
                 </Show>
@@ -522,21 +536,26 @@ export default function App() {
           <div class="nbbody">
             <div class="nbpane" hidden={tab() !== "console"}>
               <ConsoleView output={consoleOutput} prompt={consolePrompt()} busy={consoleBusy()}
-                write={(cmd) => void write(cmd).catch((e: any) => flash(e?.message ?? "console write failed"))}
+                write={(cmd) => void write(cmd).catch((e) => flash(errorMessage(e) || "console write failed"))}
                 tabComplete={(line) => consoleTabs(line).catch(() => [])} />
             </div>
             <div class="nbpane" hidden={tab() !== "interact"}><InteractView /></div>
             <div class="nbpane" hidden={tab() !== "sessions"}>
-              <SessionsView onInteract={openInteract}
+              <SessionsView onInteract={openInteract} active={() => tab() === "sessions"}
                 onScanSubnet={(subnet) => { setScanTarget(subnet); setScan("services"); }} />
             </div>
-            <div class="nbpane" hidden={tab() !== "listeners"}><ListenersView onInteract={openInteract} /></div>
+            <div class="nbpane" hidden={tab() !== "listeners"}>
+              <ListenersView onInteract={openInteract} active={() => tab() === "listeners"} />
+            </div>
             <div class="nbpane" hidden={tab() !== "jobs"}>
-              <JobsView onOpenModule={(module) => {
+              <JobsView active={() => tab() === "jobs"} onOpenModule={(module) => {
                 setTab("console");
                 void write(`use ${module}`)
-                  .catch((e: any) => flash(e?.message ?? "console write failed"));
+                  .catch((e) => flash(errorMessage(e) || "console write failed"));
               }} />
+            </div>
+            <div class="nbpane" hidden={tab() !== "ops"}>
+              <OperationsView active={() => tab() === "ops"} />
             </div>
             <div class="nbpane" hidden={tab() !== "creds"}><CredsView /></div>
             <div class="nbpane" hidden={tab() !== "loot"}><LootView /></div>
@@ -598,7 +617,7 @@ export default function App() {
 
         <Show when={pivotSid()}>
           {(sid) => (
-            <PivotDialog sid={sid()} meterpreter={campaignState().sessions[sid()]?.type === "meterpreter"}
+            <PivotDialog sid={sid()} meterpreter={sessions()[sid()]?.type === "meterpreter"}
               onScan={(subnet) => { setPivotSid(undefined); setScanTarget(subnet); setScan("services"); }}
               onClose={() => setPivotSid(undefined)} />
           )}

@@ -4,6 +4,7 @@ import { campaignState, team as teamMode } from "../stores/store";
 import { currentOperator } from "../ws/client";
 import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
+import { errorMessage } from "../errors";
 
 // The shared event log is the team's coordination surface, Armitage-style:
 // every operator's actions land here attributed, presence is visible, and
@@ -19,8 +20,8 @@ export function EventsView() {
     try {
       await ws.command("team.chat", { text });
       setDraft("");
-    } catch (e: any) {
-      flash(e?.message ?? "chat message failed");
+    } catch (e) {
+      flash(errorMessage(e) || "chat message failed");
     } finally {
       setSending(false);
     }
@@ -50,7 +51,7 @@ export function EventsView() {
             <p class="err">event gap detected: events may be incomplete until reconnect</p>
           </div>
         </Show>
-        <For each={events().slice().reverse()}>{(ev) => (
+        <For each={events()}>{(ev) => (
           <div class="evline">
             <time>{ev.time ? new Date(ev.time).toLocaleTimeString() : ""}</time>
             <Show when={ev.level === "chat"} fallback={

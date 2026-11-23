@@ -10,14 +10,16 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"syscall"
 
 	"github.com/jolovicdev/hayduk/internal/engine"
 	"github.com/jolovicdev/hayduk/internal/server"
+	"github.com/jolovicdev/hayduk/internal/store"
 )
 
-var version = "0.1.6"
+var version = "0.2.0"
 
 func main() {
 	listen := flag.String("listen", "127.0.0.1:0", "host:port to bind")
@@ -25,6 +27,8 @@ func main() {
 	dev := flag.Bool("dev", false, "proxy UI to a vite dev server")
 	devUpstream := flag.String("dev-upstream", "http://127.0.0.1:5173", "vite dev server URL")
 	noBrowser := flag.Bool("no-browser", false, "do not open a browser")
+	noPersist := flag.Bool("no-persist", false, "do not write the campaign audit log or saved state to disk")
+	dataDir := flag.String("data-dir", defaultDataDir(), "directory for the campaign audit log and saved state")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
 
@@ -65,7 +69,19 @@ func main() {
 	}
 	token := hex.EncodeToString(tokenBytes)
 
-	eng := engine.New(engine.Config{})
+	// Persistence is best effort: an unwritable directory must not stop an
+	// operator from working, it only costs the history.
+	var st *store.Store
+	if !*noPersist && *dataDir != "" {
+		opened, err := store.Open(*dataDir)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "hayduk: state disabled:", err)
+		} else {
+			st = opened
+			defer st.Close() // runs after eng.Shutdown (LIFO)
+		}
+	}
+	eng := engine.New(engine.Config{Store: st})
 	defer eng.Shutdown()
 
 	opts := server.Options{Version: version, Team: *team}
@@ -82,6 +98,9 @@ func main() {
 
 	fmt.Println("hayduk", version, "-", url)
 	fmt.Println(url + "/?token=" + token)
+	if st != nil {
+		fmt.Println("state directory:", st.Dir())
+	}
 	if *team {
 		fmt.Println("team mode: share that link with operators on a trusted network; it carries the auth token")
 	}
@@ -131,6 +150,17 @@ func loopbackOnly(host string) bool {
 		}
 	}
 	return len(addrs) > 0
+}
+
+// defaultDataDir is the per-user directory for the audit log and saved
+// campaign state. An empty result means this platform has no config
+// directory, in which case persistence stays off unless --data-dir is given.
+func defaultDataDir() string {
+	dir, err := os.UserConfigDir()
+	if err != nil || dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "hayduk")
 }
 
 func openBrowser(url string) {

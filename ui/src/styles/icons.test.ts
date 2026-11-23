@@ -25,6 +25,9 @@ function referencedNames(): Set<string> {
       const p = join(dir, ent.name);
       if (ent.isDirectory()) { walk(p); continue; }
       if (!/\.(tsx?|css)$/.test(ent.name)) continue;
+      // generated protocol constants are data, not icon references: an
+      // operation kind can collide with a real Phosphor name
+      if (p.endsWith("/protocol/types.ts")) continue;
       const text = readFileSync(p, "utf8");
       for (const m of text.matchAll(/\bph-([a-z0-9-]+)/g)) names.add(m[1]!);
       for (const m of text.matchAll(/(["'])([a-z0-9][a-z0-9-]*)\1/g)) names.add(m[2]!);

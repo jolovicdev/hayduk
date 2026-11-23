@@ -798,6 +798,9 @@ table.dt .amb { color: var(--amb); font-family: var(--mono); font-size: 11px; }
 .mform { margin-top: 12px; display: grid; gap: 10px; }
 .frow { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 10px; }
 .frow.even { grid-template-columns: 1fr 1fr; }
+@media (max-width: 520px) {
+  .modal .frow, .modal .frow.even { grid-template-columns: 1fr; }
+}
 .checkline {
   display: flex;
   align-items: center;

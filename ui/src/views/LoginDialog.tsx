@@ -1,10 +1,10 @@
 import { For, Show, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { campaignState, credsByHostMemo } from "../stores/store";
 import type { ServiceState } from "../protocol/types";
 import { loginOptions, rankCreds } from "./login";
+import { errorMessage } from "../errors";
 
 export function LoginDialog(props: { host: string; onClose: () => void }) {
   const services = createMemo(() =>
@@ -44,7 +44,7 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
       await ws.command("module.execute", { type: "auxiliary", name: m.module, options: opts });
       props.onClose();
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -60,8 +60,13 @@ export function LoginDialog(props: { host: string; onClose: () => void }) {
         <label class="field" style="margin-top:4px">
           <b>Login module</b>
           <select value={chosenMod()?.module ?? ""} onChange={(e) => setMod(e.currentTarget.value)}>
-            <For each={modules()}>{(m) => <option value={m.module}>{m.module}</option>}</For>
+            <For each={modules()}>{(m) => (
+              <option value={m.module}>{m.module}{m.port ? ` · port ${m.port}` : ""}</option>
+            )}</For>
           </select>
+          <Show when={chosenMod()?.port}>
+            <span class="fdesc">targets the port this host's scan found</span>
+          </Show>
         </label>
 
         <Show when={creds().length > 0}>

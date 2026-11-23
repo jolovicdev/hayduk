@@ -116,4 +116,4 @@ export function write(data: string, targetSid?: string) {
 export const interactSID = sid;
 export const interactTabs = tabs;
 export const interactOutput = () => outputs()[sid()] ?? "";
-export const interactOutputFor = (target: string) => outputs()[target] ?? "";
+export const interactOutputFor = (sessionId: string) => outputs()[sessionId] ?? "";

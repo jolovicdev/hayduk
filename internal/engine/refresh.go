@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -17,17 +18,45 @@ import (
 // handed in by the bootstrap that owns it, so an old loop can never bind to
 // a newer connection's context.
 func (e *Engine) refreshLoop(ctx context.Context) {
-	e.refreshDB(ctx)
-	e.reconcileSessions(ctx)
+	e.pollState(ctx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(e.cfg.RefreshInterval):
-			e.refreshDB(ctx)
-			e.reconcileSessions(ctx)
+			e.pollState(ctx)
+		case <-e.refreshKick:
+			e.pollState(ctx)
 		}
 	}
+}
+
+// requestRefresh asks the refresh loop for a sweep after a mutation. The
+// channel is buffered and the send non-blocking: several mutations in one
+// burst collapse into a single refresh, and a command never waits for the
+// database read.
+func (e *Engine) requestRefresh() {
+	select {
+	case e.refreshKick <- struct{}{}:
+	default:
+	}
+}
+
+// pollState refreshes the database and reconciles sessions together: they
+// touch different resources and both are RPC round trips, so serializing them
+// only delays the next tick.
+func (e *Engine) pollState(ctx context.Context) {
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		_ = e.refreshDB(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		e.reconcileSessions(ctx)
+	}()
+	wg.Wait()
 }
 
 func (e *Engine) runContext() context.Context {
@@ -83,6 +112,50 @@ func fetchAllPages[T any](ctx context.Context, workspace string, fetch func(ctx 
 	}
 }
 
+// fetchWorkspaceCollections reads the four database tables concurrently.
+// Each is an independent RPC round trip and msfrpcd answers them in parallel,
+// so a slow collection no longer serializes the whole refresh. All four reads
+// still finish (or fail) before any state is committed, preserving the
+// all-or-nothing refresh contract.
+func fetchWorkspaceCollections(
+	ctx context.Context, db *gomsf.DbManager, workspace string,
+) (hosts []*gomsf.Host, services []*gomsf.Service, creds []*gomsf.Credential, loots []*gomsf.Loot, err error) {
+	var wg sync.WaitGroup
+	errs := make(chan error, 4)
+	collect := func(name string, fetch func() (any, error)) {
+		defer wg.Done()
+		rows, e := fetch()
+		if e != nil {
+			errs <- fmt.Errorf("%s: %w", name, e)
+			return
+		}
+		switch v := rows.(type) {
+		case []*gomsf.Host:
+			hosts = v
+		case []*gomsf.Service:
+			services = v
+		case []*gomsf.Credential:
+			creds = v
+		case []*gomsf.Loot:
+			loots = v
+		}
+		errs <- nil
+	}
+	wg.Add(4)
+	go collect("hosts", func() (any, error) { return fetchAllPages(ctx, workspace, db.Hosts) })
+	go collect("services", func() (any, error) { return fetchAllPages(ctx, workspace, db.Services) })
+	go collect("creds", func() (any, error) { return fetchAllPages(ctx, workspace, db.Creds) })
+	go collect("loots", func() (any, error) { return fetchAllPages(ctx, workspace, db.Loots) })
+	wg.Wait()
+	close(errs)
+	for e := range errs {
+		if e != nil && err == nil {
+			err = e
+		}
+	}
+	return
+}
+
 // refreshDBLocked is refreshDB for callers already holding refreshMu -
 // workspace.set uses it so its clear-plus-reload transition cannot be
 // interleaved with a periodic refresh that still read the old workspace.
@@ -103,22 +176,7 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	if current, _ := db.CurrentWorkspace(ctx); current != "" {
 		pinned = current
 	}
-	hosts, err := fetchAllPages(ctx, pinned, db.Hosts)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	services, err := fetchAllPages(ctx, pinned, db.Services)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	creds, err := fetchAllPages(ctx, pinned, db.Creds)
-	if err != nil {
-		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
-		return err
-	}
-	loots, err := fetchAllPages(ctx, pinned, db.Loots)
+	hosts, services, creds, loots, err := fetchWorkspaceCollections(ctx, db, pinned)
 	if err != nil {
 		e.eventfOpIn(pinned, "", protocol.LevelWarn, "db refresh failed: %v", err)
 		return err
@@ -130,15 +188,24 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 	newCreds := credStates(creds)
 	newLoot := lootStates(loots)
 
+	// Snapshot the committed collections, then diff outside the engine lock:
+	// signing and sorting every host/service must not stall broadcasts or
+	// commands. Collections are copy-on-write, so the snapshots stay valid
+	// until the generation/commit check below.
 	e.mu.Lock()
 	if e.gen != gen || e.rpc == nil {
-		// the link was torn down or replaced while this refresh was in
-		// flight; committing would clobber the newer connection's state
 		e.mu.Unlock()
 		return errSuperseded
 	}
-	known := make(map[string]bool, len(e.hosts))
-	for _, h := range e.hosts {
+	oldHosts := e.hosts
+	oldServices := e.services
+	oldCreds := e.creds
+	oldLoot := e.loot
+	oldWorkspace := e.conn.Workspace
+	e.mu.Unlock()
+
+	known := make(map[string]bool, len(oldHosts))
+	for _, h := range oldHosts {
 		known[h.Address] = true
 	}
 	var discovered []*protocol.HostState
@@ -147,14 +214,21 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 			discovered = append(discovered, h)
 		}
 	}
-	credDelta := len(newCreds) - len(e.creds)
+	credDelta := len(newCreds) - len(oldCreds)
 
-	hostsChanged := !sameHosts(e.hosts, newHosts)
-	servicesChanged := !sameServices(e.services, newServices)
-	credsChanged := !sameCreds(e.creds, newCreds)
-	lootChanged := !sameLoot(e.loot, newLoot)
-	wsChanged := workspace != "" && workspace != e.conn.Workspace
+	hostsChanged := !sameHosts(oldHosts, newHosts)
+	servicesChanged := !sameServices(oldServices, newServices)
+	credsChanged := !sameCreds(oldCreds, newCreds)
+	lootChanged := !sameLoot(oldLoot, newLoot)
+	wsChanged := workspace != "" && workspace != oldWorkspace
 
+	e.mu.Lock()
+	if e.gen != gen || e.rpc == nil {
+		// the link was torn down or replaced while the diff was in flight;
+		// committing would clobber the newer connection's state
+		e.mu.Unlock()
+		return errSuperseded
+	}
 	e.hosts = newHosts
 	e.services = newServices
 	e.creds = newCreds

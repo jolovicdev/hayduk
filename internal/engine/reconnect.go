@@ -19,6 +19,9 @@ func (e *Engine) reconnect() {
 	}
 	gen := e.gen
 	cancel := e.runCancel
+	// operations hold calls against the dropped link: end them before the
+	// retry loop starts rebuilding
+	opCancels := e.cancelOperationsLocked()
 	// the dropped link owns consoles and a login on the daemon; capture
 	// them before the reset so they can be released, not just forgotten
 	dropRPC := e.rpc
@@ -45,6 +48,7 @@ func (e *Engine) reconnect() {
 	e.interactActive = nil
 	e.attached = nil
 	e.interactBufs = nil
+	hadListeners := e.clearListenersLocked()
 	p := protocol.ConnectParams{
 		Host: e.conn.Host, Port: e.conn.Port, SSL: e.conn.SSL, Username: e.conn.Username,
 		Password: e.lastPassword,
@@ -52,7 +56,13 @@ func (e *Engine) reconnect() {
 	e.conn.Status = "reconnecting"
 	e.logf(protocol.LevelWarn, "connection lost; reconnecting to %s:%d", p.Host, p.Port)
 	e.bus.send(protocol.ConnectionUpdate(e.conn))
+	if hadListeners {
+		e.bus.send(protocol.ListenersUpdate([]*protocol.ListenerState{}))
+	}
 	e.mu.Unlock()
+	for _, opCancel := range opCancels {
+		opCancel()
+	}
 	if cancel != nil {
 		cancel()
 	}

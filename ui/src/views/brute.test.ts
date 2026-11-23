@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { attemptOptions, buildBrutePlan, parseLines } from "./brute";
+import {
+  LOGIN_SCANNERS, attemptOptions, buildBrutePlan, defaultScannerForHost, matchesLoginScanner,
+  parseLines, servicePortForHost,
+} from "./brute";
 
 describe("parseLines", () => {
   it("trims, drops empties and dedupes, keeping order", () => {
@@ -67,6 +70,50 @@ describe("buildBrutePlan", () => {
     expect(plan.attempts).toHaveLength(5);
     expect(plan.capped).toBe(7);
   });
+
+  it("carries a scanned port per host into every attempt", () => {
+    const plan = buildBrutePlan({
+      hosts: ["a", "b"], users: ["u"], passes: ["p"], module: "scanner/ssh/ssh_login",
+      ports: { a: 2222, b: 2200 },
+    });
+    expect(plan.attempts.map(a => a.port)).toEqual([2222, 2200]);
+  });
+
+  it("lets one explicit port override the scanned map", () => {
+    const plan = buildBrutePlan({
+      hosts: ["a", "b"], users: ["u"], passes: ["p"], module: "scanner/ssh/ssh_login",
+      port: 22, ports: { a: 2222, b: 2200 },
+    });
+    expect(plan.attempts.map(a => a.port)).toEqual([22, 22]);
+  });
+});
+
+describe("scanned service ports", () => {
+  const ssh = LOGIN_SCANNERS.find(s => s.service === "ssh")!;
+  const smb = LOGIN_SCANNERS.find(s => s.service === "smb")!;
+
+  it("matches a named SSH service on a non-standard port", () => {
+    expect(matchesLoginScanner({ port: 2222, name: "ssh" }, ssh)).toBe(true);
+    expect(servicePortForHost("h", ssh, [
+      { host: "h", port: 22, name: "ssh" },
+      { host: "h", port: 2222, name: "ssh" },
+    ])).toBe(22);
+  });
+
+  it("matches the SMB aliases and ignores closed rows", () => {
+    expect(matchesLoginScanner({ port: 445, name: "microsoft-ds" }, smb)).toBe(true);
+    expect(matchesLoginScanner({ port: 445, name: "smb", state: "closed" }, smb)).toBe(false);
+  });
+
+  it("does not borrow another host's port", () => {
+    expect(servicePortForHost("other", ssh, [{ host: "h", port: 2222, name: "ssh" }])).toBeUndefined();
+  });
+
+  it("preselects the scanner that matches the selected host", () => {
+    expect(defaultScannerForHost("h", [{ host: "h", port: 2222, name: "ssh" }])?.service).toBe("ssh");
+    expect(defaultScannerForHost("h", [{ host: "h", port: 445, name: "microsoft-ds" }])?.service).toBe("smb");
+    expect(defaultScannerForHost("h", [])).toBeUndefined();
+  });
 });
 
 describe("attemptOptions", () => {
@@ -76,6 +123,12 @@ describe("attemptOptions", () => {
     });
     expect(attemptOptions({ host: "h", user: "", pass: "p" }, true)).toEqual({
       RHOSTS: "h", THREADS: 1, PASSWORD: "p",
+    });
+  });
+
+  it("sends RPORT when the scan found a non-standard port", () => {
+    expect(attemptOptions({ host: "h", user: "u", pass: "p", port: 2222 })).toEqual({
+      RHOSTS: "h", THREADS: 1, USERNAME: "u", PASSWORD: "p", RPORT: 2222,
     });
   });
 });

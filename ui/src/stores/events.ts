@@ -14,22 +14,26 @@ export function appendEvent(m: EventMsg) {
   lastSeq = m.seq;
   if (m.level === "chat") setUnreadChat(n => n + 1);
   setList(prev => {
-    const next = [...prev, {
+    const entry: EventEntry = {
       seq: m.seq,
       // the server stamp survives reconnects and clock skew between
       // operators; the receive time is only a fallback for old servers
       time: m.time || new Date().toISOString(),
       level: m.level, text: m.text,
       ...(m.operator ? { operator: m.operator } : {}),
-    }];
-    return next.length > CAP ? next.slice(next.length - CAP) : next;
+    };
+    // Newest first: the view no longer copies and reverses the whole log for
+    // every arriving event.
+    const next = [entry, ...prev];
+    return next.length > CAP ? next.slice(0, CAP) : next;
   });
 }
 
 export function syncEvents(entries: EventEntry[] | undefined) {
   lastSeq = entries?.at(-1)?.seq ?? 0;
   setGap(false);
-  setList(entries ?? []);
+  // The wire snapshot is oldest-first; keep the view's newest-first order.
+  setList((entries ?? []).slice().reverse());
 }
 
 export function markChatRead() {

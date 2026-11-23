@@ -83,10 +83,13 @@ func sessionState(id string, s *gomsf.Session, ws string) *protocol.SessionState
 		st.ViaExploit = s.ViaExploit
 		st.ViaPayload = s.ViaPayload
 		st.Info = s.Info
-		st.Username = s.Username
-		st.TargetHost = s.TargetHost
-		st.SessionHost = s.SessionHost
+		st.Username = daemonSessionUsername(s)
+		st.TargetHost = cleanSessionHost(s.TargetHost)
+		st.SessionHost = cleanSessionHost(s.SessionHost)
 		st.UUID = s.UUID
+		if st.TargetHost == "" {
+			st.TargetHost = sessionTargetHost(s)
+		}
 	}
 	return st
 }
@@ -150,10 +153,23 @@ func (e *Engine) reconcileSessions(ctx context.Context) {
 	}
 	changed := false
 	for sid, st := range e.sessions {
-		if _, listed := live[sid]; !listed && !st.OpenedAt.After(snapshotAt) {
-			e.removeSessionLocked(sid)
-			e.logf(protocol.LevelWarn, "session %s closed", sid)
-			e.dropSessionViewsLocked(sid)
+		daemonSession, listed := live[sid]
+		if !listed {
+			if !st.OpenedAt.After(snapshotAt) {
+				e.removeSessionLocked(sid)
+				e.logf(protocol.LevelWarn, "session %s closed", sid)
+				e.dropSessionViewsLocked(sid)
+				changed = true
+			}
+			continue
+		}
+		// The first open event can arrive before session.list has the
+		// username/host; enrich the row as the daemon fills those fields in.
+		// Replace the pointer rather than mutating it: broadcasts already
+		// queued for browsers share the old value.
+		next := *st
+		if enrichSessionState(&next, daemonSession) {
+			e.sessions[sid] = &next
 			changed = true
 		}
 	}
@@ -195,11 +211,14 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 		e.mu.Unlock()
 		return
 	}
+	var listenerPersist []*protocol.ListenerState
+	listenersChanged := false
 	if started {
 		e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
 	} else {
 		delete(e.jobs, id)
 		e.finishExploitJobLocked(id)
+		listenersChanged, listenerPersist = e.removeListenerLocked(id)
 	}
 	jobs := copyMap(e.jobs)
 	if started {
@@ -208,7 +227,13 @@ func (e *Engine) jobChanged(m *gomsf.EventMonitor, id, name string, started bool
 		e.logf(protocol.LevelInfo, "job %s stopped", id)
 	}
 	e.bus.send(protocol.JobsUpdate(jobs))
+	if listenersChanged {
+		e.bus.send(protocol.ListenersUpdate(deepSlice(e.listeners)))
+	}
 	e.mu.Unlock()
+	if listenerPersist != nil {
+		_ = e.cfg.Store.SaveListeners(listenerPersist)
+	}
 	// autoroute only lives to change the route table; when it finishes the
 	// table changed, so the poller should look now rather than next interval
 	if !started && strings.Contains(name, "manage/autoroute") {

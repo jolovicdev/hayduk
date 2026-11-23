@@ -91,7 +91,16 @@ func (e *Engine) rankPrefetch(ctx context.Context, rpc gomsf.RPCCaller) {
 			e.moduleRanks[k] = v
 		}
 		e.bus.send(protocol.ModuleRanksUpdate(out))
+		var snapshot map[string]string
+		if e.cfg.Store != nil {
+			snapshot = copyMap(e.moduleRanks)
+		}
 		e.mu.Unlock()
+		// The crawl runs in the background; a quick atomic snapshot keeps
+		// the next connection from re-reading thousands of modules.
+		if snapshot != nil {
+			_ = e.cfg.Store.SaveRanks(snapshot)
+		}
 	}
 
 	work := make(chan rankTarget)

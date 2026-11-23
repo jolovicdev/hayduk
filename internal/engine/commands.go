@@ -340,7 +340,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s added", p.Address)
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodHostDelete:
@@ -355,7 +355,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelInfo, "host %s deleted", p.Address)
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodServiceDelete:
@@ -380,7 +380,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, mapErr(err)
 		}
 		e.eventfOpIn(ws, operator, protocol.LevelSuccess, "scan data imported")
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodHostNote:
@@ -394,7 +394,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if _, err := rpc.Call(ctx, gomsf.DbReportHost, map[string]interface{}{"host": p.Address, "comments": p.Comments}); err != nil {
 			return nil, mapErr(err)
 		}
-		_ = e.refreshDB(ctx)
+		e.requestRefresh()
 		return nil, nil
 
 	case protocol.MethodCredAdd:
@@ -423,6 +423,23 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 			return nil, eb
 		}
 		return e.lootDownload(ctx, rpc, ws, p)
+
+	case protocol.MethodServicesScan:
+		var p protocol.ServiceScanParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		return e.servicesScan(ctx, operator, ws, p)
+
+	case protocol.MethodBruteStart:
+		var p protocol.BruteParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		return e.bruteStart(operator, ws, p)
+
+	case protocol.MethodOperationsCancel:
+		return e.operationsCancel(params)
 	}
 	return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "unreachable dispatch for " + method}
 }
@@ -436,12 +453,45 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	normalizeNumericOptions(p.Options)
 	normalizeNumericOptions(p.PayloadOptions)
 
-	mod, err := gomsf.NewModuleWithContext(ctx, rpc, gomsf.ModuleType(p.Type), p.Name)
+	// Exploit and payload metadata are independent; load them at once. The
+	// payload result is consumed below, and cancelLoads plus the buffered
+	// result channel keep an abandoned payload load from outliving the
+	// command.
+	loadCtx, cancelLoads := context.WithCancel(ctx)
+	defer cancelLoads()
+
+	type moduleLoadResult struct {
+		mod *gomsf.Module
+		err error
+	}
+	loadModule := func(modType gomsf.ModuleType, name string) <-chan moduleLoadResult {
+		ch := make(chan moduleLoadResult, 1)
+		go func() {
+			mod, err := gomsf.NewModuleWithContext(loadCtx, rpc, modType, name)
+			ch <- moduleLoadResult{mod: mod, err: err}
+		}()
+		return ch
+	}
+
+	var payloadCh <-chan moduleLoadResult
+	if p.Payload != "" {
+		payloadCh = loadModule(gomsf.PayloadModuleType, p.Payload)
+	}
+
+	mod, err := gomsf.NewModuleWithContext(loadCtx, rpc, gomsf.ModuleType(p.Type), p.Name)
 	if err != nil {
+		cancelLoads()
+		if payloadCh != nil {
+			<-payloadCh
+		}
 		return nil, mapErr(err)
 	}
 	for k, v := range p.Options {
 		if err := mod.SetOption(k, v); err != nil {
+			cancelLoads()
+			if payloadCh != nil {
+				<-payloadCh
+			}
 			return nil, mapErr(err)
 		}
 	}
@@ -449,18 +499,19 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	// Register before the RPC so sessions and job events that arrive
 	// before its response can be attributed to this launch.
 	var runKey string
-	if p.Type == string(gomsf.ExploitModuleType) && p.Name != "multi/handler" {
+	if p.Type == string(gomsf.ExploitModuleType) && p.Name != handlerModule {
 		runKey = e.beginExploitRun(p.Type+"/"+p.Name, ws, operator)
 	}
 	var res *gomsf.ModuleExecuteResult
 	if p.Payload != "" {
-		payload, perr := gomsf.NewModuleWithContext(ctx, rpc, gomsf.PayloadModuleType, p.Payload)
-		if perr != nil {
+		payloadRes := <-payloadCh
+		if payloadRes.err != nil {
 			if runKey != "" {
 				e.forgetExploitRun(runKey)
 			}
-			return nil, mapErr(perr)
+			return nil, mapErr(payloadRes.err)
 		}
+		payload := payloadRes.mod
 		for k, v := range p.PayloadOptions {
 			if err := payload.SetOption(k, v); err != nil {
 				if runKey != "" {
@@ -489,6 +540,11 @@ func (e *Engine) moduleExecute(ctx context.Context, rpc gomsf.RPCCaller, operato
 	}
 	if runKey != "" {
 		e.armExploitRun(runKey, res.UUID, res.JobID)
+	}
+	// A handler launch is a listener: remember what it is listening for and
+	// with which callback so the Listeners view survives a reload.
+	if p.Type == string(gomsf.ExploitModuleType) && p.Name == handlerModule {
+		e.registerListener(operator, res.JobID, p.Payload, p.PayloadOptions)
 	}
 	// Autoroute exists only to change the route table. A job-backed run
 	// kicks the poller again when its job stops, but an inline run has no
@@ -733,7 +789,9 @@ func knownMethod(method string) bool {
 		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
 		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,
 		protocol.MethodDBImport, protocol.MethodHostNote, protocol.MethodCredAdd,
-		protocol.MethodCredDelete, protocol.MethodLootDownload:
+		protocol.MethodCredDelete, protocol.MethodLootDownload,
+		protocol.MethodServicesScan, protocol.MethodBruteStart,
+		protocol.MethodOperationsCancel:
 		return true
 	}
 	return false

@@ -1,3 +1,4 @@
+import { createMemo } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { openContextMenuFor } from "../components/contextmenu";
 import { copyWithFeedback } from "../clipboard";
@@ -13,10 +14,11 @@ export function stopJob(id: string) {
     .catch((e: any) => flash(e?.message ?? `could not stop job ${id}`));
 }
 
-export function JobsView(props: { onOpenModule?: (module: string) => void }) {
+export function JobsView(props: { onOpenModule?: (module: string) => void; active?: () => boolean }) {
   // job ages must tick even while the jobs map itself is quiet
-  const now = createNowSignal(10_000);
-  const rows = () => jobRows(campaignState().jobs);
+  const now = createNowSignal(10_000, () => props.active?.() ?? true);
+  const jobs = createMemo(() => campaignState().jobs);
+  const rows = createMemo(() => jobRows(jobs()));
 
   return (
     <DataTable

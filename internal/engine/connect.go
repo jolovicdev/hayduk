@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -89,6 +90,13 @@ func (e *Engine) ConnectAs(ctx context.Context, p protocol.ConnectParams, operat
 	// that carries modules and db state to already-connected browsers
 	e.broadcastSnapshotsLocked()
 	e.mu.Unlock()
+	if e.cfg.Store != nil {
+		// Remember the endpoint, never the password: the dialog asks for it
+		// on every fresh browser.
+		_, _ = e.cfg.Store.SaveProfile(protocol.ProfilePayload{
+			Host: p.Host, Port: p.Port, SSL: p.SSL, Username: p.Username,
+		})
+	}
 	cancelAttempt()
 	return nil
 }
@@ -110,6 +118,44 @@ func (e *Engine) dial(ctx context.Context, p protocol.ConnectParams) (gomsf.RPCC
 	return gomsf.NewClient(p.Password,
 		gomsf.WithHost(p.Host), gomsf.WithPort(p.Port),
 		gomsf.WithSSL(p.SSL), gomsf.WithUsername(p.Username))
+}
+
+// fetchModuleIndex loads the seven module lists concurrently. They are
+// independent RPCs; all goroutines finish before an error is returned so a
+// failed bootstrap never leaves a read in flight against the connection it is
+// about to release.
+func fetchModuleIndex(ctx context.Context, mm *gomsf.ModuleManager) (*protocol.ModuleIndex, error) {
+	modules := &protocol.ModuleIndex{}
+	errs := make(chan error, 7)
+	var wg sync.WaitGroup
+
+	load := func(dst *[]string, fetch func(context.Context) ([]string, error)) {
+		defer wg.Done()
+		names, err := fetch(ctx)
+		if err != nil {
+			errs <- err
+			return
+		}
+		*dst = names
+	}
+
+	wg.Add(7)
+	go load(&modules.Exploits, mm.Exploits)
+	go load(&modules.Auxiliary, mm.Auxiliary)
+	go load(&modules.Post, mm.Post)
+	go load(&modules.Payloads, mm.Payloads)
+	go load(&modules.Encoders, mm.Encoders)
+	go load(&modules.Nops, mm.Nops)
+	go load(&modules.Evasion, mm.Evasion)
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		if err != nil {
+			return nil, err
+		}
+	}
+	return modules, nil
 }
 
 func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen uint64) error {
@@ -136,47 +182,35 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.eventf(protocol.LevelInfo, "metasploit %s, loading module list", version.Version)
 
 	mm := gomsf.NewModuleManager(rpc)
-	modules := &protocol.ModuleIndex{}
-	if modules.Exploits, err = mm.Exploits(ctx); err != nil {
-		return err
-	}
-	if modules.Auxiliary, err = mm.Auxiliary(ctx); err != nil {
-		return err
-	}
-	if modules.Post, err = mm.Post(ctx); err != nil {
-		return err
-	}
-	if modules.Payloads, err = mm.Payloads(ctx); err != nil {
-		return err
-	}
-	if modules.Encoders, err = mm.Encoders(ctx); err != nil {
-		return err
-	}
-	if modules.Nops, err = mm.Nops(ctx); err != nil {
-		return err
-	}
-	if modules.Evasion, err = mm.Evasion(ctx); err != nil {
-		return err
+	db := gomsf.NewDbManager(rpc)
+
+	// The seven module lists and the workspace read are independent. Run
+	// them together; the DB page collection still needs the workspace, so it
+	// starts only after this barrier.
+	var (
+		modules   *protocol.ModuleIndex
+		moduleErr error
+		workspace string
+		loadWg    sync.WaitGroup
+	)
+	loadWg.Add(2)
+	go func() {
+		defer loadWg.Done()
+		modules, moduleErr = fetchModuleIndex(ctx, mm)
+	}()
+	go func() {
+		defer loadWg.Done()
+		workspace, _ = db.CurrentWorkspace(ctx) // "" when no db; not fatal
+	}()
+	loadWg.Wait()
+	if moduleErr != nil {
+		return moduleErr
 	}
 
-	db := gomsf.NewDbManager(rpc)
-	workspace, _ := db.CurrentWorkspace(ctx) // "" when no db; not fatal
 	// pages are pinned to the workspace read above for the same reason the
 	// refresh pins its own: a console workspace switch mid-load must not mix
 	// collections, and msf's unpaged reads truncate at 100 rows
-	hosts, err := fetchAllPages(ctx, workspace, db.Hosts)
-	if err != nil {
-		return err
-	}
-	services, err := fetchAllPages(ctx, workspace, db.Services)
-	if err != nil {
-		return err
-	}
-	creds, err := fetchAllPages(ctx, workspace, db.Creds)
-	if err != nil {
-		return err
-	}
-	loots, err := fetchAllPages(ctx, workspace, db.Loots)
+	hosts, services, creds, loots, err := fetchWorkspaceCollections(ctx, db, workspace)
 	if err != nil {
 		return err
 	}
@@ -225,6 +259,9 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	// fallback decides. A failed list is non-fatal: the monitor then picks
 	// them up tagged with the current workspace.
 	liveSessions, _ := gomsf.NewSessionManager(rpc).List(ctx)
+	// The job list seeds the listener registry reconciliation: a persisted
+	// handler whose job the daemon no longer has must not survive.
+	liveJobs, jobsErr := gomsf.NewJobManager(rpc).List(ctx)
 	e.mu.Lock()
 	prevTags := make(map[string]sessionTag, len(e.sessionTags))
 	for sid, tag := range e.sessionTags {
@@ -304,7 +341,13 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 		}
 		e.sessionTags[sid] = sessionTag{workspace: st.Workspace, uuid: st.UUID, operator: st.OpenedBy}
 	}
-	e.jobs = make(map[string]*protocol.JobState)
+	e.jobs = make(map[string]*protocol.JobState, len(liveJobs))
+	if jobsErr == nil {
+		for id, name := range liveJobs {
+			e.jobs[id] = &protocol.JobState{ID: id, Name: name, StartedAt: time.Now().UTC()}
+		}
+	}
+	listenerPersist := e.seedListenersLocked(liveJobs, jobsErr == nil)
 	e.exploitRuns = nil
 	e.earlySessions = nil
 	e.errStreak = 0
@@ -319,6 +362,9 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	}
 	e.mu.Unlock()
 	committed = true // the engine owns rpc and the consoles from the swap on
+	if listenerPersist != nil {
+		_ = e.cfg.Store.SaveListeners(listenerPersist)
+	}
 	if oldCancel != nil {
 		oldCancel()
 	}
@@ -365,6 +411,10 @@ func (e *Engine) DisconnectAs(operator string) {
 		e.connecting = false
 	}
 	cancel := e.runCancel
+	// every in-flight operation belongs to the link being dropped; mark
+	// them canceled now so the table is truthful even before the workers
+	// unwind, then cancel their contexts below
+	opCancels := e.cancelOperationsLocked()
 	dropRPC := e.rpc
 	dropConsoleIDs := make([]string, 0, len(e.consoles))
 	for _, oc := range e.consoles {
@@ -387,6 +437,7 @@ func (e *Engine) DisconnectAs(operator string) {
 	e.routes = nil
 	hadSessions := len(e.sessions) > 0
 	hadJobs := len(e.jobs) > 0
+	hadListeners := e.clearListenersLocked()
 	e.sessions = make(map[string]*protocol.SessionState)
 	e.jobs = make(map[string]*protocol.JobState)
 	// every operator's session view dies with the link; each socket hears
@@ -421,7 +472,13 @@ func (e *Engine) DisconnectAs(operator string) {
 	if hadJobs {
 		e.bus.send(protocol.JobsUpdate(map[string]*protocol.JobState{}))
 	}
+	if hadListeners {
+		e.bus.send(protocol.ListenersUpdate([]*protocol.ListenerState{}))
+	}
 	e.mu.Unlock()
+	for _, opCancel := range opCancels {
+		opCancel()
+	}
 	if cancel != nil {
 		cancel()
 	}

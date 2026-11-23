@@ -1,21 +1,22 @@
-import { Show, createEffect, createSignal } from "solid-js";
+import { Show, createEffect, createMemo, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { FilterSelect } from "../components/FilterSelect";
+import { errorMessage } from "../errors";
 
 const FORMATS = ["exe", "elf", "macho", "msi", "apk", "war", "jar", "raw",
   "base64", "hex", "c", "csharp", "java", "python", "powershell", "ps1", "ruby", "sh"];
 
 export function PayloadDialog(props: { onClose: () => void }) {
-  const payloads = () => campaignState().modules?.payloads ?? [];
+  const modules = createMemo(() => campaignState().modules);
+  const payloads = createMemo(() => modules()?.payloads ?? []);
+  const [payload, setPayload] = createSignal("");
   createEffect(() => {
     if (!payload() && payloads().length > 0) {
       setPayload(payloads().find(p => p.includes("linux/x64/meterpreter/reverse_tcp")) ?? payloads()[0]!);
     }
   });
-  const [payload, setPayload] = createSignal("");
   const [lhost, setLhost] = createSignal("");
   const [lport, setLport] = createSignal("4444");
   const [format, setFormat] = createSignal("base64");
@@ -39,7 +40,7 @@ export function PayloadDialog(props: { onClose: () => void }) {
       );
       setResult(res);
     } catch (e) {
-      setError(e instanceof CommandError ? `${e.code}: ${e.message}` : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }

@@ -1,3 +1,4 @@
+import { createMemo } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { campaignState } from "../stores/store";
 import { openContextMenuFor } from "../components/contextmenu";
@@ -7,14 +8,22 @@ import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
 
 export function ServicesView(props: { onInspect: (addr: string) => void; selected?: string }) {
-  const rows = () => campaignState().services.filter((s): s is ServiceState => !!s);
+  const services = createMemo(() => campaignState().services);
+  // Stable, host-major order keeps a refresh from shuffling rows, and the
+  // memo means unrelated campaign updates do not re-filter the table.
+  const rows = createMemo(() => services()
+    .filter((s): s is ServiceState => !!s)
+    .sort((a, b) =>
+      a.host.localeCompare(b.host, undefined, { numeric: true })
+      || a.port - b.port
+      || a.proto.localeCompare(b.proto)));
 
   return (
     <div class="svcwrap">
       <DataTable
         rows={rows()}
-        rowKey={(r) => r.host}
-        selectedKey={() => props.selected}
+        rowKey={(r) => `${r.host}:${r.proto}:${r.port}`}
+        selectedRow={(r) => r.host === props.selected}
         emptyTitle="No services"
         emptyIcon="stack"
         empty="No services discovered yet; run a services scan or open a host in the inspector."

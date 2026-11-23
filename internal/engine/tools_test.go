@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -488,5 +489,47 @@ func TestMultiAttachKeepsTranscripts(t *testing.T) {
 	st = e.State()
 	if st.Interact == nil || st.Interact.SID != "1" {
 		t.Fatalf("interact after detaching other tab: %+v", st.Interact)
+	}
+}
+
+// A loot row past the daemon's 100-row unpaged cap must still resolve. The
+// request filters by type only so the target can sit beyond the first page;
+// paging must walk to it.
+func TestLootDownloadPagesPastTheDaemonCap(t *testing.T) {
+	fake := stdFake()
+	fake.set(gomsf.DbLoots, func(args ...interface{}) (interface{}, error) {
+		opts := args[0].(map[string]interface{})
+		limit, offset := 100, 0
+		if v, ok := opts["limit"].(int); ok {
+			limit = v
+		}
+		if v, ok := opts["offset"].(int); ok {
+			offset = v
+		}
+		rows := []interface{}{}
+		for i := offset; i < 205 && i < offset+limit; i++ {
+			host := "10.0.0.9"
+			if i == 204 {
+				host = "10.0.0.5"
+			}
+			rows = append(rows, map[string]interface{}{
+				"host": host, "ltype": "host.file", "name": "",
+				"data": fmt.Sprintf("/msf/loot/%03d", i),
+			})
+		}
+		return map[string]interface{}{"loots": rows}, nil
+	})
+	e := connectedEngine(t, fake)
+	raw, eb := e.Exec(context.Background(), "", "loot.download", json.RawMessage(
+		`{"host":"10.0.0.5","type":"host.file"}`))
+	if eb != nil {
+		t.Fatalf("loot.download: %+v", eb)
+	}
+	var payload protocol.LootPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Data != "/msf/loot/204" {
+		t.Fatalf("payload %+v", payload)
 	}
 }

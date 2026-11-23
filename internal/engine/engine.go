@@ -15,6 +15,7 @@ import (
 
 	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
+	"github.com/jolovicdev/hayduk/internal/store"
 )
 
 const (
@@ -42,6 +43,9 @@ type Config struct {
 	// RPC, when set, replaces the real client (tests). The engine then never
 	// dials msfrpcd itself.
 	RPC gomsf.RPCCaller
+	// Store, when set, persists the event/audit log, the rank cache, the
+	// listener registry and saved connection profiles.
+	Store *store.Store
 }
 
 func (c Config) withDefaults() Config {
@@ -117,6 +121,13 @@ type Engine struct {
 	operators     map[string]int
 	seq           int64
 	errStreak     int
+	// operations are the engine-owned long-running tasks: scans, login
+	// sprays and Hail Marys. opSeq names them.
+	operations map[string]*operation
+	opSeq      uint64
+	// listeners is the multi/handler registry, reconciled against the live
+	// job list on every connect and persisted so it survives a restart.
+	listeners []*protocol.ListenerState
 
 	connecting bool
 	// connectSeq names the connection attempt that owns the connecting slot;
@@ -142,6 +153,9 @@ type Engine struct {
 	// routeKick wakes the route poller out of band; an autoroute job ending
 	// kicks it so new pivots show up at once instead of next interval
 	routeKick chan struct{}
+	// refreshKick coalesces post-mutation refreshes. A command returns as
+	// soon as the write lands; the table update follows on the refresh loop.
+	refreshKick chan struct{}
 
 	bus *bus
 	wg  sync.WaitGroup
@@ -150,12 +164,22 @@ type Engine struct {
 func New(cfg Config) *Engine {
 	cfg = cfg.withDefaults()
 	e := &Engine{
-		cfg:       cfg,
-		sessions:  make(map[string]*protocol.SessionState),
-		jobs:      make(map[string]*protocol.JobState),
-		bus:       newBus(),
-		conn:      protocol.ConnectionState{Status: "disconnected"},
-		routeKick: make(chan struct{}, 1),
+		cfg:         cfg,
+		sessions:    make(map[string]*protocol.SessionState),
+		jobs:        make(map[string]*protocol.JobState),
+		bus:         newBus(),
+		conn:        protocol.ConnectionState{Status: "disconnected"},
+		routeKick:   make(chan struct{}, 1),
+		refreshKick: make(chan struct{}, 1),
+	}
+	if cfg.Store != nil {
+		e.moduleRanks = cfg.Store.LoadRanks()
+		if events, err := cfg.Store.LoadEvents(eventRingCap); err == nil && len(events) > 0 {
+			e.events = events
+			// the audit log's sequence survives restarts: a reconnecting
+			// browser must never see it jump backwards
+			e.seq = events[len(events)-1].Seq
+		}
 	}
 	e.wg.Add(1)
 	go func() {
@@ -293,6 +317,8 @@ func (e *Engine) stateForLocked(operator string) protocol.CampaignState {
 	s.Console = e.consoleStateForLocked(operator)
 	s.Interact = e.interactStateForLocked(operator)
 	s.Operators = e.operatorListLocked()
+	s.Operations = e.operationListLocked()
+	s.Listeners = emptyIfNil(deepSlice(e.listeners))
 	return s
 }
 
@@ -326,17 +352,8 @@ func deepSlice[T any](in []*T) []*T {
 	return out
 }
 
-// copySlice and copyMap copy only the container; elements are shared, which
-// is safe for broadcast values under the engine's copy-on-write rule.
-func copySlice[T any](in []T) []T {
-	if in == nil {
-		return nil
-	}
-	out := make([]T, len(in))
-	copy(out, in)
-	return out
-}
-
+// copyMap copies only the container; elements are shared, which is safe for
+// broadcast values under the engine's copy-on-write rule.
 func copyMap[K comparable, V any](in map[K]V) map[K]V {
 	if in == nil {
 		return nil
@@ -376,6 +393,9 @@ func (e *Engine) logfIn(ws, operator, level, format string, args ...any) {
 	e.events = append(e.events, entry)
 	if len(e.events) > eventRingCap {
 		e.events = e.events[len(e.events)-eventRingCap:]
+	}
+	if e.cfg.Store != nil {
+		e.cfg.Store.AppendEvent(entry)
 	}
 	e.bus.send(protocol.ServerMessageFromEvent(entry))
 }
@@ -592,6 +612,8 @@ func (e *Engine) Exec(ctx context.Context, operator, method string, params json.
 		}
 		e.eventfOpIn("", operator, protocol.LevelChat, "%s", text)
 		return nil, nil
+	case protocol.MethodProfileList:
+		return mustJSON(e.profiles()), nil
 	case protocol.MethodReportHTML:
 		html, eb := e.reportDocument()
 		if eb != nil {

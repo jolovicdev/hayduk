@@ -1,22 +1,27 @@
-import { Show, createSignal } from "solid-js";
+import { Show, createMemo, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/modal";
 import { openContextMenuFor } from "../components/contextmenu";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { ws } from "../ws/singleton";
-import { CommandError } from "../ws/client";
 import { flash } from "../statusflash";
 import type { HostState } from "../protocol/types";
+import { serviceOpen } from "./serviceState";
+import { errorMessage } from "../errors";
 
 export function HostsView(props: { onInspect: (addr: string) => void; selected?: string }) {
-  const rows = () => campaignState().hosts.filter((h): h is HostState => !!h);
-  const serviceCounts = () => {
+  const hosts = createMemo(() => campaignState().hosts);
+  const services = createMemo(() => campaignState().services);
+  const rows = createMemo(() => hosts()
+    .filter((h): h is HostState => !!h)
+    .sort((a, b) => a.address.localeCompare(b.address, undefined, { numeric: true })));
+  const serviceCounts = createMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of campaignState().services) {
-      if (s) counts.set(s.host, (counts.get(s.host) ?? 0) + 1);
+    for (const s of services()) {
+      if (s && serviceOpen(s)) counts.set(s.host, (counts.get(s.host) ?? 0) + 1);
     }
     return counts;
-  };
+  });
   const [adding, setAdding] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [noteFor, setNoteFor] = createSignal<HostState | null>(null);
@@ -35,7 +40,7 @@ export function HostsView(props: { onInspect: (addr: string) => void; selected?:
       await ws.command(method, params);
       close();
     } catch (e) {
-      setError(e instanceof CommandError ? e.message : String(e));
+      setError(errorMessage(e));
     } finally {
       setBusy(false);
     }
