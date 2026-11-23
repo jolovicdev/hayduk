@@ -22,194 +22,138 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
 <style>
   :root {
     color-scheme: light;
-    --ink: #161614;
-    --ink-2: #4a4843;
-    --ink-3: #76726a;
-    --paper: #f6f5f2;
-    --card: #ffffff;
-    --line: #e4e1da;
-    --line-strong: #d1cdc3;
-    --masthead: #141413;
-    --accent: #ff6b2b;
-    --crimson: #c2271e;
-    --crimson-bg: #fdeceb;
-    --amber: #9a5b08;
-    --amber-bg: #fef4e0;
-    --emerald: #137347;
-    --emerald-bg: #e7f6ee;
-    --slate-bg: #f1efe9;
+    --ink: #141413;
+    --ink-2: #46443f;
+    --ink-3: #757168;
+    --paper: #ffffff;
+    --tint: #f7f6f3;
+    --rule: #e2dfd7;
+    --rule-strong: #141413;
+    --red: #b42318;
+    --amber: #8a5300;
+    --green: #146c43;
     --mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, monospace;
     --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); font: 13.5px/1.55 var(--sans); -webkit-font-smoothing: antialiased; }
+  html, body { margin: 0; padding: 0; background: var(--paper); color: var(--ink); font: 13.5px/1.6 var(--sans); -webkit-font-smoothing: antialiased; }
+  main { max-width: 980px; margin: 0 auto; padding: 48px 36px 72px; }
 
-  /* Executive masthead */
-  .masthead { background: var(--masthead); color: #f4f1ea; border-bottom: 3px solid var(--accent); }
-  .masthead-inner { max-width: 1060px; margin: 0 auto; padding: 28px 32px 26px; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 20px; }
-  .brand-row { display: flex; align-items: center; gap: 14px; }
-  .brand-mark { width: 34px; height: 34px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; flex: none; }
-  .brand-kicker { font: 600 10.5px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #ff9a6c; margin-bottom: 6px; }
-  h1 { font-size: 24px; font-weight: 700; letter-spacing: -.015em; margin: 0; line-height: 1.15; color: #ffffff; }
-  .meta { color: #b7b1a6; font-size: 12.5px; margin: 6px 0 0; }
-  .meta b { color: #ffffff; font-weight: 600; }
-  .class-pill { display: inline-flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 4px; border: 1px solid rgba(255, 107, 43, .45); background: rgba(255, 107, 43, .14); color: #ffb494; font: 600 10.5px/1 var(--mono); letter-spacing: .09em; text-transform: uppercase; }
-  .class-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
+  /* Document header — plain Swiss technical typography */
+  .doc-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 20px; padding-bottom: 18px; border-bottom: 2px solid var(--rule-strong); }
+  .doc-kicker { font: 600 11px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin: 0 0 8px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -.02em; margin: 0; line-height: 1.15; }
+  .meta { color: var(--ink-2); font-size: 12.5px; margin: 8px 0 0; }
+  .meta b { color: var(--ink); font-weight: 600; }
+  .doc-class { font: 600 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
 
-  main { max-width: 1060px; margin: 0 auto; padding: 28px 32px 64px; }
+  /* Summary ledger — single ruled strip, no cards or top borders */
+  .ledger { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-bottom: 1px solid var(--rule); margin: 0; }
+  .ledger-cell { padding: 16px 14px 15px 0; border-right: 1px solid var(--rule); padding-left: 14px; }
+  .ledger-cell:first-child { padding-left: 0; }
+  .ledger-cell:last-child { border-right: 0; }
+  .ledger-val { font: 600 22px/1.1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+  .ledger-val.is-red { color: var(--red); }
+  .ledger-lbl { font: 500 11px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-top: 5px; }
 
-  /* Quick navigation */
-  .toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 24px; }
-  .toc a { text-decoration: none; color: var(--ink-2); background: var(--card); border: 1px solid var(--line); border-radius: 5px; padding: 5px 11px; font: 500 12px/1 var(--sans); transition: border-color .12s, color .12s; }
-  .toc a:hover { border-color: var(--accent); color: var(--ink); }
-  .toc a span { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-left: 5px; }
-
-  /* Executive summary metrics */
-  .summary-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .metric { background: var(--card); border: 1px solid var(--line); border-top: 3px solid var(--line-strong); border-radius: 6px; padding: 14px 16px 13px; }
-  .metric.hi { border-top-color: var(--crimson); }
-  .metric.warn { border-top-color: var(--amber); }
-  .metric.brand { border-top-color: var(--accent); }
-  .metric-val { font: 700 24px/1.1 var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); letter-spacing: -.02em; }
-  .metric-lbl { font-size: 11.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-3); margin-top: 6px; }
-
-  /* Coverage bar */
-  .coverage { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 14px 18px; margin-bottom: 28px; }
-  .cov-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 9px; font-size: 12px; }
-  .cov-title { font-weight: 600; color: var(--ink); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
-  .cov-legend { display: flex; flex-wrap: wrap; gap: 14px; color: var(--ink-2); font-size: 12px; }
-  .cov-legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
-  .cov-bar { height: 8px; border-radius: 4px; background: var(--slate-bg); overflow: hidden; display: flex; }
-  .cov-seg.access { background: var(--crimson); }
-  .cov-seg.login { background: #d98216; }
+  /* Inline table of contents */
+  .toc { display: flex; flex-wrap: wrap; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--rule); font-size: 12.5px; }
+  .toc a { color: var(--ink-2); text-decoration: none; }
+  .toc a:hover { color: var(--ink); text-decoration: underline; }
+  .toc a span { font-family: var(--mono); font-size: 11px; color: var(--ink-3); margin-left: 4px; }
 
   /* Sections */
-  section { margin-top: 30px; }
-  .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; border-bottom: 1px solid var(--line-strong); padding-bottom: 7px; }
-  h2 { font-size: 14px; font-weight: 700; margin: 0; text-transform: uppercase; letter-spacing: .08em; color: var(--ink); display: flex; align-items: center; gap: 8px; }
-  .sec-num { font: 600 11.5px/1 var(--mono); color: var(--accent); }
+  section { margin-top: 38px; }
+  .sec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--rule-strong); margin-bottom: 2px; }
+  h2 { font-size: 13px; font-weight: 700; margin: 0; text-transform: uppercase; letter-spacing: .09em; color: var(--ink); }
+  .sec-num { font-family: var(--mono); font-weight: 600; color: var(--ink-3); margin-right: 8px; }
   .sec-count { font: 500 11.5px/1 var(--mono); color: var(--ink-3); }
+  .sensitive { font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--red); margin-left: 6px; }
+  .notice { margin: 12px 0 6px; padding: 8px 12px; border-left: 2px solid var(--red); background: var(--tint); color: var(--ink-2); font-size: 12.5px; }
 
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-  .card-pad { padding: 16px 20px; }
-
-  .notice { display: flex; align-items: flex-start; gap: 10px; padding: 11px 16px; background: #fff8f6; border-bottom: 1px solid #f5d3cf; color: #8c1d18; font-size: 12.5px; }
-  .notice b { font-weight: 700; }
-  .sensitive { display: inline-block; font: 700 10px/1 var(--mono); letter-spacing: .07em; text-transform: uppercase; color: var(--crimson); background: var(--crimson-bg); border: 1px solid #f5c6c3; border-radius: 3px; padding: 3px 6px; vertical-align: middle; }
-
-  /* Tables */
+  /* Tables directly on the page */
   .table-wrap { width: 100%; overflow-x: auto; }
   table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
-  thead th { text-align: left; color: var(--ink-3); font: 600 10.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .07em; padding: 10px 14px; background: #faf9f6; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  tbody td { padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: top; color: var(--ink); }
+  thead th { text-align: left; color: var(--ink-3); font: 600 10.5px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .07em; padding: 10px 12px 9px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+  tbody td { padding: 9px 12px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: top; color: var(--ink); }
   tbody tr:last-child td { border-bottom: 0; }
-  tbody tr:hover { background: #fbfaf7; }
   td.m, th.m { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
-  td.wrap { overflow-wrap: anywhere; max-width: 320px; }
-  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  .empty-note { margin: 0; color: var(--ink-3); font-size: 13px; }
+  td.wrap { overflow-wrap: anywhere; max-width: 340px; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 16px; }
+  .empty-note { margin: 14px 0 0; color: var(--ink-3); font-size: 13px; }
 
-  /* Badges */
-  .access { display: inline-block; font: 700 10px/1 var(--mono); letter-spacing: .06em; border-radius: 4px; padding: 4px 7px; text-transform: uppercase; }
-  .access.yes { color: var(--crimson); background: var(--crimson-bg); border: 1px solid #f5c6c3; }
-  .access.cred { color: var(--amber); background: var(--amber-bg); border: 1px solid #f2d79c; }
-  .access.no { color: var(--ink-3); background: var(--slate-bg); border: 1px solid var(--line); }
+  /* Restrained typographic status labels */
+  .access { font: 600 11px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; }
+  .access.yes { color: var(--red); }
+  .access.cred { color: var(--amber); }
+  .access.no { color: var(--ink-3); font-weight: 500; }
 
-  .lvl { display: inline-block; font: 700 10px/1 var(--mono); letter-spacing: .05em; text-transform: uppercase; border-radius: 3px; padding: 3px 6px; }
-  .lvl-error { color: var(--crimson); background: var(--crimson-bg); }
-  .lvl-success { color: var(--emerald); background: var(--emerald-bg); }
-  .lvl-warn { color: var(--amber); background: var(--amber-bg); }
-  .lvl-info { color: var(--ink-2); background: var(--slate-bg); }
+  .lvl { font: 600 11px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+  .lvl-error { color: var(--red); }
+  .lvl-success { color: var(--green); }
+  .lvl-warn { color: var(--amber); }
+  .lvl-info { color: var(--ink-3); }
 
-  footer { margin-top: 44px; padding-top: 16px; border-top: 1px solid var(--line-strong); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; color: var(--ink-3); font-size: 11.5px; }
-  footer b { color: var(--ink-2); }
+  footer { margin-top: 56px; padding-top: 14px; border-top: 1px solid var(--rule); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; color: var(--ink-3); font-size: 11.5px; }
 
-  @media (max-width: 820px) {
-    .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .masthead-inner, main { padding-left: 18px; padding-right: 18px; }
+  @media (max-width: 760px) {
+    main { padding: 28px 18px 48px; }
+    .ledger { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .ledger-cell { border-right: 0; border-bottom: 1px solid var(--rule); padding: 12px 8px 12px 0; }
   }
   @media print {
-    @page { margin: 14mm; }
-    html, body { background: #ffffff; }
-    .masthead { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { margin: 16mm; }
+    main { max-width: none; padding: 0; }
     .toc { display: none; }
-    main { max-width: none; padding: 18px 0 0; }
-    .card, .metric, .coverage, tbody tr { break-inside: avoid; }
     .sec-head { break-after: avoid; }
-    .access, .lvl, .sensitive, .cov-seg { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    tbody tr { break-inside: avoid; }
   }
 </style>
 </head>
 <body>
-<header class="masthead">
-  <div class="masthead-inner">
-    <div class="brand-row">
-      <div class="brand-mark" aria-hidden="true">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-          <path d="M5 4h4v6.5h6V4h4v16h-4v-6H9v6H5V4z" fill="#141413"/>
-        </svg>
-      </div>
-      <div>
-        <div class="brand-kicker">Security Assessment Deliverable</div>
-        <h1>Hayduk campaign report</h1>
-        <p class="meta">Generated {{.Generated}} · workspace <b>{{.Workspace}}</b>{{if .MSFVersion}} · metasploit {{.MSFVersion}}{{end}}</p>
-      </div>
-    </div>
-    <div class="class-pill"><span class="class-dot"></span>Confidential · Authorized Assessment</div>
-  </div>
-</header>
-
 <main>
-  <nav class="toc" aria-label="Report sections">
-    <a href="#hosts">Hosts<span>{{.HostCount}}</span></a>
-    <a href="#services">Services<span>{{.ServiceCount}}</span></a>
-    <a href="#sessions">Sessions<span>{{.SessionCount}}</span></a>
-    <a href="#credentials">Credentials<span>{{.CredCount}}</span></a>
-    <a href="#loot">Loot<span>{{.LootCount}}</span></a>
-    <a href="#timeline">Event log<span>{{len .Events}}</span></a>
-  </nav>
+  <header class="doc-head">
+    <div>
+      <p class="doc-kicker">Hayduk · Security Assessment Deliverable</p>
+      <h1>Hayduk campaign report</h1>
+      <p class="meta">Generated {{.Generated}} · workspace <b>{{.Workspace}}</b>{{if .MSFVersion}} · metasploit {{.MSFVersion}}{{end}}</p>
+    </div>
+    <span class="doc-class">Confidential</span>
+  </header>
 
-  <div class="summary-grid">
-    <div class="metric brand"><div class="metric-val">{{.HostCount}}</div><div class="metric-lbl">Hosts</div></div>
-    <div class="metric hi"><div class="metric-val">{{.AccessCount}}</div><div class="metric-lbl">Compromised</div></div>
-    <div class="metric"><div class="metric-val">{{.ServiceCount}}</div><div class="metric-lbl">Open services</div></div>
-    <div class="metric hi"><div class="metric-val">{{.SessionCount}}</div><div class="metric-lbl">Active sessions</div></div>
-    <div class="metric warn"><div class="metric-val">{{.CredCount}}</div><div class="metric-lbl">Credentials</div></div>
-    <div class="metric"><div class="metric-val">{{.LootCount}}</div><div class="metric-lbl">Loot items</div></div>
+  <div class="ledger">
+    <div class="ledger-cell"><div class="ledger-val">{{.HostCount}}</div><div class="ledger-lbl">Hosts</div></div>
+    <div class="ledger-cell"><div class="ledger-val{{if gt .AccessCount 0}} is-red{{end}}">{{.AccessCount}}</div><div class="ledger-lbl">Access</div></div>
+    <div class="ledger-cell"><div class="ledger-val">{{.ServiceCount}}</div><div class="ledger-lbl">Services</div></div>
+    <div class="ledger-cell"><div class="ledger-val">{{.SessionCount}}</div><div class="ledger-lbl">Sessions</div></div>
+    <div class="ledger-cell"><div class="ledger-val">{{.CredCount}}</div><div class="ledger-lbl">Credentials</div></div>
+    <div class="ledger-cell"><div class="ledger-val">{{.LootCount}}</div><div class="ledger-lbl">Loot</div></div>
   </div>
 
-  {{if gt .HostCount 0}}<div class="coverage">
-    <div class="cov-head">
-      <span class="cov-title">Target access coverage</span>
-      <span class="cov-legend">
-        <span><i style="background:#c2271e"></i>Access ({{.AccessCount}})</span>
-        <span><i style="background:#d98216"></i>Login available ({{.LoginCount}})</span>
-        <span><i style="background:#d1cdc3"></i>Discovered ({{.DiscoveredCount}})</span>
-      </span>
-    </div>
-    <div class="cov-bar">
-      {{if gt .AccessPct 0}}<div class="cov-seg access" style="width:{{.AccessPct}}%"></div>{{end}}
-      {{if gt .LoginPct 0}}<div class="cov-seg login" style="width:{{.LoginPct}}%"></div>{{end}}
-    </div>
-  </div>{{end}}
+  <nav class="toc" aria-label="Report sections">
+    <a href="#hosts">01 Hosts<span>{{.HostCount}}</span></a>
+    <a href="#services">02 Services<span>{{.ServiceCount}}</span></a>
+    <a href="#sessions">03 Sessions<span>{{.SessionCount}}</span></a>
+    <a href="#credentials">04 Credentials<span>{{.CredCount}}</span></a>
+    <a href="#loot">05 Loot<span>{{.LootCount}}</span></a>
+    <a href="#timeline">06 Event log<span>{{len .Events}}</span></a>
+  </nav>
 
   <section id="hosts">
     <div class="sec-head">
       <h2><span class="sec-num">01</span>Hosts</h2>
       <span class="sec-count">{{.HostCount}} recorded</span>
     </div>
-    <div class="card">
-      {{if .Hosts}}<div class="table-wrap"><table>
-        <thead><tr><th>Address</th><th>Hostname</th><th>Operating system</th><th class="num">Services</th><th>Access</th></tr></thead>
-        <tbody>{{range .Hosts}}<tr>
-          <td class="m">{{.Address}}</td>
-          <td>{{if .Name}}{{.Name}}{{else}}—{{end}}</td>
-          <td>{{if .OS}}{{.OS}}{{else}}—{{end}}</td>
-          <td class="m num">{{.Services}}</td>
-          <td>{{if .Access}}<span class="access yes">ACCESS</span>{{else if .Cred}}<span class="access cred">LOGIN</span>{{else}}<span class="access no">none</span>{{end}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No hosts recorded.</p></div>{{end}}
-    </div>
+    {{if .Hosts}}<div class="table-wrap"><table>
+      <thead><tr><th>Address</th><th>Hostname</th><th>Operating system</th><th class="num">Services</th><th>Access</th></tr></thead>
+      <tbody>{{range .Hosts}}<tr>
+        <td class="m">{{.Address}}</td>
+        <td>{{if .Name}}{{.Name}}{{else}}—{{end}}</td>
+        <td>{{if .OS}}{{.OS}}{{else}}—{{end}}</td>
+        <td class="m num">{{.Services}}</td>
+        <td>{{if .Access}}<span class="access yes">ACCESS</span>{{else if .Cred}}<span class="access cred">LOGIN</span>{{else}}<span class="access no">none</span>{{end}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No hosts recorded.</p>{{end}}
   </section>
 
   <section id="services">
@@ -217,59 +161,53 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
       <h2><span class="sec-num">02</span>Services</h2>
       <span class="sec-count">{{.ServiceCount}} recorded</span>
     </div>
-    <div class="card">
-      {{if .Services}}<div class="table-wrap"><table>
-        <thead><tr><th>Host</th><th>Port</th><th>Protocol</th><th>Service</th><th>Fingerprint / Details</th></tr></thead>
-        <tbody>{{range .Services}}<tr>
-          <td class="m">{{.Host}}</td>
-          <td class="m">{{.Port}}</td>
-          <td class="m">{{.Proto}}</td>
-          <td>{{.Name}}</td>
-          <td class="wrap">{{if .Info}}{{.Info}}{{else}}—{{end}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No services recorded.</p></div>{{end}}
-    </div>
+    {{if .Services}}<div class="table-wrap"><table>
+      <thead><tr><th>Host</th><th>Port</th><th>Proto</th><th>Service</th><th>Fingerprint / Details</th></tr></thead>
+      <tbody>{{range .Services}}<tr>
+        <td class="m">{{.Host}}</td>
+        <td class="m">{{.Port}}</td>
+        <td class="m">{{.Proto}}</td>
+        <td>{{.Name}}</td>
+        <td class="wrap">{{if .Info}}{{.Info}}{{else}}—{{end}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No services recorded.</p>{{end}}
   </section>
 
   <section id="sessions">
     <div class="sec-head">
       <h2><span class="sec-num">03</span>Sessions</h2>
-      <span class="sec-count">{{.SessionCount}} active at export</span>
+      <span class="sec-count">{{.SessionCount}} open at export</span>
     </div>
-    <div class="card">
-      {{if .Sessions}}<div class="table-wrap"><table>
-        <thead><tr><th>ID</th><th>Type</th><th>User</th><th>Host</th><th>Via module</th><th>Opened</th></tr></thead>
-        <tbody>{{range .Sessions}}<tr>
-          <td class="m">{{.ID}}</td>
-          <td>{{.Type}}</td>
-          <td class="m">{{if .User}}{{.User}}{{else}}—{{end}}</td>
-          <td class="m">{{.Host}}</td>
-          <td class="m wrap">{{if .Via}}{{.Via}}{{else}}—{{end}}</td>
-          <td class="m">{{.Opened}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No sessions were open at export time.</p></div>{{end}}
-    </div>
+    {{if .Sessions}}<div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Type</th><th>User</th><th>Host</th><th>Via module</th><th>Opened</th></tr></thead>
+      <tbody>{{range .Sessions}}<tr>
+        <td class="m">{{.ID}}</td>
+        <td>{{.Type}}</td>
+        <td class="m">{{if .User}}{{.User}}{{else}}—{{end}}</td>
+        <td class="m">{{.Host}}</td>
+        <td class="m wrap">{{if .Via}}{{.Via}}{{else}}—{{end}}</td>
+        <td class="m">{{.Opened}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No sessions were open at export time.</p>{{end}}
   </section>
 
   <section id="credentials">
     <div class="sec-head">
-      <h2><span class="sec-num">04</span>Credentials <span class="sensitive">sensitive</span></h2>
+      <h2><span class="sec-num">04</span>Credentials <span class="sensitive">(sensitive)</span></h2>
       <span class="sec-count">{{.CredCount}} recovered</span>
     </div>
-    <div class="card">
-      {{if .Creds}}<div class="notice"><b>Handling notice:</b> Cleartext passwords and hashes below are sensitive assessment artifacts. Redact or encrypt before wider distribution.</div>
-      <div class="table-wrap"><table>
-        <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>User</th><th>Password / hash</th><th>Type</th></tr></thead>
-        <tbody>{{range .Creds}}<tr>
-          <td class="m">{{.Host}}</td>
-          <td class="m">{{.Port}}</td>
-          <td>{{.Service}}</td>
-          <td class="m">{{.User}}</td>
-          <td class="m wrap">{{.Pass}}</td>
-          <td>{{.Type}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No credentials recovered.</p></div>{{end}}
-    </div>
+    {{if .Creds}}<p class="notice">Cleartext passwords and hashes below are sensitive assessment artifacts. Redact or encrypt before wider distribution.</p>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Host</th><th>Port</th><th>Service</th><th>User</th><th>Password / hash</th><th>Type</th></tr></thead>
+      <tbody>{{range .Creds}}<tr>
+        <td class="m">{{.Host}}</td>
+        <td class="m">{{.Port}}</td>
+        <td>{{.Service}}</td>
+        <td class="m">{{.User}}</td>
+        <td class="m wrap">{{.Pass}}</td>
+        <td>{{.Type}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No credentials recovered.</p>{{end}}
   </section>
 
   <section id="loot">
@@ -277,17 +215,15 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
       <h2><span class="sec-num">05</span>Loot</h2>
       <span class="sec-count">{{.LootCount}} items</span>
     </div>
-    <div class="card">
-      {{if .Loot}}<div class="table-wrap"><table>
-        <thead><tr><th>Host</th><th>Type</th><th>Name</th><th>Info</th></tr></thead>
-        <tbody>{{range .Loot}}<tr>
-          <td class="m">{{.Host}}</td>
-          <td>{{.Type}}</td>
-          <td>{{.Name}}</td>
-          <td class="wrap">{{.Info}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No loot collected.</p></div>{{end}}
-    </div>
+    {{if .Loot}}<div class="table-wrap"><table>
+      <thead><tr><th>Host</th><th>Type</th><th>Name</th><th>Info</th></tr></thead>
+      <tbody>{{range .Loot}}<tr>
+        <td class="m">{{.Host}}</td>
+        <td>{{.Type}}</td>
+        <td>{{.Name}}</td>
+        <td class="wrap">{{.Info}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No loot collected.</p>{{end}}
   </section>
 
   <section id="timeline">
@@ -295,22 +231,20 @@ var reportTmpl = template.Must(template.New("report").Parse(`<!DOCTYPE html>
       <h2><span class="sec-num">06</span>Event log</h2>
       <span class="sec-count">{{len .Events}} entries</span>
     </div>
-    <div class="card">
-      {{if .Events}}<div class="table-wrap"><table>
-        <thead><tr><th>Time</th><th>Level</th><th>Operator</th><th>Event</th></tr></thead>
-        <tbody>{{range .Events}}<tr>
-          <td class="m">{{.Time}}</td>
-          <td><span class="lvl lvl-{{.Level}}">{{.Level}}</span></td>
-          <td class="m">{{if .Operator}}{{.Operator}}{{else}}—{{end}}</td>
-          <td class="wrap">{{.Text}}</td>
-        </tr>{{end}}</tbody>
-      </table></div>{{else}}<div class="card-pad"><p class="empty-note">No events recorded.</p></div>{{end}}
-    </div>
+    {{if .Events}}<div class="table-wrap"><table>
+      <thead><tr><th>Time</th><th>Level</th><th>Operator</th><th>Event</th></tr></thead>
+      <tbody>{{range .Events}}<tr>
+        <td class="m">{{.Time}}</td>
+        <td><span class="lvl lvl-{{.Level}}">{{.Level}}</span></td>
+        <td class="m">{{if .Operator}}{{.Operator}}{{else}}—{{end}}</td>
+        <td class="wrap">{{.Text}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>{{else}}<p class="empty-note">No events recorded.</p>{{end}}
   </section>
 
   <footer>
-    <span>Generated by <b>Hayduk</b>. For authorized security testing only; handle credentials as sensitive material.</span>
-    <span>Tip: Print to PDF (Ctrl+P) for distribution</span>
+    <span>Generated by Hayduk. For authorized security testing only; handle credentials as sensitive material.</span>
+    <span>Self-contained HTML · Ctrl+P to save PDF</span>
   </footer>
 </main>
 </body>
