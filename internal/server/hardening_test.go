@@ -1,6 +1,7 @@
 package server
 
 import (
+	"compress/gzip"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -8,6 +9,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -239,4 +241,71 @@ func writeTestCertificate(t *testing.T) (certFile, keyFile string) {
 		t.Fatal(err)
 	}
 	return certFile, keyFile
+}
+
+func TestGzipCompressesStaticIndex(t *testing.T) {
+	s, ts, _ := testServer(t)
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: s.cookieName, Value: "testtoken"})
+	req.Header.Set("Accept-Encoding", "gzip")
+	client := &http.Client{Transport: &http.Transport{DisableCompression: true}}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	if got := resp.Header.Get("Content-Encoding"); got != "gzip" {
+		t.Fatalf("Content-Encoding = %q, want gzip", got)
+	}
+	gr, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		t.Fatalf("gzip.NewReader: %v", err)
+	}
+	defer gr.Close()
+	body, err := io.ReadAll(gr)
+	if err != nil {
+		t.Fatalf("read gzip body: %v", err)
+	}
+	if !strings.Contains(strings.ToLower(string(body)), "<!doctype html") {
+		t.Fatalf("unexpected decoded body prefix: %q", string(body[:min(len(body), 80)]))
+	}
+}
+
+func TestQueryTokenSwitchesBoundOperatorAndStripsURL(t *testing.T) {
+	e := engine.New(engine.Config{})
+	t.Cleanup(e.Shutdown)
+	s := New(e, "sharedtoken", Options{
+		Version: "test", Team: true,
+		Operators: map[string]string{
+			"alice-secret-token": "alice",
+			"bob-secret-token-2": "bob",
+		},
+	})
+	ts := httptest.NewServer(s.Handler())
+	t.Cleanup(ts.Close)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/?token=bob-secret-token-2", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.AddCookie(&http.Cookie{Name: s.cookieName, Value: "alice-secret-token"})
+	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusFound || resp.Header.Get("Location") != "/" {
+		t.Fatalf("status=%d location=%q, want 302 -> /", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	cookies := resp.Cookies()
+	if len(cookies) != 1 || cookies[0].Value != "bob-secret-token-2" {
+		t.Fatalf("cookies = %+v, want updated bob token", cookies)
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"crypto/subtle"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
@@ -182,14 +183,11 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	})
 }
 
-// guard enforces the one-time token: first hit with ?token= sets the cookie
-// and redirects to the bare path; later hits need the cookie.
+// guard enforces the one-time token: any hit with a valid ?token= sets (or
+// refreshes) the cookie and redirects to the bare path so the secret never
+// lingers in browser history or the address bar; later hits need the cookie.
 func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if _, ok := s.authorizedToken(r); ok {
-			next.ServeHTTP(w, r)
-			return
-		}
 		if token := r.URL.Query().Get("token"); token != "" {
 			if _, ok := s.tokenIdentity(token); ok {
 				http.SetCookie(w, &http.Cookie{
@@ -200,22 +198,33 @@ func (s *Server) guard(next http.Handler) http.Handler {
 				return
 			}
 		}
+		if _, ok := s.authorizedToken(r); ok {
+			next.ServeHTTP(w, r)
+			return
+		}
 		http.Error(w, "hayduk: invalid or missing token", http.StatusForbidden)
 	})
 }
 
-// tokenIdentity resolves an access token. The boolean says the token is
-// valid; the name is empty for the shared primary token, whose operator
-// label the browser chooses.
+// tokenIdentity resolves an access token using constant-time comparisons.
+// The boolean says the token is valid; the name is empty for the shared
+// primary token, whose operator label the browser chooses.
 func (s *Server) tokenIdentity(token string) (string, bool) {
 	if token == "" {
 		return "", false
 	}
-	if token == s.token {
+	if subtle.ConstantTimeCompare([]byte(token), []byte(s.token)) == 1 {
 		return "", true
 	}
-	name, ok := s.identityByToken[token]
-	return name, ok
+	var matched string
+	found := false
+	for tok, name := range s.identityByToken {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(tok)) == 1 {
+			matched = name
+			found = true
+		}
+	}
+	return matched, found
 }
 
 func (s *Server) authorizedToken(r *http.Request) (string, bool) {
@@ -278,11 +287,16 @@ func gzipCompressible(p string) bool {
 // pass through untouched - they must not grow a gzip trailer.
 type gzipResponseWriter struct {
 	http.ResponseWriter
-	gw        *gzip.Writer
-	wroteGzip bool
+	gw          *gzip.Writer
+	wroteHeader bool
+	wroteGzip   bool
 }
 
 func (g *gzipResponseWriter) WriteHeader(code int) {
+	if g.wroteHeader {
+		return
+	}
+	g.wroteHeader = true
 	if code != http.StatusNotModified && code != http.StatusNoContent {
 		h := g.Header()
 		h.Del("Content-Length")
@@ -293,6 +307,9 @@ func (g *gzipResponseWriter) WriteHeader(code int) {
 }
 
 func (g *gzipResponseWriter) Write(b []byte) (int, error) {
+	if !g.wroteHeader {
+		g.WriteHeader(http.StatusOK)
+	}
 	if !g.wroteGzip {
 		return g.ResponseWriter.Write(b) // headers already went out plain
 	}
