@@ -158,8 +158,11 @@ export default function App() {
 
   async function exportReport() {
     try {
-      const { html } = await ws.command<{ html: string }>("report.html");
-      const blob = new Blob([html], { type: "text/html" });
+      const res = await ws.command<{ html?: string }>("report.html");
+      if (typeof res?.html !== "string" || !res.html.trim()) {
+        throw new Error("server returned an empty report");
+      }
+      const blob = new Blob([res.html], { type: "text/html;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
