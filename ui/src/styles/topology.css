@@ -77,13 +77,16 @@
 #topo .login .topo-host-status, #topo .login .topo-host-state { fill: var(--amb); }
 
 /* routed ghost network */
-#topo .topo-ghost-shell { fill: #111524; stroke: var(--route-line); stroke-width: 1; stroke-dasharray: 5 4; }
+#topo .topo-ghost { cursor: pointer; outline: none; }
+#topo .topo-ghost-shell { fill: #111524; stroke: var(--route-line); stroke-width: 1; stroke-dasharray: 5 4; transition: fill .12s, stroke .12s; }
+#topo .topo-ghost:hover .topo-ghost-shell,
+#topo .topo-ghost:focus-visible .topo-ghost-shell { fill: #171d33; stroke: var(--route); }
 #topo .topo-ghost-icon-bg { fill: #182038; stroke: var(--route-line); }
 #topo .topo-ghost-icon { fill: var(--route); }
 #topo .topo-ghost-link { fill: none; stroke: var(--route); stroke-width: 1.25; }
 #topo .topo-ghost-kicker { fill: #8ca5f5; font: 600 9.5px var(--mono); letter-spacing: .06em; }
 #topo .topo-ghost-address { fill: #dde6ff; font: 600 12.5px var(--mono); }
-#topo .topo-ghost-meta { fill: #7c8eb8; font: 400 10px var(--mono); }
+#topo .topo-ghost-meta { fill: #8ca5f5; font: 500 10px var(--mono); }
 
 /* map sub-bars */
 .map-context {

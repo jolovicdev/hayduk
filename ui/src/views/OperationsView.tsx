@@ -49,7 +49,17 @@ export function OperationsView(props: { active?: () => boolean }) {
         { key: "status", label: "Status", width: "96px", render: (r) => (
           <span class={statusClass(r.status)}>{r.status}</span>
         ) },
-        { key: "progress", label: "Progress", mono: true, width: "90px", render: (r) => operationProgress(r) },
+        { key: "progress", label: "Progress", mono: true, width: "136px", render: (r) => {
+          const pct = r.total && r.total > 0 ? Math.min(100, Math.round((r.done / r.total) * 100)) : 0;
+          return (
+            <span class="op-prog">
+              <span>{operationProgress(r)}</span>
+              {r.total && r.total > 0 ? (
+                <span class="op-bar"><span class="op-fill" classList={{ running: r.status === "running" }} style={`width:${pct}%`}></span></span>
+              ) : null}
+            </span>
+          );
+        } },
         { key: "operator", label: "Operator", width: "110px", render: (r) => r.operator || "-" },
         { key: "summary", label: "Result", render: (r) => <span class="dim">{r.summary || ""}</span> },
         { key: "startedAt", label: "Started", mono: true, width: "80px", render: (r) => ageOf(r.startedAt, now()) },

@@ -8,8 +8,9 @@ export function operationsRows(list: readonly (OperationState | undefined)[]): O
 }
 
 export function operationProgress(op: OperationState): string {
-  if (op.total > 0) return `${op.done}/${op.total}`;
-  return op.done > 0 ? String(op.done) : "-";
+  const done = Number.isFinite(op.done) ? op.done : 0;
+  if (op.total > 0) return `${done}/${op.total}`;
+  return done > 0 ? String(done) : "-";
 }
 
 export function runningCount(list: readonly (OperationState | undefined)[]): number {

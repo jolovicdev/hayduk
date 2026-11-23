@@ -238,9 +238,11 @@ export function TopologyGraph(props: {
     moved: boolean; rectLeft: number; rectTop: number;
   }
   interface ChipTap { key: string; startX: number; startY: number; moved: boolean }
+  interface GhostTap { subnet: string; startX: number; startY: number; moved: boolean }
   let pan: PanState | undefined;
   let drag: DragState | undefined;
   let chipTap: ChipTap | undefined;
+  let ghostTap: GhostTap | undefined;
   let pendingClient: { x: number; y: number } | null = null;
 
   function applyPendingMove() {
@@ -270,7 +272,11 @@ export function TopologyGraph(props: {
     if (chip?.dataset.zone) {
       chipTap = { key: chip.dataset.zone, startX: event.clientX, startY: event.clientY, moved: false };
     }
-    const node = (event.target as Element).closest<SVGGElement>(".topo-node");
+    const ghost = !chipTap ? (event.target as Element).closest<SVGGElement>(".topo-ghost") : null;
+    if (ghost?.dataset.ghost) {
+      ghostTap = { subnet: ghost.dataset.ghost, startX: event.clientX, startY: event.clientY, moved: false };
+    }
+    const node = !chipTap && !ghostTap ? (event.target as Element).closest<SVGGElement>(".topo-node") : null;
     if (node?.dataset.address) {
       const rect = svgEl.getBoundingClientRect();
       const current = view();
@@ -288,7 +294,7 @@ export function TopologyGraph(props: {
         rectLeft: rect.left,
         rectTop: rect.top,
       };
-    } else if (!chipTap) {
+    } else if (!chipTap && !ghostTap) {
       const current = view();
       pan = {
         startX: event.clientX,
@@ -305,6 +311,10 @@ export function TopologyGraph(props: {
   function onPointerMove(event: PointerEvent) {
     if (chipTap) {
       if (Math.abs(event.clientX - chipTap.startX) + Math.abs(event.clientY - chipTap.startY) > 4) chipTap.moved = true;
+      return;
+    }
+    if (ghostTap) {
+      if (Math.abs(event.clientX - ghostTap.startX) + Math.abs(event.clientY - ghostTap.startY) > 4) ghostTap.moved = true;
       return;
     }
     if (drag) {
@@ -337,6 +347,9 @@ export function TopologyGraph(props: {
       const group = groups().get(chipTap.key);
       if (group) focusZone(group);
     }
+    if (ghostTap && !ghostTap.moved) {
+      props.onScanSubnet(ghostTap.subnet);
+    }
     if (drag && !drag.moved) props.onSelect(drag.address);
     if (drag?.moved) {
       const dropped = dragPosition();
@@ -352,6 +365,7 @@ export function TopologyGraph(props: {
     }
     if (pan && !pan.moved) props.onSelect(undefined);
     chipTap = undefined;
+    ghostTap = undefined;
     drag = undefined;
     pan = undefined;
     pendingClient = null;
@@ -365,6 +379,7 @@ export function TopologyGraph(props: {
     }
     setDragPosition(null);
     chipTap = undefined;
+    ghostTap = undefined;
     drag = undefined;
     pan = undefined;
     pendingClient = null;
@@ -489,7 +504,7 @@ export function TopologyGraph(props: {
                 const hostAccess = () => access()(address);
                 const badge = () => osBadge(host());
                 const osText = () => fitLabel(badge().label, 14);
-                const osWidth = () => Math.max(40, osText().length * 6.4 + 14);
+                const osWidth = () => Math.max(30, osText().length * 6.3 + 12);
                 const svcCount = () => serviceCounts().get(address) ?? 0;
                 return (
                   <Show when={position()}>{point => (
@@ -518,7 +533,7 @@ export function TopologyGraph(props: {
                       <rect class="topo-node-rail" x="0.5" y="0.5" width="3" height={NH - 1} rx="1.5" />
                       <path class="topo-node-divider" d={`M 4 88 H ${NW}`} />
                       <rect class={`topo-os-pill ${badge().key}`} x="14" y="12" width={osWidth()} height="18" rx="2" />
-                      <text class={`topo-node-os ${badge().key}`} x="21" y="24">{osText()}</text>
+                      <text class={`topo-node-os ${badge().key}`} x={14 + osWidth() / 2} y="24" text-anchor="middle">{osText()}</text>
                       <text class="topo-node-svcs-top" x={NW - 12} y="24" text-anchor="end">
                         {svcCount()} {svcCount() === 1 ? "PORT" : "PORTS"}
                       </text>
@@ -538,8 +553,18 @@ export function TopologyGraph(props: {
 
             <g class="topo-ghosts">
               <For each={Array.from(ghosts().keys())}>{(key) => (
-                <g class="topo-ghost" transform={`translate(${ghosts().get(key)!.x} ${ghosts().get(key)!.y})`}
+                <g class="topo-ghost" data-ghost={key} transform={`translate(${ghosts().get(key)!.x} ${ghosts().get(key)!.y})`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`Scan routed network ${ghosts().get(key)!.label}`}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      props.onScanSubnet(key);
+                    }
+                  }}
                   onContextMenu={event => ghostMenu(key, event)}>
+                  <title>{`Click to scan ${ghosts().get(key)!.label} · Right-click for route options`}</title>
                   <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="4" />
                   <g transform="translate(14 31)">
                     <rect class="topo-ghost-icon-bg" width="30" height="30" rx="4" />
@@ -550,7 +575,7 @@ export function TopologyGraph(props: {
                   </g>
                   <text class="topo-ghost-kicker" x="56" y="28">ROUTED NETWORK</text>
                   <text class="topo-ghost-address" x="56" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
-                  <text class="topo-ghost-meta" x="56" y="74">Awaiting discovery</text>
+                  <text class="topo-ghost-meta" x="56" y="74">Click to scan subnet →</text>
                 </g>
               )}</For>
             </g>

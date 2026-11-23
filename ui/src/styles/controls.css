@@ -14,9 +14,9 @@
   white-space: nowrap;
   transition: background .1s ease, border-color .1s ease, color .1s ease;
 }
-.tbtn i { color: var(--tx1); font-size: 13px; width: 13px; height: 13px; }
+.tbtn i { color: var(--tx1); font-size: 13px; width: 13px; height: 13px; transition: color .1s ease; }
 .tbtn:hover:not(:disabled) { background: var(--bg3); border-color: var(--line-hi); }
-.tbtn:hover:not(:disabled) i { color: var(--tx0); }
+.tbtn:not(.primary):hover:not(:disabled) i { color: var(--tx0); }
 .tbtn:active:not(:disabled) { background: var(--bg4); }
 
 .tbtn.primary {
@@ -25,8 +25,11 @@
   color: var(--accent-ink);
   font-weight: 600;
 }
-.tbtn.primary i { color: var(--accent-ink); }
-.tbtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+.tbtn.primary i,
+.tbtn.primary:hover:not(:disabled) i,
+.tbtn.primary:active:not(:disabled) i { color: var(--accent-ink); }
+.tbtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--accent-ink); }
+.tbtn.primary:active:not(:disabled) { background: #dce2ec; border-color: #dce2ec; color: var(--accent-ink); }
 
 .abtn {
   height: 28px;
@@ -41,27 +44,33 @@
   flex: none;
   font: 500 12px var(--sans);
   color: var(--tx0);
-  transition: background .1s ease, border-color .1s ease;
+  transition: background .1s ease, border-color .1s ease, color .1s ease;
 }
-.abtn i { font-size: 13px; width: 13px; height: 13px; color: var(--tx1); }
+.abtn i { font-size: 13px; width: 13px; height: 13px; color: var(--tx1); transition: color .1s ease; }
 .abtn:hover:not(:disabled) { background: var(--bg3); border-color: var(--line-hi); }
-.abtn:hover:not(:disabled) i { color: var(--tx0); }
+.abtn:not(.primary):not(.red):hover:not(:disabled) i { color: var(--tx0); }
+.abtn:active:not(:disabled) { background: var(--bg4); }
 .abtn.primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
 }
-.abtn.primary i { color: var(--accent-ink); }
-.abtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); }
+.abtn.primary i,
+.abtn.primary:hover:not(:disabled) i,
+.abtn.primary:active:not(:disabled) i { color: var(--accent-ink); }
+.abtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--accent-ink); }
+.abtn.primary:active:not(:disabled) { background: #dce2ec; border-color: #dce2ec; color: var(--accent-ink); }
 .abtn.red {
   background: var(--red);
   border-color: var(--red);
   color: #ffffff;
   font-weight: 600;
 }
-.abtn.red i { color: #ffffff; }
-.abtn.red:hover:not(:disabled) { background: var(--red-hi); border-color: var(--red-hi); }
+.abtn.red i,
+.abtn.red:hover:not(:disabled) i,
+.abtn.red:active:not(:disabled) i { color: #ffffff; }
+.abtn.red:hover:not(:disabled) { background: var(--red-hi); border-color: var(--red-hi); color: #ffffff; }
 
 /* icon-only chrome toggle button */
 .ibtn {

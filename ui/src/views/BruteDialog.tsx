@@ -156,7 +156,7 @@ export function BruteDialog(props: { host?: string; onClose: () => void }) {
         </p>
       </Show>
       <div class="mbtns">
-        <button class="abtn" disabled={!valid() || busy()} onClick={() => void start()}>
+        <button class="abtn primary" disabled={!valid() || busy()} onClick={() => void start()}>
           {busy() ? "Starting…" : `Launch ${plan().attempts.length} attempt${plan().attempts.length === 1 ? "" : "s"}`}
         </button>
       </div>

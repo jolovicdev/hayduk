@@ -367,7 +367,14 @@ export default function App() {
             <i aria-hidden="true" class="ph ph-x"></i>
           </button>
         </div>
-        <Inspector addr={selectedHost} onInteract={openInteract} onLogin={setLoginHost} onPivot={setPivotSid} />
+        <Inspector
+          addr={selectedHost}
+          onInteract={openInteract}
+          onLogin={setLoginHost}
+          onPivot={setPivotSid}
+          onScan={(host) => { setScanTarget(host); setScan("services"); }}
+          onFindAttacks={(host) => { selectHost(host); setFindOpen(true); }}
+        />
       </aside>
 
       <NotebookDock

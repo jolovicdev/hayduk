@@ -361,3 +361,13 @@ table.dt .amb { color: var(--amb); font-family: var(--mono); font-size: 11px; }
 
 
 .console-out { margin: 0; font: inherit; white-space: pre-wrap; word-break: break-word; color: #c5cdd9; }
+
+/* inspector quick actions */
+.ins-actions { display: flex; gap: 6px; margin-top: 10px; }
+.ins-actions .abtn { flex: 1; height: 26px; font-size: 11.5px; padding: 0 8px; }
+
+/* operations inline progress bar */
+.op-prog { display: inline-flex; align-items: center; gap: 8px; }
+.op-bar { width: 54px; height: 4px; border-radius: 2px; background: var(--bg3); overflow: hidden; flex: none; }
+.op-fill { display: block; height: 100%; background: var(--tx2); transition: width .2s ease; }
+.op-fill.running { background: var(--grn-tx); }

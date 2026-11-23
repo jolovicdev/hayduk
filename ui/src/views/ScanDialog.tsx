@@ -105,7 +105,7 @@ export function ScanDialog(props: {
       </Show>
       <Show when={error()}><p class="merror">{error()}</p></Show>
       <div class="mbtns">
-        <button class="abtn" disabled={!valid() || busy()} onClick={() => void start()}>
+        <button class="abtn primary" disabled={!valid() || busy()} onClick={() => void start()}>
           {busy() ? "Starting…" : versionScan() ? "Start version scan" : "Launch…"}
         </button>
       </div>

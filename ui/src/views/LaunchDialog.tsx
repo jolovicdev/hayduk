@@ -170,12 +170,17 @@ export function LaunchDialog(props: {
         </Show>
       }>
         {(i) => <>
-          <p style="margin-top:4px">
-            {i().name} · rank <b class="req">{i().rank}</b>
-          </p>
-          <p class="mtext" style="margin-top:8px; max-height:84px; overflow:auto">
-            {i().description}
-          </p>
+          <Show when={i().name || i().rank}>
+            <div class="launch-meta">
+              <Show when={i().name}><span>{i().name}</span></Show>
+              <Show when={i().rank}><span class="bdg red">{i().rank}</span></Show>
+            </div>
+          </Show>
+          <Show when={i().description}>
+            <p class="mtext" style="margin-top:8px; max-height:84px; overflow:auto">
+              {i().description}
+            </p>
+          </Show>
         </>}
       </Show>
 
@@ -204,15 +209,19 @@ export function LaunchDialog(props: {
           </div>
         </Show>
       }>
-        <div class="optlist">
-          <For each={ordered()}>{(name) =>
-            <Show when={optsMap()[name]}>
-              {(def) => <OptionField name={name} def={def()}
-                value={() => resolved()[name]}
-                onEdit={(v) => setValues(prev => ({ ...prev, [name]: v }))} />}
-            </Show>
-          }</For>
-        </div>
+        <Show when={ordered().length > 0} fallback={
+          <p class="mdesc" style="margin-top:12px">No configurable options for this module.</p>
+        }>
+          <div class="optlist">
+            <For each={ordered()}>{(name) =>
+              <Show when={optsMap()[name]}>
+                {(def) => <OptionField name={name} def={def()}
+                  value={() => resolved()[name]}
+                  onEdit={(v) => setValues(prev => ({ ...prev, [name]: v }))} />}
+              </Show>
+            }</For>
+          </div>
+        </Show>
       </Show>
       <Show when={options.error}>
         <p class="merror">

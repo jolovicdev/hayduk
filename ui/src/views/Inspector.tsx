@@ -1,5 +1,6 @@
 import { For, Show, createMemo } from "solid-js";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
+import { copyWithFeedback } from "../clipboard";
 import { serviceOpen } from "./serviceState";
 
 export function Inspector(props: {
@@ -7,6 +8,8 @@ export function Inspector(props: {
   onInteract: (sid: string) => void;
   onLogin: (host: string) => void;
   onPivot: (sid: string) => void;
+  onScan?: (host: string) => void;
+  onFindAttacks?: (host: string) => void;
 }) {
   const host = createMemo(() => campaignState().hosts.find(h => h?.address === props.addr()));
   const sessions = createMemo(() => {
@@ -17,8 +20,6 @@ export function Inspector(props: {
     const h = host();
     return h ? (credsByHostMemo().get(h.address) ?? []) : [];
   });
-  // only reachable rows: the count is labelled "Open services" and closed
-  // ports are noise in an attack summary
   const services = createMemo(() => {
     const h = host();
     return h ? campaignState().services.filter(s => s?.host === h.address && serviceOpen(s)) : [];
@@ -41,6 +42,10 @@ export function Inspector(props: {
                 {[h().osName, h().osFlavor, h().osVersion].filter(Boolean).join(" ") || "unknown os"}
               </div>
             </div>
+            <button class="ibtn" title={`Copy ${h().address}`} aria-label="Copy host address"
+              onClick={() => copyWithFeedback(h().address)}>
+              <i aria-hidden="true" class="ph ph-copy"></i>
+            </button>
           </div>
 
           <div class="badges">
@@ -51,6 +56,19 @@ export function Inspector(props: {
             }>
               <span class="bdg grn"><i aria-hidden="true" class="ph-fill ph-lightning"></i>access obtained</span>
               <span class="bdg grn"><i aria-hidden="true" class="ph ph-pulse"></i>{sessions().length} live</span>
+            </Show>
+          </div>
+
+          <div class="ins-actions">
+            <Show when={props.onScan}>
+              <button class="abtn" onClick={() => props.onScan!(h().address)} title="Scan services on this host">
+                <i aria-hidden="true" class="ph ph-wifi-high"></i>Scan
+              </button>
+            </Show>
+            <Show when={props.onFindAttacks}>
+              <button class="abtn" onClick={() => props.onFindAttacks!(h().address)} title="Find matching exploits for this host">
+                <i aria-hidden="true" class="ph ph-lightning"></i>Attacks
+              </button>
             </Show>
           </div>
 
