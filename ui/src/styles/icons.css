@@ -33,6 +33,10 @@
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+.ph.ph-android-logo:before { content: "\e008"; }
+.ph-fill.ph-android-logo:before { content: "\e008"; }
+.ph.ph-apple-logo:before { content: "\e516"; }
+.ph-fill.ph-apple-logo:before { content: "\e516"; }
 .ph.ph-archive:before { content: "\e00c"; }
 .ph-fill.ph-archive:before { content: "\e00c"; }
 .ph.ph-arrows-clockwise:before { content: "\e094"; }
@@ -77,6 +81,8 @@
 .ph-fill.ph-gear:before { content: "\e270"; }
 .ph.ph-graph:before { content: "\eb58"; }
 .ph-fill.ph-graph:before { content: "\eb58"; }
+.ph.ph-hard-drives:before { content: "\e2a0"; }
+.ph-fill.ph-hard-drives:before { content: "\e2a0"; }
 .ph.ph-info:before { content: "\e2ce"; }
 .ph-fill.ph-info:before { content: "\e2ce"; }
 .ph.ph-jar:before { content: "\e7e0"; }
@@ -87,10 +93,14 @@
 .ph-fill.ph-keyboard:before { content: "\e2d8"; }
 .ph.ph-lightning:before { content: "\e2de"; }
 .ph-fill.ph-lightning:before { content: "\e2de"; }
+.ph.ph-linux-logo:before { content: "\eb02"; }
+.ph-fill.ph-linux-logo:before { content: "\eb02"; }
 .ph.ph-magnifying-glass:before { content: "\e30c"; }
 .ph-fill.ph-magnifying-glass:before { content: "\e30c"; }
 .ph.ph-minus:before { content: "\e32a"; }
 .ph-fill.ph-minus:before { content: "\e32a"; }
+.ph.ph-monitor:before { content: "\e32e"; }
+.ph-fill.ph-monitor:before { content: "\e32e"; }
 .ph.ph-paper-plane-tilt:before { content: "\e398"; }
 .ph-fill.ph-paper-plane-tilt:before { content: "\e398"; }
 .ph.ph-password:before { content: "\e752"; }
@@ -129,5 +139,7 @@
 .ph-fill.ph-wifi-high:before { content: "\e4ea"; }
 .ph.ph-wifi-slash:before { content: "\e4f2"; }
 .ph-fill.ph-wifi-slash:before { content: "\e4f2"; }
+.ph.ph-windows-logo:before { content: "\e692"; }
+.ph-fill.ph-windows-logo:before { content: "\e692"; }
 .ph.ph-x:before { content: "\e4f6"; }
 .ph-fill.ph-x:before { content: "\e4f6"; }

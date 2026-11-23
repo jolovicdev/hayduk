@@ -1,40 +1,71 @@
-import { Match, Switch } from "solid-js";
+export type OsFamily = "win" | "linux" | "apple" | "android" | "other";
 
-export type OsFamily = "win" | "linux" | "other";
+// Phosphor Icons codepoints (kept in sync by scripts/subset-icons.sh).
+// Referencing the ph-* class names here ensures subset-icons.sh includes
+// every OS glyph in phosphor-regular.woff2 and phosphor-fill.woff2.
+const PH_CLASS: Record<OsFamily, string> = {
+  win: "ph-fill ph-windows-logo",
+  linux: "ph-fill ph-linux-logo",
+  apple: "ph-fill ph-apple-logo",
+  android: "ph-fill ph-android-logo",
+  other: "ph ph-hard-drives",
+};
 
-// Shared SVG internals for a computer monitor with an embedded OS emblem.
-// Coordinates live in a 42x42 space so TopologyGraph (<g>) and Inspector (<svg>)
-// render the exact same crisp geometric hardware icon.
+const PH_MONITOR_CLASS = "ph ph-monitor";
+const PH_MONITOR_CHAR = "\ue32e";
+
+const PH_OS_CHAR: Record<OsFamily, string> = {
+  win: "\ue692",
+  linux: "\ueb02",
+  apple: "\ue516",
+  android: "\ue008",
+  other: "\ue2a0",
+};
+
+export function detectOsFamily(host: { osName?: string; osFlavor?: string } | undefined): OsFamily {
+  const s = `${host?.osName ?? ""} ${host?.osFlavor ?? ""}`.toLowerCase();
+  if (s.includes("win")) return "win";
+  if (s.includes("android")) return "android";
+  if (s.includes("mac") || s.includes("darwin") || s.includes("apple") || s.includes("ios")) return "apple";
+  if (
+    s.includes("linux") || s.includes("ubuntu") || s.includes("debian") ||
+    s.includes("centos") || s.includes("fedora") || s.includes("alpine") ||
+    s.includes("rocky") || s.includes("rhel") || s.includes("kali") ||
+    s.includes("arch") || s.includes("bsd") || s.includes("unix")
+  ) return "linux";
+  return "other";
+}
+
+// Shared SVG internals for a computer monitor (Phosphor ph-monitor) with an
+// official Phosphor OS logo centered inside the screen. Coordinates live in a
+// 42x42 viewBox so TopologyGraph (<g>) and Inspector (<svg>) render identically.
 export function OsHardwareGlyph(props: { family: OsFamily; state?: "access" | "login" | "idle" }) {
+  const glyphClass = () => (props.family === "other" ? "hw-os-glyph ph" : "hw-os-glyph ph-fill");
   return (
-    <g class={`hw-tile ${props.family} ${props.state ?? "idle"}`}>
-      <rect class="hw-bg" width="42" height="42" rx="6" />
-      {/* monitor bezel */}
-      <rect class="hw-screen" x="6" y="7" width="30" height="21" rx="2.5" />
-      {/* monitor stand */}
-      <path class="hw-stand" d="M 16 33.5 H 26 M 21 28 V 33.5" />
-      {/* OS emblem inside the screen */}
-      <Switch fallback={
-        <g class="hw-emblem other">
-          <path d="M 13 13.5 H 29 M 13 17.5 H 29 M 13 21.5 H 23" />
-        </g>
-      }>
-        <Match when={props.family === "win"}>
-          <g class="hw-emblem win">
-            <rect x="14.5" y="11" width="5.8" height="5.8" rx="0.6" />
-            <rect x="21.7" y="11" width="5.8" height="5.8" rx="0.6" />
-            <rect x="14.5" y="18.2" width="5.8" height="5.8" rx="0.6" />
-            <rect x="21.7" y="18.2" width="5.8" height="5.8" rx="0.6" />
-          </g>
-        </Match>
-        <Match when={props.family === "linux"}>
-          <g class="hw-emblem linux">
-            <path d="M 13.5 13.2 L 18.5 17.5 L 13.5 21.8" />
-            <path d="M 21 21.8 H 28" />
-          </g>
-        </Match>
-      </Switch>
-      {/* status LED beacon on top-right corner of the hardware tile */}
+    <g
+      class={`hw-tile ${props.family} ${props.state ?? "idle"}`}
+      data-monitor-icon={PH_MONITOR_CLASS}
+      data-os-icon={PH_CLASS[props.family]}
+    >
+      <rect class="hw-bg" width="42" height="42" rx="7" />
+      <text
+        class={`hw-monitor ${PH_MONITOR_CLASS}`}
+        x="21"
+        y="22"
+        text-anchor="middle"
+        dominant-baseline="central"
+      >
+        {PH_MONITOR_CHAR}
+      </text>
+      <text
+        class={`${glyphClass()} ${props.family}`}
+        x="21"
+        y="19.3"
+        text-anchor="middle"
+        dominant-baseline="central"
+      >
+        {PH_OS_CHAR[props.family]}
+      </text>
       {props.state === "access" && (
         <circle class="hw-led access" cx="36.5" cy="5.5" r="4" />
       )}

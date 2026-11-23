@@ -4,7 +4,7 @@ import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/st
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { serviceOpen } from "../views/serviceState";
 import { osBadge } from "../views/os";
-import { OsHardwareGlyph, type OsFamily } from "./OsIcon";
+import { OsHardwareGlyph, detectOsFamily } from "./OsIcon";
 import { flash } from "../statusflash";
 import { errorMessage } from "../errors";
 import { copyWithFeedback } from "../clipboard";
@@ -504,7 +504,7 @@ export function TopologyGraph(props: {
                 };
                 const hostAccess = () => access()(address);
                 const badge = () => osBadge(host());
-                const family = (): OsFamily => (badge().key === "win" || badge().key === "linux" ? badge().key : "other");
+                const family = () => detectOsFamily(host());
                 const nodeState = () =>
                   hostAccess().sessions.length > 0 ? "access" : hostAccess().login ? "login" : "idle";
                 const osText = () => fitLabel(badge().label === "WIN" ? "WINDOWS" : badge().label, 12);

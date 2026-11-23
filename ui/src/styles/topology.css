@@ -57,19 +57,24 @@
 /* shared OS computer hardware emblem (used in Topology + Inspector) */
 .os-hw-svg { display: block; flex: none; }
 .hw-tile .hw-bg { fill: #161513; stroke: #35322c; stroke-width: 1; }
-.hw-tile.win .hw-bg { fill: #141c27; stroke: #2b476b; }
-.hw-tile.linux .hw-bg { fill: #241d12; stroke: #5c451d; }
+.hw-tile.win .hw-bg { fill: #131b26; stroke: #2b476b; }
+.hw-tile.linux .hw-bg { fill: #231c11; stroke: #5c451d; }
+.hw-tile.apple .hw-bg { fill: #1d1c1b; stroke: #4e4a44; }
+.hw-tile.android .hw-bg { fill: #122119; stroke: #2b5c42; }
 .hw-tile.access .hw-bg { stroke: #2f7a5a; }
-.hw-tile .hw-screen { fill: #0e0e0d; stroke: #7d776c; stroke-width: 1.4; }
-.hw-tile.win .hw-screen { fill: #0c131d; stroke: #5b93d6; }
-.hw-tile.linux .hw-screen { fill: #16120b; stroke: #d99b26; }
-.hw-tile .hw-stand { fill: none; stroke: #7d776c; stroke-width: 1.5; stroke-linecap: round; }
-.hw-tile.win .hw-stand { stroke: #5b93d6; }
-.hw-tile.linux .hw-stand { stroke: #d99b26; }
 
-.hw-emblem.win rect { fill: #60a5fa; }
-.hw-emblem.linux path { fill: none; stroke: #f59e0b; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.hw-emblem.other path { fill: none; stroke: #b8b2a6; stroke-width: 1.6; stroke-linecap: round; }
+.hw-tile .hw-monitor { font-size: 35px; fill: #8b857a; }
+.hw-tile.win .hw-monitor { fill: #5b93d6; }
+.hw-tile.linux .hw-monitor { fill: #d99b26; }
+.hw-tile.apple .hw-monitor { fill: #b8b2a6; }
+.hw-tile.android .hw-monitor { fill: #34d399; }
+
+.hw-tile .hw-os-glyph { font-size: 13.5px; fill: #d4cec2; }
+.hw-tile .hw-os-glyph.win { fill: #60a5fa; font-size: 13px; }
+.hw-tile .hw-os-glyph.linux { fill: #fbbf24; font-size: 14.5px; }
+.hw-tile .hw-os-glyph.apple { fill: #f4f1ea; font-size: 13.5px; }
+.hw-tile .hw-os-glyph.android { fill: #34d399; font-size: 14px; }
+.hw-tile .hw-os-glyph.other { fill: #b8b2a6; font-size: 13px; }
 
 .hw-led { stroke: #161513; stroke-width: 1.8; }
 .hw-led.access { fill: var(--grn-tx); }

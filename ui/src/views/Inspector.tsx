@@ -1,8 +1,7 @@
 import { For, Show, createMemo } from "solid-js";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { copyWithFeedback } from "../clipboard";
-import { OsIconBadge, type OsFamily } from "../components/OsIcon";
-import { osBadge } from "./os";
+import { OsIconBadge, detectOsFamily } from "../components/OsIcon";
 import { serviceOpen } from "./serviceState";
 
 export function Inspector(props: {
@@ -37,8 +36,7 @@ export function Inspector(props: {
         </div>
       }>
         {(h) => {
-          const badge = () => osBadge(h());
-          const family = (): OsFamily => (badge().key === "win" || badge().key === "linux" ? badge().key : "other");
+          const family = () => detectOsFamily(h());
           const state = () => sessions().length > 0 ? "access" : creds().length > 0 ? "login" : "idle";
           return <>
           <div class="ihost">
