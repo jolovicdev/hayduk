@@ -1,119 +1,124 @@
-# Hayduk: Open-source Metasploit GUI and Armitage alternative
+# Hayduk — Open-Source Metasploit GUI & Armitage Alternative
 
 [![CI](https://github.com/jolovicdev/hayduk/actions/workflows/ci.yml/badge.svg)](https://github.com/jolovicdev/hayduk/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/jolovicdev/hayduk?display_name=tag)](https://github.com/jolovicdev/hayduk/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational)](LICENSE)
 
-Hayduk is a free, open-source **Metasploit GUI** for authorized penetration testing. It brings the Armitage workflow to your browser: map hosts, browse modules, manage Meterpreter and shell sessions, and export campaign reports.
+Hayduk is a free, open-source **Metasploit GUI** for authorized penetration testing. It brings the Armitage campaign workflow to your browser in a fast, zero-dependency Go binary: map hosts and OS hardware tiles, search 7,000+ modules with `Ctrl+K`, manage Meterpreter and shell sessions, pivot across internal subnets, coordinate in team mode, and export clean HTML reports.
 
-**Download one binary. Run it. Connect to Metasploit.** No Java, Go, or Node.js installation is required to run a release binary. The browser UI is included.
+**Download one binary. Run it. Connect to `msfrpcd`.** No Java, Node.js, or Go runtime required — the SolidJS browser UI is embedded in the executable.
 
 Hayduk connects to a separate Metasploit Framework instance through `msfrpcd`. It does not bundle Metasploit.
 
-**[Download the latest release](https://github.com/jolovicdev/hayduk/releases/latest)** · [Quickstart](#quickstart) · [Try the Docker lab](#try-the-docker-lab) · [Team mode](#team-mode)
+**[Website (hayduk.dev)](https://hayduk.dev)** · **[Download latest release](https://github.com/jolovicdev/hayduk/releases/latest)** · [Quickstart](#quickstart) · [Try the Docker lab](#try-the-docker-lab) · [Team mode](#team-mode)
 
-![Hayduk campaign overview with network topology, host inspection, module library, and live console](docs/screenshot.png)
+![Hayduk 1.0.0 Carbon Instrument workbench showing network topology with OS hardware icons, module tree, host inspector, and docked console](docs/screenshot.png)
 
-*Interface shown with illustrative campaign data.*
+*Hayduk 1.0.0 workbench shown with illustrative campaign data.*
+
+---
+
+## Capabilities
+
+| Area | What you get |
+|---|---|
+| **Network topology** | Adaptive subnet zones with OS hardware tiles (Windows, Linux, macOS, Android, generic), live port counters, drag-and-pan canvas, Focus mode, and clickable routed-subnet cards. |
+| **Command palette & module tree** | Instant `Ctrl+K` search across hosts, sessions, actions, and 7,000+ Metasploit modules, plus a debounced module tree with reliability ranks, required options, and compatible payloads. |
+| **Engine-owned operations** | Host discovery, `db_nmap -sV` service fingerprinting, login brute force, and Hail Mary runs execute as tracked background operations in the **Operations** dock tab with live progress and cancellation. |
+| **Multi-tab sessions** | Keep multiple Meterpreter and shell consoles attached in **Interact**, run structured Meterpreter tools (Sysinfo, Processes, Files, Screenshot, Keylogger, Hashdump), and upgrade shells. |
+| **Pivot Studio** | Manage Metasploit routes, SOCKS proxies, and port forwards from one tabbed dialog (`Routes \| SOCKS \| Port forwards`) directly on any live session. |
+| **Credentials, listeners & loot** | Review workspace credentials and loot, launch targeted login workflows, and track engine-registered payload listeners across restarts. |
+| **Armitage-parity team mode** | Share one `msfrpcd` campaign across multiple operators with private Metasploit consoles, shared refcounted session transcripts, attributed events, team chat, optional TLS, and per-operator bound tokens. |
+| **Persistence** | File-backed state in your user config directory (`--data-dir` / `--no-persist`): JSONL audit log with rotation, cached module ranks, listener registry, and saved connection profiles (passwords never stored). |
+| **Reporting** | Export a clean, self-contained, print-ready HTML campaign report scoped to the active workspace — zero external assets, strict HTML escaping, team chat automatically excluded. |
+
+![Hayduk 1.0.0 walkthrough: inspect Linux and Windows hosts, interact with Meterpreter, open Pivot Studio, search modules with Ctrl+K, and expand Topology Focus mode](docs/demo.gif)
+
+*Walkthrough recorded with illustrative campaign data.*
+
+---
 
 ## Quickstart
 
-You need a Hayduk release binary, a browser, and a running Metasploit Framework instance. For workspace features such as hosts, services, credentials, and loot, Metasploit also needs a connected database.
+You need a Hayduk release binary, a modern browser, and a running Metasploit Framework instance. For workspace features (hosts, services, credentials, loot), Metasploit also needs a connected PostgreSQL database.
 
-The steps below assume Hayduk and Metasploit run on the same machine. If you need a ready-made Metasploit setup with a database and disposable targets, use the [Docker lab](#try-the-docker-lab).
+If you want a disposable Metasploit setup with a database and practice targets, skip to [Try the Docker lab](#try-the-docker-lab).
 
-### 1. Download and extract Hayduk
+### 1. Download Hayduk
 
-Open the [latest release](https://github.com/jolovicdev/hayduk/releases/latest) and choose the archive matching your operating system and processor. Extract the archive into a folder. There is no Hayduk installer or separate UI setup.
+Grab the archive for your OS and architecture from the [latest release](https://github.com/jolovicdev/hayduk/releases/latest) and extract it. There is no installer or separate frontend build.
 
 ### 2. Start Metasploit RPC
 
-On the machine running Metasploit, open a terminal and run:
+On the machine running Metasploit:
 
 ```bash
 msfrpcd -P 'yourpassword' -S -f -a 127.0.0.1 -p 55553
 ```
 
-Replace `yourpassword` with your own password. Keep this terminal open. This command binds RPC to localhost on port `55553`; `-S` disables SSL for this local connection.
+Replace `yourpassword` with your own password and keep this terminal open. `-a 127.0.0.1` restricts RPC to localhost; `-S` disables SSL for that local link.
 
-If you already run `msfrpcd`, use its existing connection settings instead of starting another instance.
+### 3. Start Hayduk
 
-### 3. Run Hayduk
-
-Open another terminal in the extracted folder.
-
-**Linux and macOS:**
+From the extracted folder:
 
 ```bash
+# Linux / macOS
 ./hayduk
-```
 
-**Windows PowerShell:**
-
-```powershell
+# Windows PowerShell
 .\hayduk.exe
 ```
 
-Hayduk opens the UI in your browser. If the browser does not open, copy the full URL printed in the terminal, including `?token=...`. The port is assigned automatically.
+Hayduk binds to localhost on an ephemeral port, generates a one-time session token, and opens the UI in your browser. If the browser does not open automatically, copy the full `http://127.0.0.1:<port>/?token=...` URL printed in the terminal.
 
 ### 4. Connect
 
-In **Connect to msfrpcd**, enter the settings from step 2:
+In **Connect to msfrpcd**, enter your RPC settings (successful non-secret profiles are saved for one-click reuse):
 
 | Field | Value |
 |---|---|
 | Host | `127.0.0.1` |
 | Port | `55553` |
 | User | `msf` |
-| Password | The password you set above |
-| use SSL | Unchecked |
+| Password | The password you set in step 2 |
+| Use SSL | Unchecked (for `-S`) |
 
-Click **Connect**. A cold Metasploit instance can take about half a minute to respond; connection progress appears in the dialog.
+Click **Connect**. A cold Metasploit daemon can take 15–30 seconds to respond; live progress is shown in the dialog. Press `Ctrl+C` in the Hayduk terminal to stop the server.
 
-Keep Hayduk running while you use the UI. Press `Ctrl+C` in its terminal to stop it.
+---
 
 ## Your first campaign
 
-Use a system or network you are authorized to test. Scans run from the connected Metasploit instance, so targets must be reachable from that machine.
+Use Hayduk only on systems and networks you own or have explicit written permission to test.
 
-Click a module to configure it. Right-click hosts, sessions, table rows, and modules in the tree to open their action menus.
+1. **Select a workspace.** Click the workspace picker in the top bar to switch Metasploit workspaces. Hosts, services, topology, and exported reports are scoped to the active workspace.
+2. **Discover hosts.** Click **+ Discover** (or **Campaign → Discover hosts…**), enter a target host or CIDR range, pick a discovery module, review options, and launch.
+3. **Fingerprint services.** Click **Scan** (or **Campaign → Scan services…**). Version detection runs `db_nmap -sV` by default and imports service fingerprints directly into the workspace; clear it to fall back to a Metasploit portscan module. Track progress in **Operations**.
+4. **Launch modules & open sessions.** Press `Ctrl+K`, browse the **Modules** tree, or click **Attacks** in the Inspector to match exploits against a host's open services. When a session opens, click **Interact** on the host or select it in **Sessions** to attach.
+5. **Pivot to internal subnets.** Click **Pivot** on a live session to add routes, start a SOCKS proxy, or configure port forwards. Routed subnets appear on the topology map as clickable cards that prefill **Scan services**.
+6. **Export a report.** Click **Export** (or **File → Export report…**) to download a self-contained HTML campaign report ready for review or `Ctrl+P` PDF export.
 
-Use the campaign summary cards to open hosts, services, sessions, or credentials. **Discover hosts**, **Scan services**, and **Export report** are also available directly above the network map.
+![Hayduk 1.0.0 Topology Focus mode showing adaptive subnet groups, OS hardware tiles, host inspector, and a routed network](docs/topology.png)
 
-The network map adapts host columns to the available canvas. Choose **Focus** to expand the map and host inspector. **Arrange hosts** replaces saved positions with an automatic layout. Host cards show open service counts and access state; violet paths identify pivot routes.
+*Topology Focus mode with illustrative campaign data.*
 
-1. **Choose a workspace.** Click the **workspace** chip to switch between existing Metasploit workspaces, or use the current workspace. The active workspace scopes the database tables, topology, and exported report, keeping each client's campaign data separate. Events and sessions retain their originating workspace for report attribution; the **Sessions** tab shows sessions across workspaces.
-2. **Discover hosts.** Open **Campaign → Discover hosts…**, enter your target host or CIDR range, select a scanner, and click **Launch…**. Review the module options and click **Launch**.
-3. **Scan and inspect services.** Open **Campaign → Scan services…** and enter a target. Version detection is on by default: nmap fingerprints service names and versions and imports them into the workspace. Clear it to use a Metasploit portscan module instead. Open **View → Topology** to see discovered hosts, or **View → Services** to inspect service results.
-4. **Launch an exploit and open a session.** Right-click an exploit module in the tree and choose **Launch…**, or open **Campaign → Find attacks…** and click a match's **Launch** button to prefill the target host and matched port. Review the module options and payload, then click **Launch**. If a session opens, click its row in the **Sessions** tab, or right-click its host and choose **Interact with session <ID>**, to open the live console in **Interact**.
-5. **Export a report.** Choose **File → Export report…** to download a self-contained HTML campaign report.
+### Keyboard shortcuts
 
-![Hayduk demo: select a host on the topology map and run commands in its live shell session](docs/demo.gif)
-
-*Demo uses illustrative campaign data.*
-
-## Features
-
-| Capability | What you can do |
+| Shortcut | Action |
 |---|---|
-| Network topology | Explore adaptive subnet groups, host service counts, and pivot routes. Drag hosts, zoom, or expand the map in Focus mode. |
-| Metasploit modules | Browse the module tree, inspect reliability ranks, configure options, and select payloads. |
-| Campaign workflows | Discover hosts, version-fingerprint services, and find exploit candidates matching known services. |
-| Session management | Interact with Meterpreter and shell sessions, upgrade shells, and terminate sessions. |
-| Credentials and loot | Review workspace data and use recovered credentials in login workflows. |
-| Hail Mary | Launch matching exploits against selected hosts, with paced launches and an event log. |
-| Reporting | Export a self-contained HTML report for campaign review and client delivery. |
-| Team mode | Share a campaign with multiple operators: private consoles, shared sessions, team chat, and attributed events. |
+| `Ctrl+K` | Open Command Palette (modules, hosts, sessions, actions) |
+| `1` / `2` / `3` | Switch between Topology, Services, and Hosts |
+| `[` / `]` | Toggle Modules and Inspector side panels |
+| `F` | Fit the topology graph to the viewport |
+| `Tab` | Autocomplete commands in the Metasploit console |
+| `Esc` | Close menus and dialogs |
 
-![Hayduk graph focus mode with adaptive subnet layout, host states, and a routed network](docs/topology.png)
-
-*Graph focus mode with illustrative campaign data.*
+---
 
 ## Try the Docker lab
 
-The repository includes a disposable Metasploit lab with a database and optional target containers. Run it to try the workflow from the demo against live targets.
-
-You need Git, Docker, and Docker Compose. Run these commands from a shell that supports the repository's `.sh` scripts:
+The repository includes a disposable Metasploit + PostgreSQL lab with optional vulnerable targets so you can test discovery, scanning, pivoting, and reporting safely:
 
 ```bash
 git clone https://github.com/jolovicdev/hayduk.git
@@ -121,114 +126,121 @@ cd hayduk
 scripts/msf/up.sh --with-vulnbox
 ```
 
-The script prints the target container IP addresses when the lab is ready. Start your downloaded Hayduk binary and connect with **Host** `127.0.0.1`, **Port** `55553`, **User** `msf`, **Password** `testpass123`, and **use SSL** unchecked. Use a printed target IP for your first scan.
+Connect Hayduk to `127.0.0.1:55553` with user `msf`, password `testpass123`, and **Use SSL** unchecked. Start without `--with-vulnbox` if you only want Metasploit and PostgreSQL.
 
-To start only Metasploit and its database, run `scripts/msf/up.sh` without `--with-vulnbox`.
-
-When finished, run this from the repository root. It removes the lab containers and their volumes, including lab database data:
+Tear down the lab containers and volumes when finished:
 
 ```bash
 scripts/msf/down.sh
 ```
 
+---
+
 ## Team mode
 
-Run the downloaded binary with a specific interface address that your operators can reach:
+Start Hayduk with `--team` and an explicit non-loopback interface address your operators can reach (wildcard binds like `0.0.0.0` are refused):
 
 ```bash
 ./hayduk --team --listen 192.168.1.10:8787
 ```
 
-Replace `192.168.1.10` with your machine's address. Team mode requires an explicit, non-loopback address; wildcard addresses such as `0.0.0.0` are refused.
+For engagements over HTTPS with verified per-operator identities, pass a TLS keypair and repeatable `--operator name=token` flags (tokens must be at least 16 characters and unique):
 
-Share the full token URL printed in the terminal. Each operator opens it in a browser and chooses a name. From then on the campaign is shared, Armitage-style:
+```bash
+./hayduk --team --listen 192.168.1.10:8787 \
+  --tls-cert server.crt --tls-key server.key \
+  --operator milo=<16+ char secret> \
+  --operator ana=<16+ char secret>
+```
 
-- **One shared backend.** Every operator rides the same msfrpcd link and database: hosts, services, credentials, loot, jobs, sessions, and pivot routes are common to the team.
-- **Private consoles.** Each operator gets their own Metasploit console. Your commands and their output never land in another operator's console tab.
-- **Independent session tabs.** Attach to any session without moving anyone else's view. Session transcripts are shared: everyone viewing a session sees the same history and live output, and one operator closing a tab does not silence another's stream.
-- **Shared event log with attribution.** Actions are logged with the operator who performed them, including who opened each session. The **Events** tab shows who is online.
-- **Team chat.** The chat bar under the event log broadcasts a message to every operator. Chat is internal coordination and stays out of exported reports.
+How shared campaigns work:
 
-A page refresh or short network blip rejoins under the same name and resumes the same console and session views. Disconnecting from msfrpcd drops the shared link for the whole team, so team mode asks for confirmation first.
+- **One shared backend.** Every operator works against the same `msfrpcd` link and workspace database: hosts, services, credentials, loot, operations, listeners, sessions, and pivot routes stay live for the whole team.
+- **Private consoles.** Each operator receives their own Metasploit console; commands and scrollback never collide across operators.
+- **Shared session transcripts.** Attach or detach any session tab independently. Transcripts and live output are shared and refcounted across viewers, so one operator closing a tab never interrupts another.
+- **Attributed events & internal team chat.** Actions record which operator ran them. Team chat lives in the **Events** dock and is automatically excluded from exported client reports.
 
-Team mode uses one shared token and plain HTTP. Operator names are labels, not verified identities. Treat the token URL like a password and use team mode only on trusted networks. Read the [security policy](SECURITY.md) for the full trust model.
+Read [SECURITY.md](SECURITY.md) for the full threat model and HTTP security headers (CSP, `X-Frame-Options: DENY`, `HttpOnly`/`Secure` token cookies, constant-time token verification).
+
+---
+
+## CLI flags
+
+| Flag | Default | Description |
+|---|---|---|
+| `--listen` | `127.0.0.1:0` | Address `host:port` to bind. Required (non-loopback, non-wildcard) with `--team`. |
+| `--team` | `false` | Enable multi-operator shared campaign mode. |
+| `--operator` | *(none)* | Repeatable `name=token` binding an operator identity to a secret token (team mode, min 16 chars). |
+| `--tls-cert` / `--tls-key` | *(none)* | PEM certificate and key files to serve the UI and WebSocket over HTTPS/WSS with `Secure` cookies. |
+| `--data-dir` | OS config dir | Directory for `events.jsonl`, cached module ranks, listener registry, and saved profiles. |
+| `--no-persist` | `false` | Run completely in memory without writing state to disk. |
+| `--no-browser` | `false` | Do not open a browser window on startup. |
+| `--dev` / `--dev-upstream` | `false` / `127.0.0.1:5173` | Proxy UI requests to a Vite dev server during frontend development. |
+| `--version` | `false` | Print version and exit. |
+
+---
 
 ## Troubleshooting
 
 | Problem | What to check |
 |---|---|
-| The browser does not open | Open the full token URL printed by Hayduk. You can also start with `./hayduk --no-browser`. |
-| Hayduk cannot connect | Check that `msfrpcd` is running and that the host, port, user, and password match. |
-| SSL connection fails | Leave **use SSL** unchecked when `msfrpcd` runs with `-S`; enable it when the daemon uses SSL. |
-| Connection takes time | Watch the connection dialog. A cold Metasploit instance can take about half a minute to respond. |
-| Hosts or services are missing | Check the selected workspace, Metasploit's database connection, and target reachability from Metasploit. |
-| Service scan fails | Version detection runs `db_nmap`, so nmap must be installed on the Metasploit host and Metasploit's database must be connected. Clear **detect service versions** to fall back to a portscan module. |
+| Browser does not open | Copy the full URL with `?token=...` printed by Hayduk, or run with `--no-browser`. |
+| Cannot connect to `msfrpcd` | Verify `msfrpcd` is running and host, port, user, password, and SSL toggle match. |
+| SSL handshake error | Uncheck **Use SSL** when `msfrpcd` runs with `-S`; enable it when `msfrpcd` uses TLS. |
+| Slow initial connection | A cold Metasploit daemon takes ~15–30s to initialize; watch progress in the Connect dialog. |
+| Missing hosts or services | Verify the active workspace, Metasploit's PostgreSQL connection, and target reachability from the Metasploit host. |
+| Service version scan fails | Version detection runs `db_nmap`, which requires `nmap` and a connected database on the Metasploit host. Uncheck version detection to use a portscan module. |
+
+---
 
 ## FAQ
 
 ### Is Hayduk an Armitage alternative?
+Yes. Hayduk implements the graphical Metasploit workflow popularized by Armitage — topology map, module tree, session consoles, pivoting, Hail Mary, and team campaigns — as a modern single Go binary with a browser UI and no Java runtime.
 
-Yes. Hayduk follows Armitage's graphical Metasploit workflow, including network topology, module launching, Hail Mary, and shared campaigns. It is a separate implementation with a browser UI and a single Go binary.
+### Does Hayduk bundle Metasploit Framework?
+No. Hayduk is a client for Metasploit's `msfrpcd` service. Use your existing Metasploit installation or the included Docker lab.
 
-### Does Hayduk include Metasploit Framework?
-
-No. Hayduk is a GUI client for Metasploit's `msfrpcd` service. Use your existing Metasploit installation or the included Docker lab.
-
-### Do I need Go, Node.js, Java, or Docker?
-
-No additional language runtime is required for the Hayduk release binary. Go and Node.js are needed to build from source. Docker is needed only if you choose the included lab.
-
-### Can Hayduk connect to Metasploit on another machine?
-
-Yes. Enter the Metasploit machine's reachable address in **Host** and match its RPC port, credentials, and SSL setting. The localhost-only RPC command in Quickstart accepts connections only from the same machine.
+### Do I need Go, Node.js, or Java to run Hayduk?
+No. Prebuilt release binaries have the entire UI embedded. Go and Node.js are only required if you build from source.
 
 ### Is Hayduk free and open source?
+Yes — released under the [MIT License](LICENSE).
 
-Yes. Hayduk is released under the [MIT license](LICENSE).
+---
 
 ## Build from source
 
-For development, use Go 1.26.1 or newer, Node.js 24 as used in CI, npm, and Make. From the repository root:
+Requires Go 1.26+, Node.js 22/24, npm, and Make:
 
 ```bash
 make
 ./bin/hayduk
 ```
 
-`make` installs UI dependencies, builds and embeds the UI, and compiles `bin/hayduk`.
-
-### Development
-
-After the initial build, run the UI server in one terminal:
+### Development & checks
 
 ```bash
-cd ui
-npm run dev
-```
+# Terminal 1: Vite UI dev server
+cd ui && npm run dev
 
-In a second terminal at the repository root:
-
-```bash
+# Terminal 2: Go server proxying to Vite
 make dev
-```
 
-Open the URL printed by Hayduk. UI changes reload through the development proxy.
-
-### Checks
-
-Run these commands from the repository root:
-
-```bash
-make test          # Go and UI tests
+# Verification gates
+make test          # Go unit tests + Vitest UI suite
+go test -race ./... # Full Go race detector pass
 npm --prefix ui run lint
-make               # Type-check, build the UI, and compile the binary
-make integration   # Requires the running Docker lab
+make gen-check     # Verify Go -> TypeScript protocol bindings (tygo)
+make integration   # Requires running Docker lab
 ```
 
-Protocol types are generated. With `tygo` available, run `make gen` after editing `internal/protocol/protocol.go`; `make gen-check` checks for generated type drift.
+After adding Phosphor icons in `ui/src`, run `scripts/subset-icons.sh` (requires Python `fonttools` + `brotli`) to rebuild the minimal `.woff2` icon subset before `make`.
 
-## Credits and license
+---
 
-Hayduk draws on the graphical attack management workflow established by [Armitage](https://github.com/rsmudge/armitage), created by Raphael Mudge. It connects to Metasploit through [go-msf](https://github.com/jolovicdev/go-msf).
+## Credits & license
 
-Licensed under [MIT](LICENSE). See [third-party notices](docs/THIRD-PARTY-NOTICES.md) for bundled assets and licenses.
+Hayduk draws on the graphical attack management workflow established by [Armitage](https://github.com/rsmudge/armitage) by Raphael Mudge and communicates with Metasploit through [go-msf](https://github.com/jolovicdev/go-msf).
+
+Licensed under [MIT](LICENSE). See [docs/THIRD-PARTY-NOTICES.md](docs/THIRD-PARTY-NOTICES.md) for bundled assets and font licenses.

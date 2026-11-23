@@ -20,7 +20,7 @@ import (
 	"github.com/jolovicdev/hayduk/internal/store"
 )
 
-var version = "0.2.0"
+var version = "1.0.0"
 
 // operatorFlags collects repeatable --operator name=token assignments.
 type operatorFlags []string
