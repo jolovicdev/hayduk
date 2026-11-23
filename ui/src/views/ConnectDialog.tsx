@@ -106,7 +106,7 @@ export default function ConnectDialog(props: {
             </Show>
 
             <div class="mbtns">
-              <button class="abtn" type="submit" disabled={busy() || !valid()}>
+              <button class="abtn primary" type="submit" disabled={busy() || !valid()}>
                 {busy() ? "Connecting…" : "Connect"}
               </button>
             </div>

@@ -26,7 +26,13 @@ export function Inspector(props: {
 
   return (
     <div class="ins">
-      <Show when={host()} fallback={<div class="ins-empty"><div class="empty-symbol"><i aria-hidden="true" class="ph ph-target"></i></div><h2>No host selected</h2><p>Select a host on the map or in Services to view its details and available actions.</p></div>}>
+      <Show when={host()} fallback={
+        <div class="ins-empty">
+          <div class="empty-symbol"><i aria-hidden="true" class="ph ph-target"></i></div>
+          <h2>No host selected</h2>
+          <p>Select a host on the topology map or in Services to inspect ports, sessions, and actions.</p>
+        </div>
+      }>
         {(h) => <>
           <div class="ihost">
             <div>
@@ -40,11 +46,11 @@ export function Inspector(props: {
           <div class="badges">
             <Show when={sessions().length > 0} fallback={
               creds().length > 0
-                ? <span class="bdg amb"><i aria-hidden="true" class="ph ph-key"></i>valid login found</span>
+                ? <span class="bdg amb"><i aria-hidden="true" class="ph ph-key"></i>login available</span>
                 : <span class="bdg gry"><i aria-hidden="true" class="ph ph-x"></i>no access</span>
             }>
               <span class="bdg grn"><i aria-hidden="true" class="ph-fill ph-lightning"></i>access obtained</span>
-              <span class="bdg grn"><i aria-hidden="true" class="ph ph-pulse"></i>{sessions().length} session{sessions().length > 1 ? "s" : ""} live</span>
+              <span class="bdg grn"><i aria-hidden="true" class="ph ph-pulse"></i>{sessions().length} live</span>
             </Show>
           </div>
 
@@ -60,22 +66,28 @@ export function Inspector(props: {
           </div>
 
           <div class="isec">
-            <div class="ilabel">Services</div>
-            <For each={services()}>{(s) => (
-              <div class="portrow">
-                <span class="pchip">{s!.port}/{s!.proto}</span>
-                <span class="pn">{s!.name}</span>
-                <span class="pi">{s!.info}</span>
-              </div>
-            )}</For>
+            <div class="ilabel">Open services</div>
+            <Show when={services().length > 0} fallback={
+              <div class="ios" style="margin-top:0">No open ports recorded</div>
+            }>
+              <For each={services()}>{(s) => (
+                <div class="portrow">
+                  <span class="pchip">{s!.port}/{s!.proto}</span>
+                  <span class="pn">{s!.name}</span>
+                  <span class="pi" title={s!.info}>{s!.info}</span>
+                </div>
+              )}</For>
+            </Show>
           </div>
 
           <div class="isec">
             <div class="ilabel">Access</div>
-            <div class="acc">
+            <div class="acc-list">
               <Show when={sessions().length > 0} fallback={
-                <div class="aline">
-                  <b>{creds().length > 0 ? "Valid credentials found" : "No access on this host"}</b>
+                <div class="acc">
+                  <div class="aline">
+                    <b>{creds().length > 0 ? "Valid credentials found" : "No active session"}</b>
+                  </div>
                   <div class="abtns">
                     <button class="abtn" onClick={() => props.onLogin(h().address)}>
                       <i aria-hidden="true" class="ph ph-key"></i>Login as…
@@ -84,19 +96,21 @@ export function Inspector(props: {
                 </div>
               }>
                 <For each={sessions()}>{(s) => (
-                  <>
+                  <div class="acc live-acc">
                     <div class="aline"><b>Session {s!.id}</b> · {s!.type}</div>
                     <div class="aline">{s!.username || "unknown user"}</div>
-                    <div class="aline">via {s!.viaExploit}</div>
+                    <Show when={s!.viaExploit}>
+                      <div class="aline" style="color:var(--tx2)">via {s!.viaExploit}</div>
+                    </Show>
                     <div class="abtns">
-                      <button class="abtn" onClick={() => props.onInteract(s!.id)}>
+                      <button class="abtn primary" onClick={() => props.onInteract(s!.id)}>
                         <i aria-hidden="true" class="ph ph-terminal-window"></i>Interact
                       </button>
                       <button class="abtn" onClick={() => props.onPivot(s!.id)}>
                         <i aria-hidden="true" class="ph ph-signpost"></i>Pivot
                       </button>
                     </div>
-                  </>
+                  </div>
                 )}</For>
               </Show>
             </div>

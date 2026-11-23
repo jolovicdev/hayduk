@@ -1,6 +1,6 @@
 import { Show } from "solid-js";
 
-// Rectangles keep the mark crisp at every size.
+// Crisp geometric mark: obsidian tile with crimson architectural H monogram.
 export function HaydukMark(props: { size?: number; tile?: boolean; title?: string }) {
   const size = () => props.size ?? 24;
   return (
@@ -10,11 +10,11 @@ export function HaydukMark(props: { size?: number; tile?: boolean; title?: strin
       <Show when={props.title}>
         <title>{props.title}</title>
       </Show>
-      <rect x="2" y="2" width="20" height="20" rx="5" style="fill:var(--accent)" />
-      <g style="fill:var(--accent-ink)">
-        <rect x="7.2" y="6.8" width="2.6" height="10.4" />
-        <rect x="14.2" y="6.8" width="2.6" height="10.4" />
-        <rect x="7.2" y="10.8" width="9.6" height="2.4" />
+      <rect x="1.5" y="1.5" width="21" height="21" rx="4" style="fill:var(--brand)" />
+      <g style="fill:#090a0c">
+        <rect x="6.8" y="6.2" width="2.8" height="11.6" />
+        <rect x="14.4" y="6.2" width="2.8" height="11.6" />
+        <rect x="6.8" y="10.7" width="10.4" height="2.6" />
       </g>
     </svg>
   );

@@ -576,11 +576,11 @@ export function TopologyGraph(props: {
       onPointerCancel={cancelPointer}
     >
       <defs>
-        <filter id="topo-node-shadow" x="-30%" y="-35%" width="160%" height="180%">
-          <feDropShadow dx="0" dy="6" stdDeviation="7" flood-color="#000000" flood-opacity=".32" />
+        <filter id="topo-node-shadow" x="-15%" y="-15%" width="130%" height="145%">
+          <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity=".42" />
         </filter>
-        <marker id="topo-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto" markerUnits="strokeWidth">
-          <path d="M 0 0 L 8 4 L 0 8 z" />
+        <marker id="topo-route-arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth">
+          <path d="M 0 0 L 7 3.5 L 0 7 z" />
         </marker>
       </defs>
 
@@ -591,24 +591,24 @@ export function TopologyGraph(props: {
               const group = () => groups().get(key)!;
               return (
               <g class="topo-zone">
-                <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="18" />
-                <path class="topo-zone-rule" d={`M ${group().x + 20} ${group().y + 49} H ${group().x + group().w - 20}`} />
-                <g transform={`translate(${group().x + 20} ${group().y + 15})`}>
-                  <rect class="topo-zone-icon-bg" width="28" height="24" rx="6" />
-                  <circle class="topo-zone-icon" cx="8" cy="12" r="2" />
-                  <circle class="topo-zone-icon" cx="19" cy="7" r="2" />
-                  <circle class="topo-zone-icon" cx="19" cy="17" r="2" />
-                  <path class="topo-zone-link" d="M 10 11 L 17 8 M 10 13 L 17 16" />
+                <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="4" />
+                <rect class="topo-zone-band" x={group().x + 1} y={group().y + 1} width={group().w - 2} height="42" rx="3" />
+                <path class="topo-zone-rule" d={`M ${group().x} ${group().y + 43} H ${group().x + group().w}`} />
+                <g transform={`translate(${group().x + 14} ${group().y + 11})`}>
+                  <circle class="topo-zone-icon" cx="4" cy="11" r="1.8" />
+                  <circle class="topo-zone-icon" cx="13" cy="6" r="1.8" />
+                  <circle class="topo-zone-icon" cx="13" cy="16" r="1.8" />
+                  <path class="topo-zone-link" d="M 5.6 10.1 L 11.4 6.9 M 5.6 11.9 L 11.4 15.1" />
                 </g>
-                <text class="topo-zone-name" x={group().x + 60} y={group().y + 31}>
-                  {key === "other" ? "Other hosts" : `${key}.0/24`}
+                <text class="topo-zone-name" x={group().x + 38} y={group().y + 26}>
+                  {key === "other" ? "OTHER HOSTS" : `${key}.0/24`}
                 </text>
-                <text class="topo-zone-meta" x={group().x + group().w - 20} y={group().y + 31} text-anchor="end">
-                  {group().count} {group().count === 1 ? "host" : "hosts"}
+                <text class="topo-zone-meta" x={group().x + group().w - 14} y={group().y + 26} text-anchor="end">
+                  {group().count} {group().count === 1 ? "HOST" : "HOSTS"}
                 </text>
                 <Show when={routedKeys().has(key)}>
-                  <text class="topo-zone-route-note" x={group().x + 60} y={group().y + 44}>Routed network</text>
-                  <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 30} r="4" />
+                  <text class="topo-zone-route-note" x={group().x + 38} y={group().y + 38}>ROUTED VIA PIVOT</text>
+                  <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 22} r="3.5" />
                 </Show>
 
               </g>
@@ -621,7 +621,7 @@ export function TopologyGraph(props: {
                 <path class="topo-route-halo" d={pivotPath(route.from, route.to, route.lane)} />
                 <path class="topo-route-line" d={pivotPath(route.from, route.to, route.lane)} marker-end="url(#topo-route-arrow)" />
                 <g class="topo-route-label" transform={`translate(${route.label.x} ${route.label.y})`}>
-                  <rect x={-route.labelW / 2} width={route.labelW} height="20" rx="5" />
+                  <rect x={-route.labelW / 2} width={route.labelW} height="19" rx="3" />
                   <text x="0" y="13">SESSION {route.sessionID}</text>
                 </g>
               </g>
@@ -634,6 +634,9 @@ export function TopologyGraph(props: {
               const position = () => positions().get(address);
               const hostAccess = () => access()(address);
               const badge = () => osBadge(host());
+              const osText = () => fitLabel(badge().label, 14);
+              const osWidth = () => Math.max(40, osText().length * 6.4 + 14);
+              const svcCount = () => serviceCounts().get(address) ?? 0;
               return (
                 <Show when={position()}>{point => (
                   <g
@@ -657,22 +660,21 @@ export function TopologyGraph(props: {
                     }}
                   >
                     <title>{`${host().name || address} · ${address}`}</title>
-                    <rect class="topo-node-shell" width={NW} height={NH} rx="12" />
-                    <path class="topo-node-divider" d={`M 0 86 H ${NW}`} />
-                    <g class={`topo-device ${badge().key}`} transform="translate(16 16)">
-                      <rect class="topo-device-bg" width="32" height="32" rx="8" />
-                      <rect class="topo-device-screen" x="8.5" y="7.5" width="15" height="11" rx="2" />
-                      <path class="topo-device-stand" d="M 13 23 H 19 M 16 18.5 V 23" />
-                    </g>
-                    <text class={`topo-node-os ${badge().key}`} x="60" y="28">{fitLabel(badge().label, 14)}</text>
-                    <text class="topo-node-name" x="60" y="48">{fitLabel(host().name || address, 19)}</text>
-                    <text class="topo-node-address" x="16" y="72">{fitLabel(address, 25)}</text>
-                    <circle class="topo-host-status" cx="18" cy="105" r="3" />
-                    <text class="topo-host-state" x="28" y="109">
-                      {hostAccess().sessions.length > 0 ? `${hostAccess().sessions.length} live session${hostAccess().sessions.length === 1 ? "" : "s"}` : hostAccess().login ? "Login available" : "Discovered"}
+                    <rect class="topo-node-shell" width={NW} height={NH} rx="4" />
+                    <rect class="topo-node-rail" x="0.5" y="0.5" width="3" height={NH - 1} rx="1.5" />
+                    <path class="topo-node-divider" d={`M 4 88 H ${NW}`} />
+                    <rect class={`topo-os-pill ${badge().key}`} x="14" y="12" width={osWidth()} height="18" rx="2" />
+                    <text class={`topo-node-os ${badge().key}`} x="21" y="24">{osText()}</text>
+                    <text class="topo-node-svcs-top" x={NW - 12} y="24" text-anchor="end">
+                      {svcCount()} {svcCount() === 1 ? "PORT" : "PORTS"}
                     </text>
-                    <text class="topo-host-services" x={NW - 14} y="109" text-anchor="end">
-                      {serviceCounts().get(address) ?? 0} service{serviceCounts().get(address) === 1 ? "" : "s"}
+                    <text class="topo-node-name" x="14" y="53">{fitLabel(host().name || address, 24)}</text>
+                    <text class="topo-node-address" x="14" y="72">{fitLabel(address, 26)}</text>
+                    <circle class="topo-host-status" cx="18" cy="106" r="3" />
+                    <text class="topo-host-state" x="27" y="109.5">
+                      {hostAccess().sessions.length > 0
+                        ? `${hostAccess().sessions.length} LIVE SESSION${hostAccess().sessions.length === 1 ? "" : "S"}`
+                        : hostAccess().login ? "LOGIN AVAILABLE" : "DISCOVERED"}
                     </text>
                   </g>
                 )}</Show>
@@ -684,17 +686,17 @@ export function TopologyGraph(props: {
             <For each={Array.from(ghosts().keys())}>{(key) => (
               <g class="topo-ghost" transform={`translate(${ghosts().get(key)!.x} ${ghosts().get(key)!.y})`}
                 onContextMenu={event => ghostMenu(key, event)}>
-                <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="12" />
-                <g transform="translate(14 28)">
-                  <circle class="topo-ghost-icon-bg" cx="19" cy="19" r="19" />
-                  <circle class="topo-ghost-icon" cx="12" cy="19" r="2.5" />
-                  <circle class="topo-ghost-icon" cx="25" cy="12" r="2.5" />
-                  <circle class="topo-ghost-icon" cx="25" cy="26" r="2.5" />
-                  <path class="topo-ghost-link" d="M 14 18 L 23 13 M 14 20 L 23 25" />
+                <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="4" />
+                <g transform="translate(14 31)">
+                  <rect class="topo-ghost-icon-bg" width="30" height="30" rx="4" />
+                  <circle class="topo-ghost-icon" cx="9" cy="15" r="2" />
+                  <circle class="topo-ghost-icon" cx="21" cy="9" r="2" />
+                  <circle class="topo-ghost-icon" cx="21" cy="21" r="2" />
+                  <path class="topo-ghost-link" d="M 11 14 L 19 10 M 11 16 L 19 20" />
                 </g>
-                <text class="topo-ghost-kicker" x="62" y="27">Routed network</text>
-                <text class="topo-ghost-address" x="62" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
-                <text class="topo-ghost-meta" x="62" y="74">Awaiting discovery</text>
+                <text class="topo-ghost-kicker" x="56" y="28">ROUTED NETWORK</text>
+                <text class="topo-ghost-address" x="56" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
+                <text class="topo-ghost-meta" x="56" y="74">Awaiting discovery</text>
               </g>
             )}</For>
           </g>

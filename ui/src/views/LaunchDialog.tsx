@@ -251,7 +251,7 @@ export function LaunchDialog(props: {
       <Show when={error()}><p class="merror">{error()}</p></Show>
 
       <div class="mbtns">
-        <button class="abtn"
+        <button class="abtn primary"
           disabled={launchDisabled({
             busy: busy(),
             optionsLoading: options.loading,
