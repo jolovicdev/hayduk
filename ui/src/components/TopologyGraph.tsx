@@ -4,6 +4,7 @@ import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/st
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { serviceOpen } from "../views/serviceState";
 import { osBadge } from "../views/os";
+import { OsHardwareGlyph, type OsFamily } from "./OsIcon";
 import { flash } from "../statusflash";
 import { errorMessage } from "../errors";
 import { copyWithFeedback } from "../clipboard";
@@ -457,24 +458,24 @@ export function TopologyGraph(props: {
                 const group = () => groups().get(key)!;
                 return (
                   <g class="topo-zone">
-                    <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="4" />
-                    <rect class="topo-zone-band" x={group().x + 1} y={group().y + 1} width={group().w - 2} height="42" rx="3" />
-                    <path class="topo-zone-rule" d={`M ${group().x} ${group().y + 43} H ${group().x + group().w}`} />
-                    <g transform={`translate(${group().x + 14} ${group().y + 11})`}>
-                      <circle class="topo-zone-icon" cx="4" cy="11" r="1.8" />
-                      <circle class="topo-zone-icon" cx="13" cy="6" r="1.8" />
-                      <circle class="topo-zone-icon" cx="13" cy="16" r="1.8" />
-                      <path class="topo-zone-link" d="M 5.6 10.1 L 11.4 6.9 M 5.6 11.9 L 11.4 15.1" />
+                    <rect class="topo-zone-panel" x={group().x} y={group().y} width={group().w} height={group().h} rx="8" />
+                    <rect class="topo-zone-band" x={group().x + 1} y={group().y + 1} width={group().w - 2} height="44" rx="7" />
+                    <path class="topo-zone-rule" d={`M ${group().x} ${group().y + 45} H ${group().x + group().w}`} />
+                    <g transform={`translate(${group().x + 15} ${group().y + 12})`}>
+                      <circle class="topo-zone-icon" cx="4" cy="11" r="2" />
+                      <circle class="topo-zone-icon" cx="14" cy="6" r="2" />
+                      <circle class="topo-zone-icon" cx="14" cy="16" r="2" />
+                      <path class="topo-zone-link" d="M 5.8 10.1 L 12.2 6.9 M 5.8 11.9 L 12.2 15.1" />
                     </g>
-                    <text class="topo-zone-name" x={group().x + 38} y={group().y + 26}>
+                    <text class="topo-zone-name" x={group().x + 40} y={group().y + 27}>
                       {key === "other" ? "OTHER HOSTS" : `${key}.0/24`}
                     </text>
-                    <text class="topo-zone-meta" x={group().x + group().w - 14} y={group().y + 26} text-anchor="end">
+                    <text class="topo-zone-meta" x={group().x + group().w - 16} y={group().y + 27} text-anchor="end">
                       {group().count} {group().count === 1 ? "HOST" : "HOSTS"}
                     </text>
                     <Show when={routedKeys().has(key)}>
-                      <text class="topo-zone-route-note" x={group().x + 38} y={group().y + 38}>ROUTED VIA PIVOT</text>
-                      <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 22} r="3.5" />
+                      <text class="topo-zone-route-note" x={group().x + 40} y={group().y + 40}>ROUTED VIA PIVOT</text>
+                      <circle class="topo-route-port" cx={group().x + group().w} cy={group().y + 23} r="4" />
                     </Show>
                   </g>
                 );
@@ -487,8 +488,8 @@ export function TopologyGraph(props: {
                   <path class="topo-route-halo" d={pivotPath(route.from, route.to, route.lane)} />
                   <path class="topo-route-line" d={pivotPath(route.from, route.to, route.lane)} marker-end="url(#topo-route-arrow)" />
                   <g class="topo-route-label" transform={`translate(${route.label.x} ${route.label.y})`}>
-                    <rect x={-route.labelW / 2} width={route.labelW} height="19" rx="3" />
-                    <text x="0" y="13">SESSION {route.sessionID}</text>
+                    <rect x={-route.labelW / 2} width={route.labelW} height="20" rx="4" />
+                    <text x="0" y="13.5">SESSION {route.sessionID}</text>
                   </g>
                 </g>
               )}</For>
@@ -503,8 +504,10 @@ export function TopologyGraph(props: {
                 };
                 const hostAccess = () => access()(address);
                 const badge = () => osBadge(host());
-                const osText = () => fitLabel(badge().label, 14);
-                const osWidth = () => Math.max(30, osText().length * 6.3 + 12);
+                const family = (): OsFamily => (badge().key === "win" || badge().key === "linux" ? badge().key : "other");
+                const nodeState = () =>
+                  hostAccess().sessions.length > 0 ? "access" : hostAccess().login ? "login" : "idle";
+                const osText = () => fitLabel(badge().label === "WIN" ? "WINDOWS" : badge().label, 12);
                 const svcCount = () => serviceCounts().get(address) ?? 0;
                 return (
                   <Show when={position()}>{point => (
@@ -512,8 +515,8 @@ export function TopologyGraph(props: {
                       class="topo-node"
                       classList={{
                         selected: props.selected() === address,
-                        access: hostAccess().sessions.length > 0,
-                        login: hostAccess().login && hostAccess().sessions.length === 0,
+                        access: nodeState() === "access",
+                        login: nodeState() === "login",
                       }}
                       data-address={address}
                       transform={`translate(${point().x} ${point().y})`}
@@ -529,18 +532,20 @@ export function TopologyGraph(props: {
                       }}
                     >
                       <title>{`${host().name || address} · ${address}`}</title>
-                      <rect class="topo-node-shell" width={NW} height={NH} rx="4" />
-                      <rect class="topo-node-rail" x="0.5" y="0.5" width="3" height={NH - 1} rx="1.5" />
-                      <path class="topo-node-divider" d={`M 4 88 H ${NW}`} />
-                      <rect class={`topo-os-pill ${badge().key}`} x="14" y="12" width={osWidth()} height="18" rx="2" />
-                      <text class={`topo-node-os ${badge().key}`} x={14 + osWidth() / 2} y="24" text-anchor="middle">{osText()}</text>
-                      <text class="topo-node-svcs-top" x={NW - 12} y="24" text-anchor="end">
+                      <rect class="topo-node-shell" width={NW} height={NH} rx="7" />
+                      <rect class="topo-node-footer" x="1" y="88" width={NW - 2} height="35" rx="6" />
+                      <path class="topo-node-divider" d={`M 1 88 H ${NW - 1}`} />
+                      <g transform="translate(14 18)">
+                        <OsHardwareGlyph family={family()} state={nodeState()} />
+                      </g>
+                      <text class={`topo-node-os ${badge().key}`} x="66" y="29">{osText()}</text>
+                      <text class="topo-node-svcs-top" x={NW - 13} y="29" text-anchor="end">
                         {svcCount()} {svcCount() === 1 ? "PORT" : "PORTS"}
                       </text>
-                      <text class="topo-node-name" x="14" y="53">{fitLabel(host().name || address, 24)}</text>
-                      <text class="topo-node-address" x="14" y="72">{fitLabel(address, 26)}</text>
-                      <circle class="topo-host-status" cx="18" cy="106" r="3" />
-                      <text class="topo-host-state" x="27" y="109.5">
+                      <text class="topo-node-name" x="66" y="49">{fitLabel(host().name || address, 18)}</text>
+                      <text class="topo-node-address" x="66" y="68">{fitLabel(address, 19)}</text>
+                      <circle class="topo-host-status" cx="19" cy="106" r="3.4" />
+                      <text class="topo-host-state" x="29" y="109.5">
                         {hostAccess().sessions.length > 0
                           ? `${hostAccess().sessions.length} LIVE SESSION${hostAccess().sessions.length === 1 ? "" : "S"}`
                           : hostAccess().login ? "LOGIN AVAILABLE" : "DISCOVERED"}
@@ -565,17 +570,17 @@ export function TopologyGraph(props: {
                   }}
                   onContextMenu={event => ghostMenu(key, event)}>
                   <title>{`Click to scan ${ghosts().get(key)!.label} · Right-click for route options`}</title>
-                  <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="4" />
+                  <rect class="topo-ghost-shell" width={GHOST_W} height={GHOST_H} rx="7" />
                   <g transform="translate(14 31)">
-                    <rect class="topo-ghost-icon-bg" width="30" height="30" rx="4" />
-                    <circle class="topo-ghost-icon" cx="9" cy="15" r="2" />
-                    <circle class="topo-ghost-icon" cx="21" cy="9" r="2" />
-                    <circle class="topo-ghost-icon" cx="21" cy="21" r="2" />
-                    <path class="topo-ghost-link" d="M 11 14 L 19 10 M 11 16 L 19 20" />
+                    <rect class="topo-ghost-icon-bg" width="32" height="32" rx="6" />
+                    <circle class="topo-ghost-icon" cx="10" cy="16" r="2.2" />
+                    <circle class="topo-ghost-icon" cx="22" cy="10" r="2.2" />
+                    <circle class="topo-ghost-icon" cx="22" cy="22" r="2.2" />
+                    <path class="topo-ghost-link" d="M 12 15 L 20 11 M 12 17 L 20 21" />
                   </g>
-                  <text class="topo-ghost-kicker" x="56" y="28">ROUTED NETWORK</text>
-                  <text class="topo-ghost-address" x="56" y="51">{fitLabel(ghosts().get(key)!.label, 19)}</text>
-                  <text class="topo-ghost-meta" x="56" y="74">Click to scan subnet →</text>
+                  <text class="topo-ghost-kicker" x="58" y="29">ROUTED NETWORK</text>
+                  <text class="topo-ghost-address" x="58" y="52">{fitLabel(ghosts().get(key)!.label, 19)}</text>
+                  <text class="topo-ghost-meta" x="58" y="75">Click to scan subnet →</text>
                 </g>
               )}</For>
             </g>

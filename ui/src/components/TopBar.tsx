@@ -39,7 +39,7 @@ export function TopBar(props: {
   return (
     <header class="menubar">
       <div class="brand">
-        <HaydukMark size={18} />
+        <HaydukMark size={22} />
         <span class="word">hayduk</span>
       </div>
 

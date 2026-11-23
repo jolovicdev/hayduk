@@ -15,35 +15,35 @@
 
 .modal {
   animation: pop-in .14s ease-out;
-  width: 440px;
+  width: 460px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 64px);
   overflow: auto;
   background: var(--bg1);
   border: 1px solid var(--line-hi);
   border-radius: var(--r-md);
-  box-shadow: var(--shadow), inset 0 1px 0 rgba(255, 255, 255, .05);
-  padding: 18px 20px;
+  box-shadow: var(--shadow), var(--bevel);
+  padding: 20px 22px;
 }
-.connect-modal { width: 420px; }
+.connect-modal { width: 440px; }
 .modal .mhead {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-bottom: 12px;
+  gap: 12px;
+  padding-bottom: 14px;
   border-bottom: 1px solid var(--cardline);
 }
-.modal .mhead svg.mark { width: 24px; height: 24px; flex: none; }
+.modal .mhead svg.mark { width: 26px; height: 26px; flex: none; }
 .modal .mhead .zbtn { margin-left: auto; }
 .modal .eyebrow {
   color: var(--tx2);
-  font: 500 10px/1 var(--mono);
+  font: 500 10.5px/1 var(--mono);
   letter-spacing: .08em;
   text-transform: uppercase;
-  margin-bottom: 3px;
+  margin-bottom: 4px;
 }
-.modal .mtitle { font: 600 14.5px var(--sans); color: var(--tx0); }
-.modal p { font: 400 12px/1.55 var(--sans); color: var(--tx1); margin-top: 12px; }
+.modal .mtitle { font: 600 16px var(--sans); color: var(--tx0); }
+.modal p { font: 400 13px/1.55 var(--sans); color: var(--tx1); margin-top: 12px; }
 .modal .mbtns {
   display: flex;
   justify-content: flex-end;

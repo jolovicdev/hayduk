@@ -1,6 +1,8 @@
 import { For, Show, createMemo } from "solid-js";
 import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { copyWithFeedback } from "../clipboard";
+import { OsIconBadge, type OsFamily } from "../components/OsIcon";
+import { osBadge } from "./os";
 import { serviceOpen } from "./serviceState";
 
 export function Inspector(props: {
@@ -34,9 +36,14 @@ export function Inspector(props: {
           <p>Select a host on the topology map or in Services to inspect ports, sessions, and actions.</p>
         </div>
       }>
-        {(h) => <>
+        {(h) => {
+          const badge = () => osBadge(h());
+          const family = (): OsFamily => (badge().key === "win" || badge().key === "linux" ? badge().key : "other");
+          const state = () => sessions().length > 0 ? "access" : creds().length > 0 ? "login" : "idle";
+          return <>
           <div class="ihost">
-            <div>
+            <OsIconBadge family={family()} state={state()} size={40} />
+            <div class="ihost-meta">
               <div class="iname">{h().name || h().address}</div>
               <div class="ios">
                 {[h().osName, h().osFlavor, h().osVersion].filter(Boolean).join(" ") || "unknown os"}
@@ -133,7 +140,7 @@ export function Inspector(props: {
               </Show>
             </div>
           </div>
-        </>}
+        </>;}}
       </Show>
     </div>
   );
