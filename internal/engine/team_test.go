@@ -404,6 +404,11 @@ func TestTeamLateJoinerGetsConsole(t *testing.T) {
 // rejoin inside it keeps them.
 func TestTeamLingerReleasesAttachments(t *testing.T) {
 	fake := stdFake()
+	fake.set(gomsf.SessionList, func(...interface{}) (interface{}, error) {
+		return map[string]interface{}{
+			"1": map[string]interface{}{"type": "shell", "session_host": "10.0.0.1"},
+		}, nil
+	})
 	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
 		OutputInterval: time.Hour, RefreshInterval: time.Hour, ConsoleLinger: 50 * time.Millisecond})
 	t.Cleanup(e.Shutdown)

@@ -84,8 +84,9 @@ type Engine struct {
 	// team members never share a console stream. The "" key is the local
 	// single-operator console. consoleTimers holds the linger timer of
 	// each departed operator whose console has not been dropped yet.
-	consoles      map[string]*operatorConsole
-	consoleTimers map[string]*time.Timer
+	consoles        map[string]*operatorConsole
+	consoleTimers   map[string]*time.Timer
+	consoleTimerGen map[string]uint64
 
 	conn        protocol.ConnectionState
 	hosts       []*protocol.HostState

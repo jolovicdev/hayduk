@@ -61,32 +61,36 @@ func (e *Engine) operatorDelta(name string, delta int) {
 	}
 }
 
-// scheduleConsoleDrop arms the linger timer for a departed operator. The
-// timer identity is recorded so a rejoin-and-leave cycle cannot have an
-// older timer drop the newer stay.
+// scheduleConsoleDrop arms the linger timer for a departed operator. A
+// per-operator generation counter identifies each armed timer so a
+// rejoin-and-leave cycle cannot have an older timer drop the newer stay,
+// and passing the generation by value avoids any closure race on the timer pointer.
 func (e *Engine) scheduleConsoleDrop(name string) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.operators[name] > 0 {
 		return // already rejoined
 	}
-	var timer *time.Timer
-	timer = time.AfterFunc(e.cfg.ConsoleLinger, func() { e.dropOperatorConsole(name, timer) })
 	if e.consoleTimers == nil {
 		e.consoleTimers = make(map[string]*time.Timer)
+	}
+	if e.consoleTimerGen == nil {
+		e.consoleTimerGen = make(map[string]uint64)
 	}
 	if old := e.consoleTimers[name]; old != nil {
 		old.Stop()
 	}
-	e.consoleTimers[name] = timer
+	gen := e.consoleTimerGen[name] + 1
+	e.consoleTimerGen[name] = gen
+	e.consoleTimers[name] = time.AfterFunc(e.cfg.ConsoleLinger, func() { e.dropOperatorConsole(name, gen) })
 }
 
 // dropOperatorConsole releases a departed operator's console and session
 // attachments once the linger expired. Shared transcripts and watches
 // survive while another operator still holds the session.
-func (e *Engine) dropOperatorConsole(name string, timer *time.Timer) {
+func (e *Engine) dropOperatorConsole(name string, gen uint64) {
 	e.mu.Lock()
-	if e.consoleTimers[name] != timer || e.operators[name] > 0 {
+	if e.consoleTimers[name] == nil || e.consoleTimerGen[name] != gen || e.operators[name] > 0 {
 		e.mu.Unlock()
 		return
 	}
