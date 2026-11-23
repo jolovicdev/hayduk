@@ -28,6 +28,7 @@ type eventLog struct {
 	path     string
 	ch       chan *protocol.EventEntry
 	flushReq chan chan error
+	done     chan struct{}
 	wg       sync.WaitGroup
 
 	mu      sync.RWMutex // closed
@@ -47,6 +48,7 @@ func openEventLog(path string) (*eventLog, error) {
 		path:     path,
 		ch:       make(chan *protocol.EventEntry, eventQueueCap),
 		flushReq: make(chan chan error, 1),
+		done:     make(chan struct{}),
 	}
 	if err := l.openFile(); err != nil {
 		return nil, err
@@ -74,6 +76,7 @@ func (l *eventLog) openFile() error {
 }
 
 func (l *eventLog) run() {
+	defer close(l.done)
 	defer l.wg.Done()
 	ticker := time.NewTicker(eventFlushEvery)
 	defer ticker.Stop()
@@ -196,9 +199,19 @@ func (l *eventLog) flushNow() error {
 		return nil
 	}
 	req := make(chan error, 1)
-	l.flushReq <- req // the writer is alive while we hold RLock
+	select {
+	case l.flushReq <- req:
+	case <-l.done:
+		l.mu.RUnlock()
+		return nil
+	}
 	l.mu.RUnlock()
-	return <-req
+	select {
+	case err := <-req:
+		return err
+	case <-l.done:
+		return nil
+	}
 }
 
 func (l *eventLog) close() error {
