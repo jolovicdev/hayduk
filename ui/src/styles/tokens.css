@@ -1,56 +1,57 @@
 :root {
   color-scheme: dark;
 
-  /* surfaces: warm matte carbon & tungsten instrument chassis */
-  --bg0: #111110;
-  --bg1: #181715;
-  --bg2: #21201d;
-  --bg3: #2b2926;
-  --bg4: #36332f;
-  --well: #100f0e;
+  /* surfaces: high-contrast obsidian-black chassis */
+  --bg0: #09090b;
+  --bg1: #111113;
+  --bg2: #18181b;
+  --bg3: #222226;
+  --bg4: #2c2c31;
+  --well: #070709;
 
-  /* machined hairlines */
-  --cardline: #262421;
-  --line: #34312d;
-  --line-hi: #4d4841;
+  /* crisp structural hairlines */
+  --cardline: #1f1f24;
+  --line: #2d2d34;
+  --line-hi: #484852;
 
-  /* warm silk-screened ivory ink */
-  --tx0: #f4f1ea;
-  --tx1: #bfb9ad;
-  --tx2: #8c8579;
+  /* high-contrast stark typography */
+  --tx0: #fafafa;
+  --tx1: #b4b4be;
+  --tx2: #7e7e8a;
 
-  /* primary structural CTA & tactile signal orange brand */
-  --accent: #ff6b2b;
-  --accent-hi: #ff8147;
-  --accent-ink: #120b07;
-  --accent-dim: rgba(255, 107, 43, .13);
+  /* primary structural CTA: pure white on dark for maximum contrast */
+  --accent: #fafafa;
+  --accent-hi: #ffffff;
+  --accent-ink: #09090b;
+  --accent-dim: rgba(250, 250, 250, .10);
 
-  --brand: #ff6b2b;
-  --brand-hi: #ff8147;
-  --brand-dim: rgba(255, 107, 43, .13);
-  --brand-line: rgba(255, 107, 43, .45);
+  /* single disciplined brand accent */
+  --brand: #f97316;
+  --brand-hi: #fb923c;
+  --brand-dim: rgba(249, 115, 22, .12);
+  --brand-line: rgba(249, 115, 22, .40);
 
-  /* semantic telemetry */
-  --red: #dc3b3b;
-  --red-hi: #ef4d4d;
-  --red-br: #fb7171;
-  --red-dim: rgba(220, 59, 59, .15);
+  /* semantic telemetry — restrained to status dots & micro-indicators */
+  --red: #dc2626;
+  --red-hi: #ef4444;
+  --red-br: #f87171;
+  --red-dim: rgba(220, 38, 38, .14);
 
   --grn: #22c55e;
-  --grn-tx: #34d996;
-  --grn-dim: rgba(52, 217, 150, .12);
-  --live-line: rgba(52, 217, 150, .42);
-  --live-fill: #13211b;
+  --grn-tx: #4ade80;
+  --grn-dim: rgba(34, 197, 94, .10);
+  --live-line: rgba(34, 197, 94, .32);
+  --live-fill: #101914;
 
   --amb: #eab308;
-  --amb-dim: rgba(234, 179, 8, .13);
-  --amb-line: rgba(234, 179, 8, .42);
+  --amb-dim: rgba(234, 179, 8, .10);
+  --amb-line: rgba(234, 179, 8, .32);
 
   --route: #60a5fa;
-  --route-dim: rgba(96, 165, 250, .12);
-  --route-line: rgba(96, 165, 250, .42);
+  --route-dim: rgba(96, 165, 250, .10);
+  --route-line: rgba(96, 165, 250, .35);
 
-  /* radii: tactile industrial chamfer */
+  /* radii: crisp industrial chamfer */
   --r-xs: 3px;
   --r-sm: 5px;
   --r-md: 8px;
@@ -60,8 +61,8 @@
   --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace;
 
   /* elevation */
-  --shadow: 0 22px 54px rgba(0, 0, 0, .72), 0 0 0 1px rgba(255, 248, 235, .05);
-  --bevel: inset 0 1px 0 rgba(255, 248, 235, .06);
+  --shadow: 0 22px 54px rgba(0, 0, 0, .78), 0 0 0 1px rgba(255, 255, 255, .06);
+  --bevel: inset 0 1px 0 rgba(255, 255, 255, .04);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

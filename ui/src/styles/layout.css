@@ -217,8 +217,8 @@
 .chip b { color: var(--tx0); font-weight: 600; }
 .chip i { color: var(--tx2); font-size: 14px; width: 14px; height: 14px; }
 .workspace-chip { height: 32px; }
-.team-chip { cursor: pointer; margin-right: 6px; border-color: var(--live-line); background: var(--live-fill); }
-.team-chip i { color: var(--grn-tx); }
+.team-chip { cursor: pointer; margin-right: 6px; border-color: var(--line); background: var(--bg2); }
+.team-chip i { color: var(--grn); }
 
 /* ---------- left: module library ---------- */
 .left {
@@ -301,7 +301,7 @@
 .trow.expanded { color: var(--tx0); }
 .trow .caret { color: var(--tx2); font-size: 12px; width: 12px; height: 12px; }
 .trow .fic { color: var(--tx2); font-size: 14px; width: 14px; height: 14px; }
-.trow.expanded .fic { color: var(--brand); }
+.trow.expanded .fic { color: var(--tx0); }
 .trow .tlabel { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trow .cnt {
   flex: none;
@@ -407,7 +407,7 @@
   padding: 9px 11px;
   background: var(--bg0);
   border: 1px solid var(--cardline);
-  border-left: 2px solid var(--brand);
+  border-left: 2px solid var(--line-hi);
   border-radius: var(--r-xs);
   font: 400 12.5px/1.55 var(--sans);
   color: var(--tx1);
@@ -473,10 +473,10 @@
 .nbtab:hover:not(:disabled) { color: var(--tx0); background: var(--bg2); }
 .nbtab.on {
   color: var(--tx0);
-  border-bottom-color: var(--brand);
-  background: rgba(255, 107, 43, .05);
+  border-bottom-color: var(--tx0);
+  background: var(--bg2);
 }
-.nbtab.on i { color: var(--brand); }
+.nbtab.on i { color: var(--tx0); }
 
 .nbbody {
   flex: 1;

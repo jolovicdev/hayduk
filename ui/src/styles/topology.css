@@ -1,108 +1,101 @@
-/* ---------- carbon hardware topology canvas ---------- */
+/* ---------- high-contrast hardware topology canvas ---------- */
 .stagebody.gridbg #topo {
-  background-image: radial-gradient(circle, #2b2824 1.1px, transparent 1.1px);
+  background-image: radial-gradient(circle, #242429 1px, transparent 1px);
   background-size: 22px 22px;
 }
 #topo { background-color: var(--bg0); shape-rendering: geometricPrecision; }
 #topo text { user-select: none; pointer-events: none; }
 
 /* subnet enclosure */
-#topo .topo-zone-panel { fill: #151412; fill-opacity: .94; stroke: #2c2925; stroke-width: 1; }
-#topo .topo-zone-band { fill: #1c1b18; }
-#topo .topo-zone-rule { stroke: #2c2925; stroke-width: 1; }
-#topo .topo-zone-icon { fill: #9c9487; }
-#topo .topo-zone-link { fill: none; stroke: #766f65; stroke-width: 1.3; }
-#topo .topo-zone-name { fill: #ece7dc; font: 600 12px var(--mono); letter-spacing: .04em; }
-#topo .topo-zone-meta { fill: #948d80; font: 500 10.5px var(--mono); letter-spacing: .05em; }
-#topo .topo-zone-route-note { fill: var(--route); font: 600 10px var(--mono); letter-spacing: .05em; }
+#topo .topo-zone-panel { fill: #0e0e11; fill-opacity: .96; stroke: #25252b; stroke-width: 1; }
+#topo .topo-zone-band { fill: #151519; }
+#topo .topo-zone-rule { stroke: #25252b; stroke-width: 1; }
+#topo .topo-zone-icon { fill: #90909c; }
+#topo .topo-zone-link { fill: none; stroke: #6a6a75; stroke-width: 1.3; }
+#topo .topo-zone-name { fill: #f4f4f6; font: 600 12px var(--mono); letter-spacing: .04em; }
+#topo .topo-zone-meta { fill: #848490; font: 500 10.5px var(--mono); letter-spacing: .05em; }
+#topo .topo-zone-route-note { fill: #8cb8ea; font: 600 10px var(--mono); letter-spacing: .05em; }
 
 /* pivot routes */
 #topo .topo-route-port { fill: var(--route); stroke: var(--bg0); stroke-width: 2.5; }
 #topo .topo-route-halo, #topo .topo-route-line { fill: none; stroke-linejoin: round; }
 #topo .topo-route-halo { stroke: var(--bg0); stroke-width: 6; }
-#topo .topo-route-line { stroke: var(--route); stroke-width: 1.7; stroke-dasharray: 5 4; stroke-linecap: square; }
-#topo #topo-route-arrow path { fill: var(--route); }
-#topo .topo-route-label rect { fill: #151e2c; stroke: var(--route-line); stroke-width: 1; }
-#topo .topo-route-label text { fill: #bfdbfe; text-anchor: middle; font: 600 10px var(--mono); letter-spacing: .05em; }
+#topo .topo-route-line { stroke: #5a8cc7; stroke-width: 1.6; stroke-dasharray: 5 4; stroke-linecap: square; }
+#topo #topo-route-arrow path { fill: #5a8cc7; }
+#topo .topo-route-label rect { fill: #121720; stroke: #354c6b; stroke-width: 1; }
+#topo .topo-route-label text { fill: #c4dcf7; text-anchor: middle; font: 600 10px var(--mono); letter-spacing: .05em; }
 #topo .topo-routes g { cursor: context-menu; }
 
-/* host hardware cards */
+/* host hardware cards — uniform dark graphite, crisp high-contrast hierarchy */
 #topo .topo-node { cursor: grab; outline: none; }
 #topo .topo-node:active { cursor: grabbing; }
 #topo .topo-node-shell {
-  fill: #201f1c;
-  stroke: #383530;
+  fill: #151518;
+  stroke: #2c2c33;
   stroke-width: 1;
   filter: url(#topo-node-shadow);
   transition: stroke .12s, fill .12s;
 }
-#topo .topo-node-footer { fill: #171614; }
-#topo .topo-node:hover .topo-node-shell { fill: #262420; stroke: #5a544b; }
-#topo .topo-node.access .topo-node-shell { fill: #18231e; stroke: #2c6e52; }
-#topo .topo-node.access .topo-node-footer { fill: #121c17; }
-#topo .topo-node.access:hover .topo-node-shell { fill: #1d2b24; stroke: var(--grn-tx); }
-#topo .topo-node.login .topo-node-shell { fill: #241f15; stroke: #755b1e; }
-#topo .topo-node.login .topo-node-footer { fill: #1b1710; }
-#topo .topo-node.login:hover .topo-node-shell { fill: #2b2519; stroke: var(--amb); }
+#topo .topo-node-footer { fill: #0f0f12; }
+#topo .topo-node:hover .topo-node-shell { fill: #1b1b1f; stroke: #4e4e59; }
+#topo .topo-node.access .topo-node-shell { fill: #151518; stroke: #274f3b; }
+#topo .topo-node.access .topo-node-footer { fill: #0f0f12; }
+#topo .topo-node.access:hover .topo-node-shell { fill: #1a1b1d; stroke: #3ea872; }
+#topo .topo-node.login .topo-node-shell { fill: #151518; stroke: #544520; }
+#topo .topo-node.login .topo-node-footer { fill: #0f0f12; }
+#topo .topo-node.login:hover .topo-node-shell { fill: #1b1a18; stroke: #c49a2a; }
 #topo .topo-node.selected .topo-node-shell,
 #topo .topo-node:focus-visible .topo-node-shell {
-  stroke: var(--brand);
+  stroke: #fafafa;
   stroke-width: 1.8;
 }
 
-#topo .topo-node-divider { stroke: #2d2a26; stroke-width: 1; }
-#topo .topo-node.access .topo-node-divider { stroke: #214033; }
-#topo .topo-node.login .topo-node-divider { stroke: #47391a; }
+#topo .topo-node-divider { stroke: #232329; stroke-width: 1; }
+#topo .topo-node.access .topo-node-divider { stroke: #232329; }
+#topo .topo-node.login .topo-node-divider { stroke: #232329; }
 
-/* shared OS computer hardware emblem (used in Topology + Inspector) */
+/* shared monochrome-high-contrast OS hardware tile (Topology + Inspector) */
 .os-hw-svg { display: block; flex: none; }
-.hw-tile .hw-bg { fill: #161513; stroke: #35322c; stroke-width: 1; }
-.hw-tile.win .hw-bg { fill: #131b26; stroke: #2b476b; }
-.hw-tile.linux .hw-bg { fill: #231c11; stroke: #5c451d; }
-.hw-tile.apple .hw-bg { fill: #1d1c1b; stroke: #4e4a44; }
-.hw-tile.android .hw-bg { fill: #122119; stroke: #2b5c42; }
-.hw-tile.access .hw-bg { stroke: #2f7a5a; }
+.hw-tile .hw-bg { fill: #0b0b0d; stroke: #2c2c33; stroke-width: 1; }
+.hw-tile.access .hw-bg { stroke: #2c5942; }
+.hw-tile.login .hw-bg { stroke: #574823; }
 
-.hw-tile .hw-monitor { font-size: 35px; fill: #8b857a; }
-.hw-tile.win .hw-monitor { fill: #5b93d6; }
-.hw-tile.linux .hw-monitor { fill: #d99b26; }
-.hw-tile.apple .hw-monitor { fill: #b8b2a6; }
-.hw-tile.android .hw-monitor { fill: #34d399; }
+.hw-tile .hw-monitor { font-size: 35px; fill: #6e6e79; }
+.hw-tile .hw-os-glyph { font-size: 13.5px; fill: #f4f4f6; }
+.hw-tile .hw-os-glyph.win { fill: #d4e4f7; font-size: 13px; }
+.hw-tile .hw-os-glyph.linux { fill: #fafafa; font-size: 14.5px; }
+.hw-tile .hw-os-glyph.apple { fill: #fafafa; font-size: 13.5px; }
+.hw-tile .hw-os-glyph.android { fill: #c8f0da; font-size: 14px; }
+.hw-tile .hw-os-glyph.other { fill: #b4b4be; font-size: 13px; }
 
-.hw-tile .hw-os-glyph { font-size: 13.5px; fill: #d4cec2; }
-.hw-tile .hw-os-glyph.win { fill: #60a5fa; font-size: 13px; }
-.hw-tile .hw-os-glyph.linux { fill: #fbbf24; font-size: 14.5px; }
-.hw-tile .hw-os-glyph.apple { fill: #f4f1ea; font-size: 13.5px; }
-.hw-tile .hw-os-glyph.android { fill: #34d399; font-size: 14px; }
-.hw-tile .hw-os-glyph.other { fill: #b8b2a6; font-size: 13px; }
-
-.hw-led { stroke: #161513; stroke-width: 1.8; }
-.hw-led.access { fill: var(--grn-tx); }
+.hw-led { stroke: #0b0b0d; stroke-width: 1.8; }
+.hw-led.access { fill: var(--grn); }
 .hw-led.login { fill: var(--amb); }
 
-#topo .topo-node-os { fill: #a1998c; font: 600 10px var(--mono); letter-spacing: .07em; }
-#topo .topo-node-os.win { fill: #7cb6ff; }
-#topo .topo-node-os.linux { fill: #f5b942; }
-#topo .topo-node-svcs-top { fill: #8f887c; font: 500 10px var(--mono); }
-#topo .topo-node-name { fill: #f5f2eb; font: 600 14.5px var(--sans); }
-#topo .topo-node-address { fill: #ada699; font: 400 12px var(--mono); }
-#topo .topo-host-status { fill: #69635a; }
-#topo .topo-host-state { fill: #9c9589; font: 500 10.5px var(--mono); letter-spacing: .04em; }
-#topo .access .topo-host-status { fill: var(--grn-tx); }
+#topo .topo-node-os { fill: #90909c; font: 600 10px var(--mono); letter-spacing: .07em; }
+#topo .topo-node-os.win { fill: #a3bcd8; }
+#topo .topo-node-os.linux { fill: #b8b8c2; }
+#topo .topo-node-svcs-top { fill: #7e7e8a; font: 500 10px var(--mono); }
+#topo .topo-node-name { fill: #fafafa; font: 600 14.5px var(--sans); }
+#topo .topo-node-address { fill: #a1a1ad; font: 400 12px var(--mono); }
+#topo .topo-host-status { fill: #5e5e68; }
+#topo .topo-host-state { fill: #8c8c98; font: 500 10.5px var(--mono); letter-spacing: .04em; }
+#topo .access .topo-host-status { fill: var(--grn); }
 #topo .access .topo-host-state { fill: var(--grn-tx); }
-#topo .login .topo-host-status, #topo .login .topo-host-state { fill: var(--amb); }
+#topo .login .topo-host-status { fill: var(--amb); }
+#topo .login .topo-host-state { fill: #facc15; }
 
 /* routed ghost network */
 #topo .topo-ghost { cursor: pointer; outline: none; }
-#topo .topo-ghost-shell { fill: #141c28; stroke: var(--route-line); stroke-width: 1.2; stroke-dasharray: 5 4; transition: fill .12s, stroke .12s; }
+#topo .topo-ghost-shell { fill: #10141c; stroke: #3a5476; stroke-width: 1.2; stroke-dasharray: 5 4; transition: fill .12s, stroke .12s; }
 #topo .topo-ghost:hover .topo-ghost-shell,
-#topo .topo-ghost:focus-visible .topo-ghost-shell { fill: #1b2738; stroke: var(--route); }
-#topo .topo-ghost-icon-bg { fill: #1c2a3e; stroke: var(--route-line); }
-#topo .topo-ghost-icon { fill: var(--route); }
-#topo .topo-ghost-link { fill: none; stroke: var(--route); stroke-width: 1.3; }
-#topo .topo-ghost-kicker { fill: #93c5fd; font: 600 10px var(--mono); letter-spacing: .06em; }
-#topo .topo-ghost-address { fill: #eff6ff; font: 600 13px var(--mono); }
-#topo .topo-ghost-meta { fill: #93c5fd; font: 500 10.5px var(--mono); }
+#topo .topo-ghost:focus-visible .topo-ghost-shell { fill: #151c28; stroke: var(--route); }
+#topo .topo-ghost-icon-bg { fill: #151e2c; stroke: #3a5476; }
+#topo .topo-ghost-icon { fill: #8cb8ea; }
+#topo .topo-ghost-link { fill: none; stroke: #8cb8ea; stroke-width: 1.3; }
+#topo .topo-ghost-kicker { fill: #8cb8ea; font: 600 10px var(--mono); letter-spacing: .06em; }
+#topo .topo-ghost-address { fill: #fafafa; font: 600 13px var(--mono); }
+#topo .topo-ghost-meta { fill: #8cb8ea; font: 500 10.5px var(--mono); }
 
 /* map sub-bars */
 .map-context {
@@ -119,7 +112,7 @@
   border-bottom: 1px solid var(--cardline);
 }
 .map-context > span { display: flex; align-items: center; gap: 7px; font-variant-numeric: tabular-nums; }
-.map-context-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--brand); }
+.map-context-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--tx1); }
 .map-context-divider { color: var(--line-hi); margin: 0 2px; }
 .map-context button {
   display: flex;

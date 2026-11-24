@@ -249,10 +249,9 @@
 }
 .cmdk-item.sel, .cmdk-item:hover { background: var(--bg3); color: var(--tx0); }
 .cmdk-item i { color: var(--tx2); font-size: 14px; width: 14px; height: 14px; }
-.cmdk-item.sel i { color: var(--brand); }
-.cmdk-item .cmdk-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cmdk-item.sel i { color: var(--tx0); }
+.cmdk-item .cmdk-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmdk-item .cmdk-sub {
-  margin-left: auto;
   font: 400 10.5px var(--mono);
   color: var(--tx2);
   flex: none;

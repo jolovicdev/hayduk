@@ -31,7 +31,7 @@
 .tbtn.primary:hover:not(:disabled) i,
 .tbtn.primary:active:not(:disabled) i { color: var(--accent-ink); }
 .tbtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--accent-ink); }
-.tbtn.primary:active:not(:disabled) { background: #e85a1c; border-color: #e85a1c; color: var(--accent-ink); }
+.tbtn.primary:active:not(:disabled) { background: #e4e4e7; border-color: #e4e4e7; color: var(--accent-ink); }
 
 .abtn {
   height: 32px;
@@ -64,7 +64,7 @@
 .abtn.primary:hover:not(:disabled) i,
 .abtn.primary:active:not(:disabled) i { color: var(--accent-ink); }
 .abtn.primary:hover:not(:disabled) { background: var(--accent-hi); border-color: var(--accent-hi); color: var(--accent-ink); }
-.abtn.primary:active:not(:disabled) { background: #e85a1c; border-color: #e85a1c; color: var(--accent-ink); }
+.abtn.primary:active:not(:disabled) { background: #e4e4e7; border-color: #e4e4e7; color: var(--accent-ink); }
 .abtn.red {
   background: var(--red);
   border-color: var(--red);
