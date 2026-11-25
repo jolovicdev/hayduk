@@ -1628,9 +1628,10 @@ func TestReconcileSessionsDropsUnlistedSessions(t *testing.T) {
 	var e *Engine
 	var listCalls int32
 	f.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
-		// second listing is the first reconcile: the daemon has lost
-		// session 1, and session 7 opens while the snapshot is taken
-		if atomic.AddInt32(&listCalls, 1) == 2 {
+		// listing 3 is the test's first reconcile (the connect-time sweep
+		// takes listing 2): the daemon has lost session 1, and session 7
+		// opens while the snapshot is taken
+		if atomic.AddInt32(&listCalls, 1) == 3 {
 			daemonSessions.Store(map[string]interface{}{
 				"7": map[string]interface{}{"type": "shell", "uuid": "uuid-7"},
 			})
@@ -1644,6 +1645,9 @@ func TestReconcileSessionsDropsUnlistedSessions(t *testing.T) {
 		return daemonSessions.Load().(interface{}), nil
 	})
 	e = connectedEngine(t, f)
+	// let the connect-time sweep take its listing before reconciling here,
+	// so the two snapshots cannot overlap
+	waitFor(t, func() bool { return atomic.LoadInt32(&listCalls) >= 2 })
 	waitFor(t, func() bool { return len(e.State().Sessions) == 1 })
 
 	e.reconcileSessions(context.Background())

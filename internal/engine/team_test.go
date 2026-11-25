@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -328,7 +329,16 @@ func TestTeamChat(t *testing.T) {
 // The operator whose launch opened a session gets the credit in the shared
 // event log and on the session itself.
 func TestTeamSessionOpenAttribution(t *testing.T) {
-	e := connectedEngine(t, stdFake())
+	fake := stdFake()
+	var listCalls int32
+	fake.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&listCalls, 1)
+		return map[string]interface{}{}, nil
+	})
+	e := connectedEngine(t, fake)
+	// the connect-time sweep must take its snapshot before the synthetic
+	// open: a later snapshot would prune the session the daemon never lists
+	waitFor(t, func() bool { return atomic.LoadInt32(&listCalls) >= 2 })
 	sub := e.Subscribe()
 	defer sub.Stop()
 
