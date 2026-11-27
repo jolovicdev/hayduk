@@ -12,7 +12,7 @@ Hayduk is a client for `msfrpcd` and does not bundle Metasploit Framework.
 
 **[Website (hayduk.dev)](https://hayduk.dev)** · **[Download latest release](https://github.com/jolovicdev/hayduk/releases/latest)** · [Quickstart](#quickstart) · [Docker lab](#try-the-docker-lab) · [Team mode](#team-mode) · [FAQ](#faq)
 
-![Hayduk open-source Metasploit GUI showing network topology, OS icons, module tree, host inspector, and live console](docs/screenshot.png)
+![Hayduk open-source Metasploit GUI showing network topology with filter bar, OS icons, module tree, host inspector, and live console](docs/screenshot.png)
 
 *Illustrative campaign data.*
 
@@ -64,18 +64,23 @@ A cold Metasploit daemon takes roughly 15–30 seconds to respond. Successful co
 
 | Area | Details |
 |---|---|
-| **Network topology map** | Hosts grouped by subnet with OS icons (Windows, Linux, macOS, Android), open port counts, drag/zoom/Focus mode, and clickable routed subnets. |
-| **Module browser & `Ctrl+K` palette** | Instant search across hosts, sessions, actions, and 7,000+ Metasploit modules with reliability ranks, option forms, and compatible payload selection. |
-| **Service fingerprinting & operations** | Host discovery, `db_nmap -sV` version detection, login brute force, and Hail Mary runs execute as tracked background operations with live progress and cancellation. |
-| **Meterpreter & shell session manager** | Multi-tab interactive consoles in **Interact**, structured Meterpreter tools (Sysinfo, Processes, Files, Screenshot, Keylog, Hashdump), and shell-to-Meterpreter upgrades. |
+| **Network topology map** | Hosts grouped by subnet with OS icons (Windows, Linux, macOS, Android), open port counts, live workspace filtering (host, port, service, access, OS), Shift-click and marquee multi-select with bulk actions, drag/zoom/Focus mode, and clickable routed subnets. |
+| **Module browser & `Ctrl+K` palette** | Instant search across hosts, sessions, actions, and 7,000+ Metasploit modules with reliability ranks, cached metadata, safe pre-launch **Check target** verdicts, option forms, and compatible payload selection. |
+| **Service fingerprinting & operations** | Host discovery, `db_nmap -sV` version detection, login brute force, and rank-prioritized **Find Attacks** and **Hail Mary** runs executing as tracked background operations with live progress and cancellation. |
+| **Meterpreter & shell session manager** | Multi-tab interactive consoles in **Interact**, a structured **Remote File Browser** with browser uploads/downloads and inline screenshot previews, one-click Meterpreter tools, compatible **Post module** streaming, and `shell_to_meterpreter` upgrades. |
+| **Payload generation & web delivery** | Generate payloads directly over RPC and download binaries straight to the browser, or launch `exploit/multi/script/web_delivery` (Python, PHP, PowerShell, Regsvr32, Linux, macOS) with ready-to-copy one-liners tracked in **Listeners**. |
 | **Pivoting** | Tabbed **Pivot** dialog (`Routes`, `SOCKS`, `Port forwards`) on any live session. Added routes appear on the topology map as clickable subnets that prefill service scans. |
-| **Credentials, listeners & loot** | Inspect workspace credentials and loot, run targeted login workflows, and keep track of active payload listeners across restarts. |
+| **Credentials, lateral movement & workspaces** | Inspect workspace credentials and loot, run targeted **Login / Lateral** workflows (SMB PsExec, SSH exec, WinRM, and Pass the Hash with NTLM hashes), and create, switch, or delete Metasploit workspaces from the header menu. |
 | **Multi-operator team mode** | Share one `msfrpcd` campaign across multiple operators with private consoles, shared session transcripts, attributed events, team chat, optional TLS, and bound per-operator tokens. |
 | **Offline HTML reports** | Export a self-contained, print-ready HTML campaign report scoped to the active workspace. Zero external requests; team chat is excluded automatically. |
 
-![Hayduk Topology Focus mode showing adaptive subnet layout, OS hardware tiles, host inspector, and a routed network](docs/topology.png)
+![Hayduk Topology Focus mode showing multi-host selection, dynamic filter bar, bulk host inspector, and a routed network](docs/topology.png)
 
-*Topology Focus mode with illustrative campaign data.*
+*Topology Focus mode and multi-host selection with illustrative campaign data.*
+
+![Hayduk Interact Tools panel showing Meterpreter remote file browser, upload and download controls, post-exploitation actions, and live session console](docs/session-tools.png)
+
+*Meterpreter Tools panel with remote file browser and live session output (illustrative campaign data).*
 
 ## Hayduk vs Armitage
 
@@ -110,7 +115,13 @@ cd hayduk
 scripts/msf/up.sh --with-vulnbox
 ```
 
-Start Hayduk and connect to `127.0.0.1:55553` with user `msf`, password `testpass123`, and **Use SSL** unchecked. Omit `--with-vulnbox` to start only Metasploit and PostgreSQL.
+Start Hayduk with the shared staging directory and connect to `127.0.0.1:55553` with user `msf`, password `testpass123`, and **Use SSL** unchecked. Omit `--with-vulnbox` to start only Metasploit and PostgreSQL.
+
+```bash
+./hayduk --staging-dir /tmp/hayduk-staging
+```
+
+`scripts/msf/up.sh` creates and bind-mounts `/tmp/hayduk-staging` (overridable via `HAYDUK_STAGING`) so browser file transfers and screenshots work against the containerized daemon, and forwards ports `4444-4450` (handlers) and `8080-8085` (web delivery).
 
 Remove the containers and volumes when finished:
 
@@ -153,6 +164,7 @@ See [SECURITY.md](SECURITY.md) for the full trust model and HTTP security header
 | `--operator` | *(none)* | Repeatable `name=token` binding an operator identity (team mode) |
 | `--tls-cert` / `--tls-key` | *(none)* | Serve UI and WebSocket over HTTPS/WSS with `Secure` cookies |
 | `--data-dir` | OS config dir | Directory for `events.jsonl`, rank cache, listener registry, and saved profiles |
+| `--staging-dir` | auto (local) | Shared directory with `msfrpcd` for browser file uploads, downloads, and screenshots (defaults to a private temp dir on loopback) |
 | `--no-persist` | `false` | Run in memory without writing state to disk |
 | `--no-browser` | `false` | Do not open a browser window on startup |
 | `--dev` / `--dev-upstream` | `false` / `127.0.0.1:5173` | Proxy UI requests to a Vite dev server during development |
@@ -177,7 +189,7 @@ Yes. Hayduk covers the same visual Metasploit workflow (host map, module browser
 No. Hayduk is a frontend client for `msfrpcd`. Point it at your local Metasploit install, a remote Metasploit host, or the included Docker lab.
 
 ### Can Hayduk connect to `msfrpcd` on another machine?
-Yes. Enter the reachable IP or hostname of the Metasploit host in the connect dialog and match its RPC port, credentials, and SSL setting.
+Yes. Enter the reachable IP or hostname of the Metasploit host in the connect dialog and match its RPC port, credentials, and SSL setting. Pure-RPC features including payload generation and directory browsing work directly; browser file uploads, downloads, and inline screenshots require a shared filesystem passed via `--staging-dir` (otherwise downloads and screenshots report where the file landed on the `msfrpcd` host).
 
 ### Do I need Go, Node.js, or Java to run Hayduk?
 No. Release binaries are self-contained and embed the frontend. Go and Node.js are only needed to build from source.
