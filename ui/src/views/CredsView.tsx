@@ -13,7 +13,7 @@ import { errorMessage } from "../errors";
 export function CredsView() {
   const rows = () => campaignState().creds.filter((c): c is CredState => !!c);
   const [adding, setAdding] = createSignal(false);
-  const [loginHost, setLoginHost] = createSignal<string | undefined>(undefined);
+  const [loginCred, setLoginCred] = createSignal<{ host: string; user: string; pass: string } | undefined>(undefined);
   const [host, setHost] = createSignal("");
   const [port, setPort] = createSignal("22");
   const [service, setService] = createSignal("ssh");
@@ -58,7 +58,8 @@ export function CredsView() {
           { icon: "copy", label: "Copy value", fn: () => copyWithFeedback(r.pass) },
           { icon: "copy", label: "Copy user", fn: () => copyWithFeedback(r.user) },
           { sep: true },
-          { icon: "key", label: "Login with this host's creds…", fn: () => setLoginHost(r.host) },
+          { icon: "key", label: "Login / Pass the Hash with this cred…",
+            fn: () => setLoginCred({ host: r.host, user: r.user, pass: r.pass }) },
           { icon: "x", label: "Delete credential", danger: true, fn: () => {
             ws.command("db.cred_delete", { host: r.host, port: r.port, service: r.service, user: r.user })
               .catch((e: any) => flash(e?.message ?? "credential delete failed"));
@@ -96,8 +97,9 @@ export function CredsView() {
         </div>
       </Modal>
     </Show>
-    <Show when={loginHost()}>
-      {(h) => <LoginDialog host={h()} onClose={() => setLoginHost(undefined)} />}
+    <Show when={loginCred()}>
+      {(c) => <LoginDialog host={c().host} initialCred={{ user: c().user, pass: c().pass }}
+        onClose={() => setLoginCred(undefined)} />}
     </Show>
     </>
   );
