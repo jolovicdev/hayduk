@@ -12,10 +12,14 @@ import { errorMessage } from "../errors";
 const DEFAULT_USERS = "Administrator\nadmin\nuser";
 const DEFAULT_PASSES = "password\n123456\nadmin\nuser\ntest";
 
-export function BruteDialog(props: { host?: string; onClose: () => void }) {
-  const [hosts, setHosts] = createSignal(props.host ?? "");
+export function BruteDialog(props: { host?: string; hosts?: string[]; onClose: () => void }) {
+  const initialHosts = props.hosts && props.hosts.length > 0
+    ? props.hosts.join("\n")
+    : (props.host ?? "");
+  const primary = props.hosts?.[0] ?? props.host;
+  const [hosts, setHosts] = createSignal(initialHosts);
   const [service, setService] = createSignal(
-    defaultScannerForHost(props.host, campaignState().services)?.service ?? LOGIN_SCANNERS[0]!.service,
+    defaultScannerForHost(primary, campaignState().services)?.service ?? LOGIN_SCANNERS[0]!.service,
   );
   const [manualPort, setManualPort] = createSignal("");
   const [users, setUsers] = createSignal(DEFAULT_USERS);

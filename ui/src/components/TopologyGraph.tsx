@@ -1,6 +1,6 @@
 import { For, Show, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import type { HostState } from "../protocol/types";
-import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
+import { campaignState, credsByHostMemo, servicesByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { autorouteRemove, parseRouteTarget, removeRouteItems, runAutoroute } from "../views/pivot";
 import { serviceOpen } from "../views/serviceState";
 import { osBadge } from "../views/os";
@@ -9,6 +9,15 @@ import { flash } from "../statusflash";
 import { errorMessage } from "../errors";
 import { copyWithFeedback } from "../clipboard";
 import { openContextMenuFor } from "./contextmenu";
+import {
+  EMPTY_TOPOLOGY_FILTER,
+  filterTopologyHosts,
+  isTopologyFilterActive,
+  type AccessFilter,
+  type OsFilter,
+  type TopologyFilter,
+} from "./graph/filter";
+import { formatRhosts, hostsInMarquee, type WorldBox } from "./graph/selection";
 import {
   NH,
   NW,
@@ -39,15 +48,20 @@ import { loadPositions, pruneStale, savePositions } from "./graph/positions";
 import { clamp } from "../stores/panels";
 
 export function TopologyGraph(props: {
-  selected: () => string | undefined;
-  onSelect: (addr: string | undefined) => void;
+  selected: () => ReadonlySet<string>;
+  onSelect: (addr: string | undefined, additive?: boolean) => void;
+  onSelectMany: (addrs: string[], additive?: boolean) => void;
   onInteract: (sid: string) => void;
-  onLaunch: (host: string) => void;
-  onLogin: (host: string) => void;
+  onLaunch: (hosts: string[]) => void;
+  onLogin: (hosts: string[]) => void;
   onPivot: (sid: string) => void;
   onScanSubnet: (target: string) => void;
+  onBrute: (hosts: string[]) => void;
+  onHailMary: (hosts: string[]) => void;
+  onDeleteHosts: (hosts: string[]) => void;
 }) {
   let svgEl!: SVGSVGElement;
+  let contextEl!: HTMLDivElement;
   let resizeObserver: ResizeObserver | undefined;
   let fitFrame = 0;
   let moveFrame = 0;
@@ -55,11 +69,17 @@ export function TopologyGraph(props: {
   const [view, setView] = createSignal<Viewport>({ x: 0, y: 0, s: 1 });
   const [sticky, setSticky] = createSignal(loadPositions());
   const [dragPosition, setDragPosition] = createSignal<(Position & { address: string }) | null>(null);
+  const [marquee, setMarquee] = createSignal<WorldBox | null>(null);
+  const [filter, setFilter] = createSignal<TopologyFilter>({ ...EMPTY_TOPOLOGY_FILTER });
   const [canvas, setCanvas] = createSignal({ width: 900, height: 500 });
   const [fittedScale, setFittedScale] = createSignal(0);
   const [userMoved, setUserMoved] = createSignal(false);
 
-  const hosts = createMemo(() => campaignState().hosts.filter((h): h is HostState => !!h));
+  const allHosts = createMemo(() => campaignState().hosts.filter((h): h is HostState => !!h));
+  const filterActive = createMemo(() => isTopologyFilterActive(filter()));
+  const hosts = createMemo(() => filterTopologyHosts(
+    allHosts(), servicesByHostMemo(), sessionsByHostMemo(), credsByHostMemo(), filter(),
+  ));
   const hostsByAddress = createMemo(() => new Map(hosts().map(h => [h.address, h] as const)));
   const hostGeometry = createMemo(() => hosts().map(h => h.address).join("\x1f"));
   const hostSlots = createMemo(() => {
@@ -89,8 +109,12 @@ export function TopologyGraph(props: {
 
   const serviceCounts = createMemo(() => {
     const counts = new Map<string, number>();
-    for (const service of campaignState().services) {
-      if (service && serviceOpen(service)) counts.set(service.host, (counts.get(service.host) ?? 0) + 1);
+    for (const [hostAddr, list] of servicesByHostMemo()) {
+      let n = 0;
+      for (const service of list) {
+        if (serviceOpen(service)) n++;
+      }
+      if (n > 0) counts.set(hostAddr, n);
     }
     return counts;
   });
@@ -126,14 +150,18 @@ export function TopologyGraph(props: {
     if (!bounds) return;
     const rect = svgEl.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
-    const pad = 24;
-    const availW = Math.max(16, rect.width - pad * 2);
-    const availH = Math.max(16, rect.height - pad * 2);
+    const sidePad = 24;
+    // Clear the overlay bars (.map-context at top, .legend at bottom) so subnet
+    // headers and bottom host footers never clip behind them at compact heights.
+    const topPad = (contextEl?.offsetHeight || 34) + 16;
+    const bottomPad = 44;
+    const availW = Math.max(16, rect.width - sidePad * 2);
+    const availH = Math.max(16, rect.height - topPad - bottomPad);
     const scale = Math.min(availW / bounds.w, availH / bounds.h, 1.12);
     setView({
       s: scale,
-      x: pad + (availW - bounds.w * scale) / 2 - bounds.x * scale,
-      y: pad + (availH - bounds.h * scale) / 2 - bounds.y * scale,
+      x: sidePad + (availW - bounds.w * scale) / 2 - bounds.x * scale,
+      y: topPad + (availH - bounds.h * scale) / 2 - bounds.y * scale,
     });
     setFittedScale(scale);
   }
@@ -208,7 +236,24 @@ export function TopologyGraph(props: {
   }
 
   function nodeMenu(address: string, event: MouseEvent) {
-    props.onSelect(address);
+    const sel = props.selected();
+    if (sel.size > 1 && sel.has(address)) {
+      const group = [...sel];
+      const targets = formatRhosts(group);
+      openContextMenuFor(event, [
+        { head: `${group.length} hosts selected`, sub: targets.length > 36 ? `${targets.slice(0, 36)}…` : targets },
+        { icon: "wifi-high", label: "Scan services…", fn: () => props.onScanSubnet(targets) },
+        { icon: "key", label: "Login / Pass the Hash…", fn: () => props.onLogin(group) },
+        { icon: "rocket-launch", label: "Launch module (RHOSTS)…", fn: () => props.onLaunch(group) },
+        { icon: "password", label: "Brute force logins…", fn: () => props.onBrute(group) },
+        { icon: "fire", label: "Hail Mary…", fn: () => props.onHailMary(group) },
+        { sep: true },
+        { icon: "copy", label: "Copy addresses", fn: () => copyWithFeedback(targets) },
+        { icon: "x", label: `Delete ${group.length} hosts`, danger: true, fn: () => props.onDeleteHosts(group) },
+      ]);
+      return;
+    }
+    props.onSelect(address, false);
     const hostAccess = access()(address);
     const items: Parameters<typeof openContextMenuFor>[1] = [{ head: address, sub: "host" }];
     for (const session of hostAccess.sessions) {
@@ -225,10 +270,11 @@ export function TopologyGraph(props: {
     }
     items.push(
       { icon: "wifi-high", label: "Scan services…", fn: () => props.onScanSubnet(address) },
-      { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch(address) },
-      { icon: "key", label: "Login as…", fn: () => props.onLogin(address) },
+      { icon: "rocket-launch", label: "Launch…", fn: () => props.onLaunch([address]) },
+      { icon: "key", label: "Login / Pass the Hash…", fn: () => props.onLogin([address]) },
       { sep: true },
       { icon: "copy", label: "Copy address", hint: address, fn: () => copyWithFeedback(address) },
+      { icon: "x", label: "Delete host", danger: true, fn: () => props.onDeleteHosts([address]) },
     );
     openContextMenuFor(event, items);
   }
@@ -236,12 +282,17 @@ export function TopologyGraph(props: {
   interface PanState { startX: number; startY: number; viewX: number; viewY: number; moved: boolean }
   interface DragState {
     address: string; dx: number; dy: number; startX: number; startY: number;
-    moved: boolean; rectLeft: number; rectTop: number;
+    moved: boolean; additive: boolean; rectLeft: number; rectTop: number;
+  }
+  interface MarqueeState {
+    startX: number; startY: number; worldX: number; worldY: number;
+    rectLeft: number; rectTop: number; additive: boolean; moved: boolean;
   }
   interface ChipTap { key: string; startX: number; startY: number; moved: boolean }
   interface GhostTap { subnet: string; startX: number; startY: number; moved: boolean }
   let pan: PanState | undefined;
   let drag: DragState | undefined;
+  let boxDrag: MarqueeState | undefined;
   let chipTap: ChipTap | undefined;
   let ghostTap: GhostTap | undefined;
   let pendingClient: { x: number; y: number } | null = null;
@@ -251,6 +302,13 @@ export function TopologyGraph(props: {
     const pt = pendingClient;
     if (!pt) return;
     pendingClient = null;
+    if (boxDrag?.moved) {
+      const current = view();
+      const wx = (pt.x - boxDrag.rectLeft - current.x) / current.s;
+      const wy = (pt.y - boxDrag.rectTop - current.y) / current.s;
+      setMarquee({ x1: boxDrag.worldX, y1: boxDrag.worldY, x2: wx, y2: wy });
+      return;
+    }
     if (drag?.moved) {
       const current = view();
       const wx = (pt.x - drag.rectLeft - current.x) / current.s;
@@ -292,19 +350,35 @@ export function TopologyGraph(props: {
         startX: event.clientX,
         startY: event.clientY,
         moved: false,
+        additive: event.shiftKey || event.ctrlKey || event.metaKey,
         rectLeft: rect.left,
         rectTop: rect.top,
       };
     } else if (!chipTap && !ghostTap) {
-      const current = view();
-      pan = {
-        startX: event.clientX,
-        startY: event.clientY,
-        viewX: current.x,
-        viewY: current.y,
-        moved: false,
-      };
-      svgEl.classList.add("panning");
+      if (event.shiftKey) {
+        const rect = svgEl.getBoundingClientRect();
+        const current = view();
+        boxDrag = {
+          startX: event.clientX,
+          startY: event.clientY,
+          worldX: (event.clientX - rect.left - current.x) / current.s,
+          worldY: (event.clientY - rect.top - current.y) / current.s,
+          rectLeft: rect.left,
+          rectTop: rect.top,
+          additive: event.ctrlKey || event.metaKey,
+          moved: false,
+        };
+      } else {
+        const current = view();
+        pan = {
+          startX: event.clientX,
+          startY: event.clientY,
+          viewX: current.x,
+          viewY: current.y,
+          moved: false,
+        };
+        svgEl.classList.add("panning");
+      }
     }
     svgEl.setPointerCapture(event.pointerId);
   }
@@ -316,6 +390,15 @@ export function TopologyGraph(props: {
     }
     if (ghostTap) {
       if (Math.abs(event.clientX - ghostTap.startX) + Math.abs(event.clientY - ghostTap.startY) > 4) ghostTap.moved = true;
+      return;
+    }
+    if (boxDrag) {
+      if (!boxDrag.moved && Math.abs(event.clientX - boxDrag.startX) + Math.abs(event.clientY - boxDrag.startY) > 4) {
+        boxDrag.moved = true;
+      }
+      if (!boxDrag.moved) return;
+      pendingClient = { x: event.clientX, y: event.clientY };
+      if (!moveFrame) moveFrame = requestAnimationFrame(applyPendingMove);
       return;
     }
     if (drag) {
@@ -351,23 +434,32 @@ export function TopologyGraph(props: {
     if (ghostTap && !ghostTap.moved) {
       props.onScanSubnet(ghostTap.subnet);
     }
-    if (drag && !drag.moved) props.onSelect(drag.address);
+    if (boxDrag?.moved) {
+      const box = marquee();
+      if (box) {
+        const hits = hostsInMarquee(positions(), box, NW, NH);
+        props.onSelectMany(hits, boxDrag.additive);
+      }
+      setMarquee(null);
+    }
+    if (drag && !drag.moved) props.onSelect(drag.address, drag.additive);
     if (drag?.moved) {
       const dropped = dragPosition();
       const committed = new Map(sticky());
       if (dropped && dropped.address === drag.address) {
         committed.set(dropped.address, { x: dropped.x, y: dropped.y });
       }
-      const live = new Set(hosts().map(h => h.address));
+      const live = new Set(allHosts().map(h => h.address));
       const pruned = pruneStale(committed, live);
       setSticky(pruned);
       savePositions(pruned);
       setDragPosition(null);
     }
-    if (pan && !pan.moved) props.onSelect(undefined);
+    if (pan && !pan.moved) props.onSelect(undefined, false);
     chipTap = undefined;
     ghostTap = undefined;
     drag = undefined;
+    boxDrag = undefined;
     pan = undefined;
     pendingClient = null;
     svgEl.classList.remove("panning");
@@ -379,9 +471,11 @@ export function TopologyGraph(props: {
       moveFrame = 0;
     }
     setDragPosition(null);
+    setMarquee(null);
     chipTap = undefined;
     ghostTap = undefined;
     drag = undefined;
+    boxDrag = undefined;
     pan = undefined;
     pendingClient = null;
     svgEl.classList.remove("panning");
@@ -411,7 +505,7 @@ export function TopologyGraph(props: {
 
   const geometry = createMemo(() => {
     const state = campaignState();
-    return geometrySignature(state.hosts, state.routes, state.sessions);
+    return `${geometrySignature(hosts(), state.routes, state.sessions)}|${filterActive() ? "f" : ""}`;
   });
   createEffect(on(geometry, () => {
     if (!userMoved()) scheduleFit();
@@ -419,15 +513,90 @@ export function TopologyGraph(props: {
 
   return (
     <>
-      <div class="map-context">
-        <span><span class="map-context-dot"></span>{groups().size} subnet{groups().size === 1 ? "" : "s"}<span class="map-context-divider">/</span>{hosts().length} hosts</span>
+      <div class="map-context" ref={contextEl}>
+        <span>
+          <span class="map-context-dot"></span>
+          {groups().size} subnet{groups().size === 1 ? "" : "s"}
+          <span class="map-context-divider">/</span>
+          {filterActive() ? `${hosts().length} of ${allHosts().length} hosts` : `${hosts().length} hosts`}
+        </span>
+        <Show when={props.selected().size > 1}>
+          <span class="map-sel-pill">
+            {props.selected().size} selected
+            <button onClick={() => props.onSelect(undefined, false)} aria-label="Clear host selection" title="Clear selection">
+              <i aria-hidden="true" class="ph ph-x"></i>
+            </button>
+          </span>
+        </Show>
+        <Show when={allHosts().length > 0}>
+          <div class="map-filters" aria-label="Dynamic workspace filters">
+            <input
+              class="map-filter-input"
+              value={filter().query}
+              placeholder="Filter hosts…"
+              aria-label="Filter hosts by address, port, or service"
+              onInput={(e) => {
+                setUserMoved(false);
+                setFilter(prev => ({ ...prev, query: e.currentTarget.value }));
+              }}
+              autocomplete="off"
+              spellcheck={false}
+            />
+            <select
+              class="map-filter-select"
+              value={filter().access}
+              aria-label="Filter by access status"
+              onChange={(e) => {
+                setUserMoved(false);
+                setFilter(prev => ({ ...prev, access: e.currentTarget.value as AccessFilter }));
+              }}
+            >
+              <option value="all">All access</option>
+              <option value="sessions">Live sessions</option>
+              <option value="creds">Creds found</option>
+              <option value="none">No access</option>
+            </select>
+            <select
+              class="map-filter-select"
+              value={filter().os}
+              aria-label="Filter by OS family"
+              onChange={(e) => {
+                setUserMoved(false);
+                setFilter(prev => ({ ...prev, os: e.currentTarget.value as OsFilter }));
+              }}
+            >
+              <option value="all">All OS</option>
+              <option value="win">Windows</option>
+              <option value="linux">Linux</option>
+              <option value="apple">macOS</option>
+              <option value="android">Android</option>
+              <option value="other">Other</option>
+            </select>
+            <Show when={hosts().length > 0}>
+              <button
+                onClick={() => props.onSelectMany(hosts().map(h => h.address), false)}
+                title="Select all hosts currently visible on the map"
+              >
+                <i aria-hidden="true" class="ph ph-check"></i>Select ({hosts().length})
+              </button>
+            </Show>
+            <Show when={filterActive()}>
+              <button
+                onClick={() => { setUserMoved(false); setFilter({ ...EMPTY_TOPOLOGY_FILTER }); }}
+                title="Reset dynamic workspace filters"
+              >
+                <i aria-hidden="true" class="ph ph-x"></i>Reset
+              </button>
+            </Show>
+          </div>
+        </Show>
         <Show when={hosts().length > 0 && fittedScale() > 0 && fittedScale() < 0.1}>
           <span class="map-context-hint" role="status">
             dense map at this size — zoom into a subnet, or use the Services view
           </span>
         </Show>
         <button onClick={() => { setSticky(new Map()); savePositions(new Map()); scheduleFit(); }} title="Arrange hosts to fit the canvas; replaces saved positions">
-          <i aria-hidden="true" class="ph ph-graph"></i>Arrange hosts
+          <i aria-hidden="true" class="ph ph-graph"></i>Arrange
         </button>
       </div>
       <svg
@@ -514,7 +683,7 @@ export function TopologyGraph(props: {
                     <g
                       class="topo-node"
                       classList={{
-                        selected: props.selected() === address,
+                        selected: props.selected().has(address),
                         access: nodeState() === "access",
                         login: nodeState() === "login",
                       }}
@@ -527,7 +696,7 @@ export function TopologyGraph(props: {
                       onKeyDown={event => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
-                          props.onSelect(address);
+                          props.onSelect(address, event.shiftKey || event.ctrlKey || event.metaKey);
                         }
                       }}
                     >
@@ -584,6 +753,19 @@ export function TopologyGraph(props: {
                 </g>
               )}</For>
             </g>
+
+            <Show when={marquee()}>
+              {(box) => (
+                <rect
+                  class="topo-marquee"
+                  x={Math.min(box().x1, box().x2)}
+                  y={Math.min(box().y1, box().y2)}
+                  width={Math.abs(box().x2 - box().x1)}
+                  height={Math.abs(box().y2 - box().y1)}
+                  rx="3"
+                />
+              )}
+            </Show>
           </g>
         </Show>
 

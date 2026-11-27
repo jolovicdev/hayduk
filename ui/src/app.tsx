@@ -19,6 +19,7 @@ import { forgetOperator, restoreOperator, saveOperator } from "./ws/operator";
 import { flash } from "./statusflash";
 import { errorMessage } from "./errors";
 import { switchWorkspaceAction } from "./appActions";
+import { formatRhosts, pruneHostSelection, toggleHostSelection } from "./components/graph/selection";
 import { DEFAULT_PANELS, clamp, clampNotebook, clampPanels, type PanelSizes } from "./stores/panels";
 
 function loadPanels(): PanelSizes {
@@ -35,10 +36,10 @@ export default function App() {
   const [tab, setTab] = createSignal("console");
   const [stage, setStage] = createSignal<"topo" | "svc" | "hosts">("topo");
   const [scanTarget, setScanTarget] = createSignal<string | undefined>(undefined);
-  const [selectedHost, setSelectedHost] = createSignal<string | undefined>(undefined);
+  const [selectedHosts, setSelectedHosts] = createSignal<Set<string>>(new Set());
   const [launch, setLaunch] = createSignal<LaunchRequest | null>(null);
   const [scan, setScan] = createSignal<"discovery" | "services" | null>(null);
-  const [loginHost, setLoginHost] = createSignal<string | undefined>(undefined);
+  const [loginHosts, setLoginHosts] = createSignal<string[]>([]);
   const [pivotSid, setPivotSid] = createSignal<string | undefined>(undefined);
   const [findOpen, setFindOpen] = createSignal(false);
   const [hailOpen, setHailOpen] = createSignal(false);
@@ -90,9 +91,55 @@ export default function App() {
       .reduce((a, v) => a + (v?.length ?? 0), 0);
   });
 
-  function selectHost(addr: string | undefined) {
-    setSelectedHost(addr);
-    if (addr && !rightOpen()) setRightOpen(true);
+  const selectedHostList = createMemo(() => [...selectedHosts()]);
+  const selectedHost = createMemo(() => (selectedHostList().length === 1 ? selectedHostList()[0] : undefined));
+  const rhostsPrefill = createMemo(() => formatRhosts(selectedHostList()) || undefined);
+
+  createEffect(() => {
+    const live = new Set(hosts().filter((h): h is NonNullable<typeof h> => !!h).map(h => h.address));
+    const cur = selectedHosts();
+    if (cur.size === 0) return;
+    let stale = false;
+    for (const addr of cur) {
+      if (!live.has(addr)) { stale = true; break; }
+    }
+    if (stale) setSelectedHosts(pruneHostSelection(cur, live));
+  });
+
+  function selectHost(addr: string | undefined, additive = false) {
+    if (!addr) {
+      setSelectedHosts(new Set<string>());
+      return;
+    }
+    setSelectedHosts(prev => toggleHostSelection(prev, addr, additive));
+    if (!rightOpen()) setRightOpen(true);
+  }
+
+  function selectManyHosts(addrs: string[], additive = false) {
+    setSelectedHosts(prev => {
+      const next = additive ? new Set(prev) : new Set<string>();
+      for (const addr of addrs) next.add(addr);
+      return next;
+    });
+    if (addrs.length > 0 && !rightOpen()) setRightOpen(true);
+  }
+
+  async function deleteHosts(addrs: string[]) {
+    if (addrs.length === 0) return;
+    const results = await Promise.allSettled(
+      addrs.map(address => ws.command("db.host_delete", { address })),
+    );
+    const failed = results.filter(r => r.status === "rejected").length;
+    setSelectedHosts(prev => {
+      const next = new Set(prev);
+      for (const a of addrs) next.delete(a);
+      return next;
+    });
+    if (failed > 0) {
+      flash(`deleted ${addrs.length - failed} of ${addrs.length} hosts (${failed} failed)`);
+    } else {
+      flash(`deleted ${addrs.length} host${addrs.length === 1 ? "" : "s"}`);
+    }
   }
 
   function openInteract(sid: string) {
@@ -149,11 +196,11 @@ export default function App() {
 
   const switchWorkspace = switchWorkspaceAction({
     command: (method, params) => ws.command(method, params),
-    onSwitched: () => setSelectedHost(undefined),
+    onSwitched: () => setSelectedHosts(new Set<string>()),
     flash,
   });
 
-  createEffect(on(() => conn().workspace, () => setSelectedHost(undefined), { defer: true }));
+  createEffect(on(() => conn().workspace, () => setSelectedHosts(new Set<string>()), { defer: true }));
 
   function commitOperator() {
     const name = operatorDraft().trim();
@@ -302,7 +349,7 @@ export default function App() {
             <i aria-hidden="true" class="ph ph-x"></i>
           </button>
         </div>
-        <ModuleTree onLaunch={(type, path) => setLaunch({ type, path, host: selectedHost() })} />
+        <ModuleTree onLaunch={(type, path) => setLaunch({ type, path, host: rhostsPrefill() })} />
       </aside>
 
       <main class="stage card">
@@ -344,15 +391,19 @@ export default function App() {
         </div>
         <div class="stagebody" classList={{ gridbg: stage() === "topo" && grid() }}>
           <div class="view" id="view-topo" hidden={stage() !== "topo"}>
-            <TopologyGraph selected={selectedHost} onSelect={selectHost}
+            <TopologyGraph selected={selectedHosts} onSelect={selectHost}
+              onSelectMany={selectManyHosts}
               onInteract={openInteract}
-              onLaunch={(host) => {
-                selectHost(host);
-                flash(`host ${host} selected; launch a module from the tree or Ctrl+K`);
+              onLaunch={(addrs) => {
+                selectManyHosts(addrs, false);
+                flash(`${addrs.length === 1 ? `host ${addrs[0]}` : `${addrs.length} hosts`} selected; launch a module from the tree or Ctrl+K`);
               }}
-              onLogin={(host) => { selectHost(host); setLoginHost(host); }}
+              onLogin={(addrs) => { selectManyHosts(addrs, false); setLoginHosts(addrs); }}
               onPivot={(sid) => setPivotSid(sid)}
-              onScanSubnet={(target) => { setScanTarget(target); setScan("services"); }} />
+              onScanSubnet={(target) => { setScanTarget(target); setScan("services"); }}
+              onBrute={(addrs) => { selectManyHosts(addrs, false); setBruteOpen(true); }}
+              onHailMary={(addrs) => { selectManyHosts(addrs, false); setHailOpen(true); }}
+              onDeleteHosts={(addrs) => void deleteHosts(addrs)} />
             <Show when={hosts().length === 0}>
               <div class="map-empty">
                 <div class="empty-symbol"><i aria-hidden="true" class="ph ph-graph"></i></div>
@@ -374,7 +425,17 @@ export default function App() {
             <ServicesView onInspect={(addr) => selectHost(addr)} selected={selectedHost()} />
           </div>
           <div class="view" hidden={stage() !== "hosts"}>
-            <HostsView onInspect={(addr) => { selectHost(addr); setStage("topo"); }} selected={selectedHost()} />
+            <HostsView
+              onInspect={(addr) => { selectHost(addr); setStage("topo"); }}
+              selected={selectedHosts}
+              onToggleSelect={(addr, additive) => selectHost(addr, additive)}
+              onSelectMany={(addrs) => selectManyHosts(addrs, false)}
+              onScan={(target) => { setScanTarget(target); setScan("services"); }}
+              onLogin={(addrs) => { selectManyHosts(addrs, false); setLoginHosts(addrs); }}
+              onBrute={(addrs) => { selectManyHosts(addrs, false); setBruteOpen(true); }}
+              onHailMary={(addrs) => { selectManyHosts(addrs, false); setHailOpen(true); }}
+              onDeleteMany={(addrs) => void deleteHosts(addrs)}
+            />
           </div>
         </div>
       </main>
@@ -383,20 +444,26 @@ export default function App() {
         <div class="panelhead">
           <i aria-hidden="true" class="ph ph-target"></i>
           <span class="pt">Inspector</span>
-          <Show when={selectedHost()}>
-            {(ip) => <span class="pc">{ip()}</span>}
+          <Show when={selectedHostList().length > 0}>
+            <span class="pc">
+              {selectedHostList().length === 1 ? selectedHostList()[0] : `${selectedHostList().length} hosts`}
+            </span>
           </Show>
-          <button class="ibtn" style={selectedHost() ? undefined : "margin-left:auto"} onClick={() => setRightOpen(false)} aria-label="Collapse inspector panel" title="Hide inspector (])">
+          <button class="ibtn" style={selectedHostList().length > 0 ? undefined : "margin-left:auto"} onClick={() => setRightOpen(false)} aria-label="Collapse inspector panel" title="Hide inspector (])">
             <i aria-hidden="true" class="ph ph-x"></i>
           </button>
         </div>
         <Inspector
-          addr={selectedHost}
+          selectedHosts={selectedHostList}
+          onSelectOne={(addr) => selectHost(addr, false)}
+          onClearSelection={() => selectHost(undefined, false)}
           onInteract={openInteract}
-          onLogin={setLoginHost}
+          onLogin={setLoginHosts}
           onPivot={setPivotSid}
-          onScan={(host) => { setScanTarget(host); setScan("services"); }}
+          onScan={(target) => { setScanTarget(target); setScan("services"); }}
           onFindAttacks={(host) => { selectHost(host); setFindOpen(true); }}
+          onBrute={(addrs) => { selectManyHosts(addrs, false); setBruteOpen(true); }}
+          onHailMary={(addrs) => { selectManyHosts(addrs, false); setHailOpen(true); }}
         />
       </aside>
 
@@ -436,12 +503,14 @@ export default function App() {
         connected={connected}
         sessions={sessions}
         selectedHost={selectedHost}
+        selectedHosts={selectedHostList}
+        rhostsPrefill={rhostsPrefill}
         scanTarget={scanTarget}
         cmdOpen={cmdOpen}
         hailOpen={hailOpen}
         bruteOpen={bruteOpen}
         findOpen={findOpen}
-        loginHost={loginHost}
+        loginHosts={loginHosts}
         pivotSid={pivotSid}
         scan={scan}
         launch={launch}
@@ -469,7 +538,7 @@ export default function App() {
           selectHost(host);
           setLaunch({ type: "exploit", path, host, port });
         }}
-        onCloseLogin={() => setLoginHost(undefined)}
+        onCloseLogin={() => setLoginHosts([])}
         onClosePivot={() => setPivotSid(undefined)}
         onScanFromPivot={(subnet) => { setPivotSid(undefined); setScanTarget(subnet); setScan("services"); }}
         onCloseScan={() => { setScan(null); setScanTarget(undefined); }}

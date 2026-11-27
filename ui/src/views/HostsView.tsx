@@ -2,26 +2,42 @@ import { Show, createMemo, createSignal } from "solid-js";
 import { DataTable } from "../components/DataTable";
 import { Modal } from "../components/modal";
 import { openContextMenuFor } from "../components/contextmenu";
-import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
+import { campaignState, credsByHostMemo, servicesByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
 import type { HostState } from "../protocol/types";
+import { formatRhosts } from "../components/graph/selection";
 import { serviceOpen } from "./serviceState";
 import { errorMessage } from "../errors";
 
-export function HostsView(props: { onInspect: (addr: string) => void; selected?: string }) {
+export function HostsView(props: {
+  onInspect: (addr: string) => void;
+  selected: () => ReadonlySet<string>;
+  onToggleSelect: (addr: string, additive: boolean) => void;
+  onSelectMany: (addrs: string[]) => void;
+  onScan: (target: string) => void;
+  onLogin: (hosts: string[]) => void;
+  onBrute: (hosts: string[]) => void;
+  onHailMary: (hosts: string[]) => void;
+  onDeleteMany: (hosts: string[]) => void;
+}) {
   const hosts = createMemo(() => campaignState().hosts);
-  const services = createMemo(() => campaignState().services);
   const rows = createMemo(() => hosts()
     .filter((h): h is HostState => !!h)
     .sort((a, b) => a.address.localeCompare(b.address, undefined, { numeric: true })));
   const serviceCounts = createMemo(() => {
     const counts = new Map<string, number>();
-    for (const s of services()) {
-      if (s && serviceOpen(s)) counts.set(s.host, (counts.get(s.host) ?? 0) + 1);
+    for (const [hostAddr, list] of servicesByHostMemo()) {
+      let n = 0;
+      for (const s of list) {
+        if (serviceOpen(s)) n++;
+      }
+      if (n > 0) counts.set(hostAddr, n);
     }
     return counts;
   });
+  const selectedList = createMemo(() => rows().filter(r => props.selected().has(r.address)).map(r => r.address));
+  const allSelected = () => rows().length > 0 && selectedList().length === rows().length;
   const [adding, setAdding] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [noteFor, setNoteFor] = createSignal<HostState | null>(null);
@@ -48,7 +64,31 @@ export function HostsView(props: { onInspect: (addr: string) => void; selected?:
 
   return (
     <div class="svcwrap">
-      <div class="pane-bar end">
+      <div class="pane-bar">
+        <Show when={rows().length > 0}>
+          <button class="tbtn" onClick={() => props.onSelectMany(allSelected() ? [] : rows().map(r => r.address))}>
+            <i aria-hidden="true" class="ph ph-check"></i>{allSelected() ? "Clear selection" : "Select all"}
+          </button>
+        </Show>
+        <Show when={selectedList().length > 1}>
+          <span class="opchip">{selectedList().length} selected</span>
+          <button class="tbtn" onClick={() => props.onScan(formatRhosts(selectedList()))}>
+            <i aria-hidden="true" class="ph ph-wifi-high"></i>Scan
+          </button>
+          <button class="tbtn" onClick={() => props.onLogin(selectedList())}>
+            <i aria-hidden="true" class="ph ph-key"></i>Lateral
+          </button>
+          <button class="tbtn" onClick={() => props.onBrute(selectedList())}>
+            <i aria-hidden="true" class="ph ph-password"></i>Brute
+          </button>
+          <button class="tbtn" onClick={() => props.onHailMary(selectedList())}>
+            <i aria-hidden="true" class="ph ph-fire"></i>Hail Mary
+          </button>
+          <button class="tbtn" onClick={() => props.onDeleteMany(selectedList())}>
+            <i aria-hidden="true" class="ph ph-x"></i>Delete
+          </button>
+        </Show>
+        <span class="spacer" style="flex:1"></span>
         <button class="tbtn" onClick={() => setImporting(true)}>
           <i aria-hidden="true" class="ph ph-download-simple"></i>Import scan
         </button>
@@ -59,12 +99,25 @@ export function HostsView(props: { onInspect: (addr: string) => void; selected?:
       <DataTable
         rows={rows()}
         rowKey={(r) => r.address}
-        selectedKey={() => props.selected}
+        selectedRow={(r) => props.selected().has(r.address)}
         emptyTitle="No hosts"
         emptyIcon="graph"
         empty="Discover hosts, import a scan, or add a host by hand."
         onRowClick={(r) => props.onInspect(r.address)}
         onRowContextMenu={(r, e) => {
+          if (selectedList().length > 1 && props.selected().has(r.address)) {
+            const addrs = selectedList();
+            openContextMenuFor(e, [
+              { head: `${addrs.length} hosts selected`, sub: formatRhosts(addrs) },
+              { icon: "wifi-high", label: "Scan services…", fn: () => props.onScan(formatRhosts(addrs)) },
+              { icon: "key", label: "Login / Pass the Hash…", fn: () => props.onLogin(addrs) },
+              { icon: "password", label: "Brute force logins…", fn: () => props.onBrute(addrs) },
+              { icon: "fire", label: "Hail Mary…", fn: () => props.onHailMary(addrs) },
+              { sep: true },
+              { icon: "x", label: `Delete ${addrs.length} hosts`, danger: true, fn: () => props.onDeleteMany(addrs) },
+            ]);
+            return;
+          }
           openContextMenuFor(e, [
             { head: r.name || r.address, sub: r.address },
             { icon: "info", label: "Inspect host", fn: () => props.onInspect(r.address) },
@@ -77,6 +130,18 @@ export function HostsView(props: { onInspect: (addr: string) => void; selected?:
           ]);
         }}
         columns={[
+          {
+            key: "pick", label: "", width: "36px",
+            render: (r) => (
+              <input
+                type="checkbox"
+                checked={props.selected().has(r.address)}
+                aria-label={`Select host ${r.address}`}
+                onClick={(e) => e.stopPropagation()}
+                onChange={() => props.onToggleSelect(r.address, true)}
+              />
+            ),
+          },
           { key: "address", label: "Host", mono: true, render: (r) => <b>{r.address}</b> },
           { key: "name", label: "Name" },
           { key: "osName", label: "OS", render: (r) => <span class="dim">{[r.osName, r.osFlavor, r.osVersion].filter(Boolean).join(" ") || "unknown"}</span> },

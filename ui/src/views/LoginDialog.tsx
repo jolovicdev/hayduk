@@ -5,15 +5,19 @@ import { ws } from "../ws/singleton";
 import { campaignState, credsByHostMemo } from "../stores/store";
 import type { ServiceState } from "../protocol/types";
 import { loginOptions, looksLikeNtlmHash, rankCreds } from "./login";
+import { formatRhosts } from "../components/graph/selection";
 import { errorMessage } from "../errors";
 
 export function LoginDialog(props: {
   host: string;
+  hosts?: string[];
   // initialCred preselects one recovered credential (CredsView's Pass the
   // Hash action) instead of the host's top-ranked one
   initialCred?: { user?: string; pass?: string };
   onClose: () => void;
 }) {
+  const targets = () => (props.hosts && props.hosts.length > 0 ? props.hosts : [props.host]);
+  const rhosts = () => formatRhosts(targets());
   const services = createMemo(() =>
     campaignState().services.filter((s): s is ServiceState => !!s && s.host === props.host));
   const modules = createMemo(() => loginOptions(services()));
@@ -51,7 +55,7 @@ export function LoginDialog(props: {
     if (!m) return;
     setBusy(true);
     setError("");
-    const opts: Record<string, unknown> = { RHOSTS: props.host };
+    const opts: Record<string, unknown> = { RHOSTS: rhosts() };
     // attack the port the service was actually found on - even 139, which
     // smb_login does not default to
     if (m.port !== undefined) opts.RPORT = m.port;
@@ -75,13 +79,16 @@ export function LoginDialog(props: {
   }
 
   return (
-    <Modal title={`Login / Lateral · ${props.host}`}
+    <Modal title={`Login / Lateral · ${targets().length === 1 ? props.host : `${targets().length} hosts`}`}
       onClose={props.onClose} width="500px">
       <Show when={modules().length > 0} fallback={
         <p class="merror">
           No SMB, SSH, or WinRM service known on this host. Scan it first, or pick a login module from the tree.
         </p>
       }>
+        <Show when={targets().length > 1}>
+          <p class="mnote">RHOSTS prefilled with {targets().length} selected hosts: {rhosts()}</p>
+        </Show>
         <label class="field" style="margin-top:4px">
           <b>Module</b>
           <select value={chosenMod()?.module ?? ""} onChange={(e) => setMod(e.currentTarget.value)}>

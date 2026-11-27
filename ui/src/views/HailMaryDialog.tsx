@@ -5,12 +5,14 @@ import { campaignState } from "../stores/store";
 import { flash } from "../statusflash";
 import { errorMessage } from "../errors";
 
-export function HailMaryDialog(props: { host?: string; onClose: () => void }) {
+export function HailMaryDialog(props: { host?: string; hosts?: string[]; onClose: () => void }) {
   const hosts = () => campaignState().hosts.filter(h => !!h).map(h => h!.address);
   const initial = new Set<string>(hosts());
-  if (props.host && hosts().includes(props.host)) {
+  const preselected = (props.hosts && props.hosts.length > 0 ? props.hosts : (props.host ? [props.host] : []))
+    .filter(h => hosts().includes(h));
+  if (preselected.length > 0) {
     initial.clear();
-    initial.add(props.host);
+    for (const addr of preselected) initial.add(addr);
   }
   const [picked, setPicked] = createSignal<Set<string>>(initial);
   const [maxPerHost, setMaxPerHost] = createSignal("10");

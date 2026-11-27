@@ -15,7 +15,7 @@ import { ws } from "../ws/singleton";
 import { flash } from "../statusflash";
 import { errorMessage } from "../errors";
 
-export type LaunchRequest = { type: string; path: string; host?: string; port?: number };
+export type LaunchRequest = { type: string; path: string; host?: string; port?: number; session?: string };
 
 function WorkspaceCreateDialog(props: { onClose: () => void; onCreated: (name: string) => void }) {
   const [name, setName] = createSignal("");
@@ -76,12 +76,14 @@ export function AppModals(props: {
   connected: () => boolean;
   sessions: () => Record<string, SessionState | undefined>;
   selectedHost: () => string | undefined;
+  selectedHosts: () => string[];
+  rhostsPrefill: () => string | undefined;
   scanTarget: () => string | undefined;
   cmdOpen: () => boolean;
   hailOpen: () => boolean;
   bruteOpen: () => boolean;
   findOpen: () => boolean;
-  loginHost: () => string | undefined;
+  loginHosts: () => string[];
   pivotSid: () => string | undefined;
   scan: () => "discovery" | "services" | null;
   launch: () => LaunchRequest | null;
@@ -128,16 +130,16 @@ export function AppModals(props: {
           onAction={props.onPaletteAction}
           onSelectHost={props.onSelectHostFromPalette}
           onInteract={props.onInteract}
-          onLaunchModule={(type, path) => props.onLaunch({ type, path, host: props.selectedHost() })}
+          onLaunchModule={(type, path) => props.onLaunch({ type, path, host: props.rhostsPrefill() })}
         />
       </Show>
 
       <Show when={props.hailOpen()}>
-        <HailMaryDialog host={props.selectedHost()} onClose={props.onCloseHail} />
+        <HailMaryDialog host={props.selectedHost()} hosts={props.selectedHosts()} onClose={props.onCloseHail} />
       </Show>
 
       <Show when={props.bruteOpen()}>
-        <BruteDialog host={props.selectedHost()} onClose={props.onCloseBrute} />
+        <BruteDialog host={props.selectedHost()} hosts={props.selectedHosts()} onClose={props.onCloseBrute} />
       </Show>
 
       <Show when={props.findOpen()}>
@@ -146,8 +148,8 @@ export function AppModals(props: {
           onClose={props.onCloseFind} />
       </Show>
 
-      <Show when={props.loginHost()}>
-        {(h) => <LoginDialog host={h()} onClose={props.onCloseLogin} />}
+      <Show when={props.loginHosts().length > 0}>
+        <LoginDialog host={props.loginHosts()[0]!} hosts={props.loginHosts()} onClose={props.onCloseLogin} />
       </Show>
 
       <Show when={props.pivotSid()}>
@@ -160,7 +162,7 @@ export function AppModals(props: {
 
       <Show when={props.scan()}>
         {(mode) => (
-          <ScanDialog mode={mode()} target={props.scanTarget() ?? props.selectedHost()}
+          <ScanDialog mode={mode()} target={props.scanTarget() ?? props.rhostsPrefill()}
             onConfigure={props.onConfigureScan}
             onClose={props.onCloseScan} />
         )}
@@ -168,14 +170,12 @@ export function AppModals(props: {
 
       <Show when={props.launch()}>
         {(l) => <LaunchDialog type={l().type} path={l().path} prefillHost={l().host} prefillPort={l().port}
+          prefillSession={l().session}
           onClose={() => props.onLaunch(null)} />}
       </Show>
 
       <Show when={props.workspaceCreateOpen()}>
-        <WorkspaceCreateDialog
-          onClose={props.onCloseWorkspaceCreate}
-          onCreated={props.onSwitchWorkspace}
-        />
+        <WorkspaceCreateDialog onClose={props.onCloseWorkspaceCreate} onCreated={props.onSwitchWorkspace} />
       </Show>
 
       <Show when={props.conn().status === "disconnected" || props.conn().status === "connecting"}>

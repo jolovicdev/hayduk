@@ -1,18 +1,32 @@
 import { For, Show, createMemo } from "solid-js";
-import { campaignState, credsByHostMemo, sessionsByHostMemo } from "../stores/store";
+import { campaignState, credsByHostMemo, servicesByHostMemo, sessionsByHostMemo } from "../stores/store";
 import { copyWithFeedback } from "../clipboard";
 import { OsIconBadge, detectOsFamily } from "../components/OsIcon";
+import { formatRhosts } from "../components/graph/selection";
 import { serviceOpen } from "./serviceState";
 
 export function Inspector(props: {
-  addr: () => string | undefined;
+  selectedHosts: () => string[];
+  onSelectOne: (addr: string) => void;
+  onClearSelection: () => void;
   onInteract: (sid: string) => void;
-  onLogin: (host: string) => void;
+  onLogin: (hosts: string[]) => void;
   onPivot: (sid: string) => void;
-  onScan?: (host: string) => void;
+  onScan?: (target: string) => void;
   onFindAttacks?: (host: string) => void;
+  onBrute?: (hosts: string[]) => void;
+  onHailMary?: (hosts: string[]) => void;
 }) {
-  const host = createMemo(() => campaignState().hosts.find(h => h?.address === props.addr()));
+  const multiHosts = createMemo(() => {
+    const picked = new Set(props.selectedHosts());
+    if (picked.size <= 1) return [];
+    return campaignState().hosts.filter((h): h is NonNullable<typeof h> => !!h && picked.has(h.address));
+  });
+  const singleAddr = () => (props.selectedHosts().length === 1 ? props.selectedHosts()[0] : undefined);
+  const host = createMemo(() => {
+    const addr = singleAddr();
+    return addr ? campaignState().hosts.find(h => h?.address === addr) : undefined;
+  });
   const sessions = createMemo(() => {
     const h = host();
     return h ? (sessionsByHostMemo().get(h.address) ?? []) : [];
@@ -23,16 +37,33 @@ export function Inspector(props: {
   });
   const services = createMemo(() => {
     const h = host();
-    return h ? campaignState().services.filter(s => s?.host === h.address && serviceOpen(s)) : [];
+    return h ? (servicesByHostMemo().get(h.address) ?? []).filter(serviceOpen) : [];
+  });
+  const multiStats = createMemo(() => {
+    let liveSessions = 0;
+    let withCreds = 0;
+    let openPorts = 0;
+    const sessMap = sessionsByHostMemo();
+    const credMap = credsByHostMemo();
+    const svcMap = servicesByHostMemo();
+    for (const h of multiHosts()) {
+      liveSessions += sessMap.get(h.address)?.length ?? 0;
+      if ((credMap.get(h.address)?.length ?? 0) > 0) withCreds++;
+      for (const s of svcMap.get(h.address) ?? []) {
+        if (serviceOpen(s)) openPorts++;
+      }
+    }
+    return { liveSessions, withCreds, openPorts };
   });
 
   return (
     <div class="ins">
+      <Show when={multiHosts().length > 1} fallback={
       <Show when={host()} fallback={
         <div class="ins-empty">
           <div class="empty-symbol"><i aria-hidden="true" class="ph ph-target"></i></div>
           <h2>No host selected</h2>
-          <p>Select a host on the topology map or in Services to inspect ports, sessions, and actions.</p>
+          <p>Click a host to inspect it, or Shift-click / Shift-drag on the map to select a group.</p>
         </div>
       }>
         {(h) => {
@@ -112,8 +143,8 @@ export function Inspector(props: {
                     <b>{creds().length > 0 ? "Valid credentials found" : "No active session"}</b>
                   </div>
                   <div class="abtns">
-                    <button class="abtn" onClick={() => props.onLogin(h().address)}>
-                      <i aria-hidden="true" class="ph ph-key"></i>Login as…
+                    <button class="abtn" onClick={() => props.onLogin([h().address])}>
+                      <i aria-hidden="true" class="ph ph-key"></i>Login / Lateral…
                     </button>
                   </div>
                 </div>
@@ -139,6 +170,73 @@ export function Inspector(props: {
             </div>
           </div>
         </>;}}
+      </Show>
+      }>
+        {(() => {
+          const addrs = () => multiHosts().map(h => h.address);
+          const targets = () => formatRhosts(addrs());
+          return <>
+            <div class="ihost">
+              <div class="ihost-meta">
+                <div class="iname">{multiHosts().length} hosts selected</div>
+                <div class="ios">Bulk actions prefill RHOSTS with this group</div>
+              </div>
+              <button class="ibtn" title="Copy RHOSTS list" aria-label="Copy selected addresses"
+                onClick={() => copyWithFeedback(targets())}>
+                <i aria-hidden="true" class="ph ph-copy"></i>
+              </button>
+              <button class="ibtn" title="Clear selection" aria-label="Clear selection"
+                onClick={props.onClearSelection}>
+                <i aria-hidden="true" class="ph ph-x"></i>
+              </button>
+            </div>
+
+            <div class="badges">
+              <span class="bdg gry">{multiStats().openPorts} open port{multiStats().openPorts === 1 ? "" : "s"}</span>
+              <Show when={multiStats().liveSessions > 0}>
+                <span class="bdg grn">{multiStats().liveSessions} live session{multiStats().liveSessions === 1 ? "" : "s"}</span>
+              </Show>
+              <Show when={multiStats().withCreds > 0}>
+                <span class="bdg amb">{multiStats().withCreds} with creds</span>
+              </Show>
+            </div>
+
+            <div class="ins-actions">
+              <Show when={props.onScan}>
+                <button class="abtn" onClick={() => props.onScan!(targets())}>
+                  <i aria-hidden="true" class="ph ph-wifi-high"></i>Scan
+                </button>
+              </Show>
+              <button class="abtn" onClick={() => props.onLogin(addrs())}>
+                <i aria-hidden="true" class="ph ph-key"></i>Lateral
+              </button>
+            </div>
+            <div class="ins-actions" style="margin-top:6px">
+              <Show when={props.onBrute}>
+                <button class="abtn" onClick={() => props.onBrute!(addrs())}>
+                  <i aria-hidden="true" class="ph ph-password"></i>Brute
+                </button>
+              </Show>
+              <Show when={props.onHailMary}>
+                <button class="abtn" onClick={() => props.onHailMary!(addrs())}>
+                  <i aria-hidden="true" class="ph ph-fire"></i>Hail Mary
+                </button>
+              </Show>
+            </div>
+
+            <div class="isec">
+              <div class="ilabel">Selected targets</div>
+              <div class="picklist" style="max-height:320px; margin-top:6px">
+                <For each={multiHosts()}>{(h) => (
+                  <button class="pickrow" style="text-align:left; width:100%" onClick={() => props.onSelectOne(h.address)}>
+                    <span class="addr">{h.address}</span>
+                    <span class="fdesc" style="margin-left:auto">{h.name || h.osName || ""}</span>
+                  </button>
+                )}</For>
+              </div>
+            </div>
+          </>;
+        })()}
       </Show>
     </div>
   );
