@@ -12,9 +12,9 @@ import (
 func TestSessionUpgrade(t *testing.T) {
 	fake := stdFake()
 	upgraded := make(chan []interface{}, 1)
-	fake.set(gomsf.SessionShellUpgrade, func(args ...interface{}) (interface{}, error) {
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
 		upgraded <- args
-		return map[string]interface{}{}, nil
+		return map[string]interface{}{"job_id": 4, "uuid": "u1"}, nil
 	})
 	fake.set(gomsf.SessionList, func(args ...interface{}) (interface{}, error) {
 		return map[string]interface{}{
@@ -38,11 +38,15 @@ func TestSessionUpgrade(t *testing.T) {
 	}
 	select {
 	case args := <-upgraded:
-		if len(args) != 3 || args[0] != "1" || args[1] != "10.0.0.99" || args[2] != 4444 {
-			t.Fatalf("upgrade args %v", args)
+		if len(args) != 3 || args[0] != "post" || args[1] != "multi/manage/shell_to_meterpreter" {
+			t.Fatalf("upgrade module args %v", args)
+		}
+		opts, _ := args[2].(map[string]interface{})
+		if opts["SESSION"] != 1 || opts["LHOST"] != "10.0.0.99" || opts["LPORT"] != 4444 || opts["HANDLER"] != true {
+			t.Fatalf("upgrade opts %v", opts)
 		}
 	default:
-		t.Fatal("session.shell_upgrade not called")
+		t.Fatal("shell_to_meterpreter was not executed")
 	}
 	waitEvent(t, sub, "session 1 upgrading to meterpreter via 10.0.0.99:4444")
 

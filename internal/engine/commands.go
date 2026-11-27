@@ -344,6 +344,66 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		}
 		return e.sessionRun(ctx, p)
 
+	case protocol.MethodSessionFsList:
+		var p protocol.SessionFsListParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" {
+			return nil, badParam("sid is required")
+		}
+		return e.sessionFsList(ctx, p)
+
+	case protocol.MethodSessionFileDownload:
+		var p protocol.SessionFileRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" {
+			return nil, badParam("sid is required")
+		}
+		return e.sessionFileDownload(ctx, p)
+
+	case protocol.MethodSessionFileUpload:
+		var p protocol.SessionFileUploadParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" {
+			return nil, badParam("sid is required")
+		}
+		return e.sessionFileUpload(ctx, p)
+
+	case protocol.MethodSessionScreenshot:
+		var p protocol.SessionFileRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" {
+			return nil, badParam("sid is required")
+		}
+		return e.sessionScreenshot(ctx, p)
+
+	case protocol.MethodSessionPost:
+		var p protocol.SessionPostParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" || p.Module == "" {
+			return nil, badParam("sid and module are required")
+		}
+		return e.sessionPost(ctx, p)
+
+	case protocol.MethodSessionPostModules:
+		var p protocol.SessionRefParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if p.SID == "" {
+			return nil, badParam("sid is required")
+		}
+		return e.sessionPostModules(ctx, rpc, p.SID)
+
 	case protocol.MethodPayloadGenerate:
 		var p protocol.PayloadGenerateParams
 		if eb := parseParams(params, &p); eb != nil {
@@ -535,6 +595,9 @@ func knownMethod(method string) bool {
 		protocol.MethodWorkspaceAdd, protocol.MethodWorkspaceDelete, protocol.MethodDBRefresh,
 		protocol.MethodAttacksFind, protocol.MethodHailMary,
 		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
+		protocol.MethodSessionFsList, protocol.MethodSessionFileDownload,
+		protocol.MethodSessionFileUpload, protocol.MethodSessionScreenshot,
+		protocol.MethodSessionPost, protocol.MethodSessionPostModules,
 		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,
 		protocol.MethodDBImport, protocol.MethodHostNote, protocol.MethodCredAdd,
 		protocol.MethodCredDelete, protocol.MethodLootDownload,

@@ -42,6 +42,11 @@ type Config struct {
 	// RPC, when set, replaces the real client (tests). The engine then never
 	// dials msfrpcd itself.
 	RPC gomsf.RPCCaller
+	// StagingDir, when set, is a directory this process and msfrpcd both see
+	// (a bind mount into a containerized daemon, for example). Browser file
+	// transfers stage through it. Empty means auto: a private temp dir when
+	// msfrpcd is loopback, no staging otherwise.
+	StagingDir string
 	// Store, when set, persists the event/audit log, the rank cache, the
 	// listener registry and saved connection profiles.
 	Store *store.Store
@@ -109,6 +114,11 @@ type Engine struct {
 	modOptionsCache  map[string]json.RawMessage
 	modPayloadsCache map[string]json.RawMessage
 	modMetaInflight  map[string]*moduleMetaFlight
+	// stagingDir is the directory shared with msfrpcd for browser file
+	// transfers; empty on remote links. stagingAuto marks a directory this
+	// process created, removed again on disconnect.
+	stagingDir  string
+	stagingAuto bool
 	// interactActive names each operator's active session console, and
 	// attached tracks every session an operator holds open. Both are
 	// per-operator so one team member's attach or detach never moves

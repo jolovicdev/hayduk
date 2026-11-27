@@ -140,30 +140,14 @@ func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines 
 // session is unwatched for the duration: the monitor and RunSingle would
 // otherwise race as two readers on one stream.
 func (e *Engine) sessionRun(ctx context.Context, p protocol.SessionRunParams) (json.RawMessage, *protocol.ErrorBody) {
-	e.toolsMu.Lock()
-	defer e.toolsMu.Unlock()
-	e.mu.Lock()
-	rpc := e.rpc
-	session := e.sessions[p.SID]
-	_, attached := e.interactBufs[p.SID]
-	mon := e.monitor
-	e.mu.Unlock()
-	if rpc == nil {
-		return nil, notConnected()
+	ms, done, eb := e.beginTool(p.SID)
+	if eb != nil {
+		return nil, eb
 	}
-	if session == nil {
-		return nil, &protocol.ErrorBody{Code: protocol.CodeSessionNotFound, Message: "no session " + p.SID}
-	}
-	if session.Type != "meterpreter" {
-		return nil, badParam("session tools need a meterpreter session; use Interact for shells")
-	}
-	if attached && mon != nil {
-		mon.UnwatchSession(p.SID)
-		defer mon.WatchSession(p.SID)
-	}
+	defer done()
 	rctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
-	out, err := gomsf.NewMeterpreterSession(rpc, p.SID).RunSingle(rctx, p.Command)
+	out, err := ms.RunSingle(rctx, p.Command)
 	if err != nil {
 		return nil, mapErr(err)
 	}

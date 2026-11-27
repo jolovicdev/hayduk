@@ -113,7 +113,12 @@ type ConnectionState struct {
 	Username   string `json:"username"`
 	MSFVersion string `json:"msfVersion"`
 	Workspace  string `json:"workspace"`
-	Error      string `json:"error,omitempty"`
+	// FileStaging is "local" when this process shares a filesystem with
+	// msfrpcd and browser file transfers can be staged through it, "remote"
+	// otherwise. Remote links keep pure-RPC tools; downloads then report the
+	// path on the msfrpcd host instead of returning bytes.
+	FileStaging string `json:"fileStaging,omitempty"`
+	Error       string `json:"error,omitempty"`
 }
 
 type HostState struct {
@@ -464,14 +469,31 @@ const (
 	MethodJobStop         = "job.stop"
 	MethodSessionRun      = "session.run"
 	MethodPayloadGenerate = "payload.generate"
-	MethodHostAdd         = "db.host_add"
-	MethodHostDelete      = "db.host_delete"
-	MethodServiceDelete   = "db.service_delete"
-	MethodDBImport        = "db.import"
-	MethodHostNote        = "db.host_note"
-	MethodCredAdd         = "db.cred_add"
-	MethodCredDelete      = "db.cred_delete"
-	MethodLootDownload    = "loot.download"
+	// MethodSessionFsList lists a remote directory through the session's
+	// meterpreter channel and returns structured rows.
+	MethodSessionFsList = "session.fs_list"
+	// MethodSessionFileDownload returns the file's bytes when msfrpcd shares
+	// this filesystem, and the msfrpcd-side path otherwise.
+	MethodSessionFileDownload = "session.file_download"
+	// MethodSessionFileUpload stages browser bytes on the shared filesystem
+	// and pushes them through the session. Requires local file staging.
+	MethodSessionFileUpload = "session.file_upload"
+	// MethodSessionScreenshot captures the remote screen; bytes ride back
+	// only with local file staging.
+	MethodSessionScreenshot = "session.screenshot"
+	// MethodSessionPost runs a post module through the session channel so
+	// its output streams into the interact transcript.
+	MethodSessionPost = "session.post"
+	// MethodSessionPostModules lists post modules compatible with a session.
+	MethodSessionPostModules = "session.post_modules"
+	MethodHostAdd            = "db.host_add"
+	MethodHostDelete         = "db.host_delete"
+	MethodServiceDelete      = "db.service_delete"
+	MethodDBImport           = "db.import"
+	MethodHostNote           = "db.host_note"
+	MethodCredAdd            = "db.cred_add"
+	MethodCredDelete         = "db.cred_delete"
+	MethodLootDownload       = "loot.download"
 	// MethodServicesScan runs a version-detecting nmap scan through the
 	// Metasploit console and imports the results into the workspace.
 	MethodServicesScan = "services.scan"
@@ -629,6 +651,61 @@ type SessionRunParams struct {
 
 type SessionRunPayload struct {
 	Output string `json:"output"`
+}
+
+type SessionFsListParams struct {
+	SID  string `json:"sid"`
+	Path string `json:"path,omitempty"`
+}
+
+// FsEntry is one row of a remote directory listing. Kind is "dir" or "file".
+type FsEntry struct {
+	Name     string `json:"name"`
+	Size     int64  `json:"size"`
+	Kind     string `json:"kind"`
+	Modified string `json:"modified,omitempty"`
+}
+
+type FsListPayload struct {
+	Path      string    `json:"path"`
+	Separator string    `json:"separator"`
+	Entries   []FsEntry `json:"entries"`
+}
+
+type SessionFileRefParams struct {
+	SID  string `json:"sid"`
+	Path string `json:"path"`
+}
+
+// FileTransferPayload carries a captured file back to the browser. DataBase64
+// is set only when the bytes could be staged locally; otherwise SavedPath
+// names where the file landed on the msfrpcd host.
+type FileTransferPayload struct {
+	Filename   string `json:"filename"`
+	DataBase64 string `json:"dataBase64,omitempty"`
+	Size       int    `json:"size,omitempty"`
+	SavedPath  string `json:"savedPath,omitempty"`
+	Output     string `json:"output,omitempty"`
+}
+
+type SessionFileUploadParams struct {
+	SID        string `json:"sid"`
+	Path       string `json:"path"`
+	DataBase64 string `json:"dataBase64"`
+}
+
+type SessionPostParams struct {
+	SID     string                 `json:"sid"`
+	Module  string                 `json:"module"`
+	Options map[string]interface{} `json:"options,omitempty"`
+}
+
+type SessionPostPayload struct {
+	Command string `json:"command"`
+}
+
+type SessionPostModulesPayload struct {
+	Modules []string `json:"modules"`
 }
 
 type SessionDetachParams struct {

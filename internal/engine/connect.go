@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -324,6 +325,16 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.modInfoCache = nil
 	e.modOptionsCache = nil
 	e.modPayloadsCache = nil
+	stagingDir, stagingAuto, stagingErr := resolveStaging(e.cfg.StagingDir, p.Host)
+	if stagingErr != nil {
+		e.eventf(protocol.LevelWarn, "file staging unavailable: %v", stagingErr)
+	}
+	e.stagingDir = stagingDir
+	e.stagingAuto = stagingAuto
+	e.conn.FileStaging = "remote"
+	if stagingDir != "" {
+		e.conn.FileStaging = "local"
+	}
 	e.hosts = hostStates(hosts)
 	e.services = serviceStates(services)
 	e.creds = credStates(creds)
@@ -459,6 +470,13 @@ func (e *Engine) DisconnectAs(operator string) {
 	e.modInfoCache = nil
 	e.modOptionsCache = nil
 	e.modPayloadsCache = nil
+	dropStaging := ""
+	if e.stagingAuto {
+		dropStaging = e.stagingDir
+	}
+	e.stagingDir = ""
+	e.stagingAuto = false
+	e.conn.FileStaging = ""
 	if e.conn.Status != "disconnected" {
 		e.conn.Status = "disconnected"
 		e.conn.Error = ""
@@ -493,6 +511,9 @@ func (e *Engine) DisconnectAs(operator string) {
 	// consoles destroyed and the client logged out only after the operator
 	// saw the disconnect; bounded so a dead daemon cannot wedge this call
 	release(dropRPC, dropConsoleIDs, dropRouteCID)
+	if dropStaging != "" {
+		_ = os.RemoveAll(dropStaging)
+	}
 }
 
 func hostStates(in []*gomsf.Host) []*protocol.HostState {

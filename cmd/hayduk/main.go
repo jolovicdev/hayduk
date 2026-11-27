@@ -40,6 +40,7 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "do not open a browser")
 	noPersist := flag.Bool("no-persist", false, "do not write the campaign audit log or saved state to disk")
 	dataDir := flag.String("data-dir", defaultDataDir(), "directory for the campaign audit log and saved state")
+	stagingDir := flag.String("staging-dir", "", "directory shared with msfrpcd for browser file transfers (default: private temp dir when msfrpcd is local)")
 	tlsCert := flag.String("tls-cert", "", "TLS certificate file (PEM); serves the UI over HTTPS")
 	tlsKey := flag.String("tls-key", "", "TLS private key file (PEM)")
 	var operatorSpecs operatorFlags
@@ -107,7 +108,7 @@ func main() {
 			defer st.Close() // runs after eng.Shutdown (LIFO)
 		}
 	}
-	eng := engine.New(engine.Config{Store: st})
+	eng := engine.New(engine.Config{Store: st, StagingDir: *stagingDir})
 	defer eng.Shutdown()
 
 	opts := server.Options{Version: version, Team: *team, Operators: operators}

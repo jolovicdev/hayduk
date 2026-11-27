@@ -209,6 +209,13 @@ export interface ConnectionState {
   username: string;
   msfVersion: string;
   workspace: string;
+  /**
+   * FileStaging is "local" when this process shares a filesystem with
+   * msfrpcd and browser file transfers can be staged through it, "remote"
+   * otherwise. Remote links keep pure-RPC tools; downloads then report the
+   * path on the msfrpcd host instead of returning bytes.
+   */
+  fileStaging?: string;
   error?: string;
 }
 export interface HostState {
@@ -599,6 +606,35 @@ export const MethodSessionRun = "session.run";
  */
 export const MethodPayloadGenerate = "payload.generate";
 /**
+ * MethodSessionFsList lists a remote directory through the session's
+ * meterpreter channel and returns structured rows.
+ */
+export const MethodSessionFsList = "session.fs_list";
+/**
+ * MethodSessionFileDownload returns the file's bytes when msfrpcd shares
+ * this filesystem, and the msfrpcd-side path otherwise.
+ */
+export const MethodSessionFileDownload = "session.file_download";
+/**
+ * MethodSessionFileUpload stages browser bytes on the shared filesystem
+ * and pushes them through the session. Requires local file staging.
+ */
+export const MethodSessionFileUpload = "session.file_upload";
+/**
+ * MethodSessionScreenshot captures the remote screen; bytes ride back
+ * only with local file staging.
+ */
+export const MethodSessionScreenshot = "session.screenshot";
+/**
+ * MethodSessionPost runs a post module through the session channel so
+ * its output streams into the interact transcript.
+ */
+export const MethodSessionPost = "session.post";
+/**
+ * MethodSessionPostModules lists post modules compatible with a session.
+ */
+export const MethodSessionPostModules = "session.post_modules";
+/**
  * Command methods.
  */
 export const MethodHostAdd = "db.host_add";
@@ -777,6 +813,56 @@ export interface SessionRunParams {
 }
 export interface SessionRunPayload {
   output: string;
+}
+export interface SessionFsListParams {
+  sid: string;
+  path?: string;
+}
+/**
+ * FsEntry is one row of a remote directory listing. Kind is "dir" or "file".
+ */
+export interface FsEntry {
+  name: string;
+  size: number /* int64 */;
+  kind: string;
+  modified?: string;
+}
+export interface FsListPayload {
+  path: string;
+  separator: string;
+  entries: FsEntry[];
+}
+export interface SessionFileRefParams {
+  sid: string;
+  path: string;
+}
+/**
+ * FileTransferPayload carries a captured file back to the browser. DataBase64
+ * is set only when the bytes could be staged locally; otherwise SavedPath
+ * names where the file landed on the msfrpcd host.
+ */
+export interface FileTransferPayload {
+  filename: string;
+  dataBase64?: string;
+  size?: number /* int */;
+  savedPath?: string;
+  output?: string;
+}
+export interface SessionFileUploadParams {
+  sid: string;
+  path: string;
+  dataBase64: string;
+}
+export interface SessionPostParams {
+  sid: string;
+  module: string;
+  options?: { [key: string]: any};
+}
+export interface SessionPostPayload {
+  command: string;
+}
+export interface SessionPostModulesPayload {
+  modules: string[];
 }
 export interface SessionDetachParams {
   sid?: string;
