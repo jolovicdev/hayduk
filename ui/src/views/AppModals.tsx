@@ -1,4 +1,4 @@
-import { Show } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import type { ConnectionState, SessionState } from "../protocol/types";
 import { CommandPalette } from "../components/CommandPalette";
 import { Modal } from "../components/modal";
@@ -12,8 +12,64 @@ import { FindAttacksDialog } from "./FindAttacksDialog";
 import { HailMaryDialog } from "./HailMaryDialog";
 import { BruteDialog } from "./BruteDialog";
 import { ws } from "../ws/singleton";
+import { flash } from "../statusflash";
+import { errorMessage } from "../errors";
 
 export type LaunchRequest = { type: string; path: string; host?: string; port?: number };
+
+function WorkspaceCreateDialog(props: { onClose: () => void; onCreated: (name: string) => void }) {
+  const [name, setName] = createSignal("");
+  const [switchAfter, setSwitchAfter] = createSignal(true);
+  const [busy, setBusy] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  async function submit() {
+    const trimmed = name().trim();
+    if (!trimmed) return;
+    setBusy(true);
+    setError("");
+    try {
+      await ws.command("workspace.add", { name: trimmed });
+      props.onClose();
+      if (switchAfter()) {
+        props.onCreated(trimmed);
+      } else {
+        flash(`created workspace ${trimmed}`);
+      }
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="New workspace" onClose={props.onClose} width="420px">
+      <p class="mdesc">
+        Create an isolated Metasploit database workspace for a separate target scope or engagement.
+      </p>
+      <div class="mform">
+        <label class="field">
+          <b>Workspace name</b>
+          <input value={name()} placeholder="corp-internal" maxlength={64} autocomplete="off" spellcheck={false}
+            onInput={(e) => setName(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && name().trim()) void submit(); }} />
+        </label>
+        <label class="checkline">
+          <input type="checkbox" checked={switchAfter()} onChange={(e) => setSwitchAfter(e.currentTarget.checked)} />
+          switch to this workspace after creating
+        </label>
+      </div>
+      <Show when={error()}><p class="merror">{error()}</p></Show>
+      <div class="mbtns">
+        <button class="abtn" onClick={props.onClose}>Cancel</button>
+        <button class="abtn primary" disabled={busy() || !name().trim()} onClick={() => void submit()}>
+          {busy() ? "Creating…" : "Create workspace"}
+        </button>
+      </div>
+    </Modal>
+  );
+}
 
 export function AppModals(props: {
   conn: () => ConnectionState;
@@ -29,6 +85,7 @@ export function AppModals(props: {
   pivotSid: () => string | undefined;
   scan: () => "discovery" | "services" | null;
   launch: () => LaunchRequest | null;
+  workspaceCreateOpen: () => boolean;
   showAbout: () => boolean;
   showKeys: () => boolean;
   teamMode: () => boolean;
@@ -53,6 +110,8 @@ export function AppModals(props: {
   onScanFromPivot: (subnet: string) => void;
   onCloseScan: () => void;
   onConfigureScan: (module: string, target: string) => void;
+  onCloseWorkspaceCreate: () => void;
+  onSwitchWorkspace: (name: string) => void;
   onCloseAbout: () => void;
   onCloseKeys: () => void;
   onOperatorDraft: (v: string) => void;
@@ -110,6 +169,13 @@ export function AppModals(props: {
       <Show when={props.launch()}>
         {(l) => <LaunchDialog type={l().type} path={l().path} prefillHost={l().host} prefillPort={l().port}
           onClose={() => props.onLaunch(null)} />}
+      </Show>
+
+      <Show when={props.workspaceCreateOpen()}>
+        <WorkspaceCreateDialog
+          onClose={props.onCloseWorkspaceCreate}
+          onCreated={props.onSwitchWorkspace}
+        />
       </Show>
 
       <Show when={props.conn().status === "disconnected" || props.conn().status === "connecting"}>

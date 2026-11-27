@@ -153,6 +153,9 @@ type Engine struct {
 	// toolsMu serializes one-shot session commands and utility consoles:
 	// both briefly own a stream the monitor also reads.
 	toolsMu sync.Mutex
+	// utilityPoll overrides utilityConsole's poll interval in tests so
+	// scripted utility consoles finish in milliseconds without waking consoleLoop.
+	utilityPoll time.Duration
 	// consoleMu serializes operator console creation so two joins for one
 	// name cannot race into two daemon consoles.
 	consoleMu sync.Mutex

@@ -24,9 +24,17 @@ import (
 // path: a panic in the string work below must not leave the mutex locked
 // and wedge every later session command.
 func (e *Engine) lockedUtilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines []string) (string, error) {
+	return e.lockedUtilityConsoleUntil(ctx, rpc, lines, nil)
+}
+
+// lockedUtilityConsoleUntil runs lines on a temporary utility console and, when
+// until is non-nil, continues polling after the last command until until
+// accepts the accumulated cleaned output (for background jobs like exploit -j
+// that print their banner asynchronously after the console prompt goes idle).
+func (e *Engine) lockedUtilityConsoleUntil(ctx context.Context, rpc gomsf.RPCCaller, lines []string, until func(string) bool) (string, error) {
 	e.toolsMu.Lock()
 	defer e.toolsMu.Unlock()
-	return e.utilityConsole(ctx, rpc, lines)
+	return e.utilityConsole(ctx, rpc, lines, until)
 }
 
 // errConsoleLineBreak rejects a utility-console command whose own text holds
@@ -37,7 +45,7 @@ func (e *Engine) lockedUtilityConsole(ctx context.Context, rpc gomsf.RPCCaller, 
 // instead of changing what the operator typed.
 var errConsoleLineBreak = errors.New("console command contains a line break")
 
-func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines []string) (string, error) {
+func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines []string, until func(string) bool) (string, error) {
 	for _, line := range lines {
 		if strings.ContainsAny(line, "\r\n") {
 			return "", errConsoleLineBreak
@@ -56,31 +64,39 @@ func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines 
 		_ = cm.Destroy(dctx, con.ID)
 	}()
 	mc := gomsf.NewMsfConsole(rpc, con.ID)
+	poll := e.utilityPoll
+	if poll <= 0 {
+		poll = min(e.cfg.OutputInterval, 100*time.Millisecond)
+	}
 	var out strings.Builder
 	// A read can report idle before the console has even started on a
-	// queued command, so idle only counts after the console was seen busy
-	// or several consecutive idle reads produced nothing new.
+	// queued command, so idle only counts after the console was seen busy,
+	// produced output and then fell quiet, or stayed idle across several reads.
 	drain := func() error {
 		sawBusy := false
+		sawData := false
 		idleReads := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(min(e.cfg.OutputInterval, 200*time.Millisecond)):
+			case <-time.After(poll):
 			}
 			result, err := mc.Read(ctx)
 			if err != nil {
 				return err
 			}
-			out.WriteString(result.Data)
+			if result.Data != "" {
+				out.WriteString(result.Data)
+				sawData = true
+			}
 			if result.Busy {
 				sawBusy = true
 				idleReads = 0
 				continue
 			}
 			idleReads++
-			if sawBusy || idleReads >= 6 {
+			if sawBusy || (sawData && result.Data == "") || idleReads >= 6 {
 				return nil
 			}
 		}
@@ -94,6 +110,27 @@ func (e *Engine) utilityConsole(ctx context.Context, rpc gomsf.RPCCaller, lines 
 		}
 		if err := drain(); err != nil {
 			return "", err
+		}
+	}
+	if until != nil {
+		waitCtx, waitCancel := context.WithTimeout(ctx, 30*time.Second)
+		defer waitCancel()
+		for !until(cleanOutput(out.String())) {
+			select {
+			case <-waitCtx.Done():
+				return cleanOutput(out.String()), nil
+			case <-time.After(poll):
+			}
+			result, err := mc.Read(waitCtx)
+			if err != nil {
+				if waitCtx.Err() != nil && ctx.Err() == nil {
+					return cleanOutput(out.String()), nil
+				}
+				return "", err
+			}
+			if result.Data != "" {
+				out.WriteString(result.Data)
+			}
 		}
 	}
 	return cleanOutput(out.String()), nil
@@ -168,7 +205,7 @@ func (e *Engine) payloadGenerate(ctx context.Context, rpc gomsf.RPCCaller, p pro
 	}
 	saved := payloadOutputPath(payloadBase(p.Payload), p.Format)
 	lines = append(lines, "generate -f "+p.Format+" -o "+saved)
-	out, err := e.utilityConsole(ctx, rpc, lines)
+	out, err := e.utilityConsole(ctx, rpc, lines, nil)
 	if err != nil {
 		return nil, mapErr(err)
 	}

@@ -145,6 +145,7 @@ func toolsEngine(t *testing.T, fake *fakeRPC) *Engine {
 	t.Helper()
 	e := New(Config{RPC: fake, SessionInterval: time.Hour, JobInterval: time.Hour,
 		OutputInterval: time.Hour, RefreshInterval: time.Hour, RouteInterval: time.Hour})
+	e.utilityPoll = time.Millisecond
 	t.Cleanup(e.Shutdown)
 	if err := e.Connect(context.Background(), protocol.ConnectParams{}); err != nil {
 		t.Fatalf("connect: %+v", err)

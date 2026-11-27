@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jolovicdev/go-msf/v2"
@@ -276,4 +278,95 @@ func moduleInfoPayload(info *gomsf.MsfModuleInfo) protocol.ModuleInfoPayload {
 		out.References = append(out.References, protocol.ModuleRefPayload{Type: r.Type, Value: r.Value})
 	}
 	return out
+}
+
+// moduleCheck runs Metasploit's safe check action through a utility console so
+// the verdict works consistently across msfrpcd versions without mutating the
+// operator's interactive console.
+func (e *Engine) moduleCheck(ctx context.Context, rpc gomsf.RPCCaller, operator, ws string, p protocol.ModuleCheckParams) (json.RawMessage, *protocol.ErrorBody) {
+	if rpc == nil {
+		return nil, notConnected()
+	}
+	if p.Type != string(gomsf.ExploitModuleType) && p.Type != string(gomsf.AuxiliaryModuleType) {
+		return nil, badParam("check is only supported for exploit and auxiliary modules")
+	}
+	if strings.ContainsAny(p.Name, " \t\r\n") {
+		return nil, badParam("invalid module name")
+	}
+	normalizeNumericOptions(p.Options)
+	lines := []string{"use " + p.Type + "/" + p.Name}
+	keys := make([]string, 0, len(p.Options))
+	for k := range p.Options {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if !optionNameRe.MatchString(k) {
+			return nil, badParam("invalid option name: " + k)
+		}
+		lines = append(lines, "set "+k+" "+consoleOptionArg(p.Options[k]))
+	}
+	lines = append(lines, "check")
+	out, err := e.lockedUtilityConsole(ctx, rpc, lines)
+	if err != nil {
+		return nil, mapErr(err)
+	}
+	status, msg := parseCheckOutput(out)
+	level := protocol.LevelInfo
+	switch status {
+	case "vulnerable", "appears":
+		level = protocol.LevelSuccess
+	case "unsupported":
+		level = protocol.LevelWarn
+	}
+	e.eventfOpIn(ws, operator, level, "check %s/%s: %s", p.Type, p.Name, msg)
+	return mustJSON(protocol.ModuleCheckPayload{
+		Status:  status,
+		Message: msg,
+		Output:  strings.TrimSpace(out),
+	}), nil
+}
+
+// parseCheckOutput maps Metasploit's CheckCode console lines onto a small
+// verdict vocabulary for badges while keeping the most informative line.
+func parseCheckOutput(out string) (status, message string) {
+	var bestLine string
+	lines := strings.Split(out, "\n")
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		lower := strings.ToLower(line)
+		switch {
+		case strings.Contains(lower, "does not support check") ||
+			strings.Contains(lower, "does not implement") ||
+			strings.Contains(lower, "check failed"):
+			return "unsupported", line
+		case strings.Contains(lower, "appears to be vulnerable"):
+			return "appears", line
+		case strings.Contains(lower, "target is vulnerable") ||
+			strings.Contains(lower, "the target is vulnerable"):
+			return "vulnerable", line
+		case strings.Contains(lower, "not exploitable") ||
+			strings.Contains(lower, "target is safe") ||
+			strings.Contains(lower, "cannot be exploited") ||
+			strings.Contains(lower, "not vulnerable"):
+			return "safe", line
+		case strings.Contains(lower, "service is running") ||
+			strings.Contains(lower, "detected"):
+			bestLine = line
+			status = "detected"
+		}
+		if status == "" && (strings.HasPrefix(line, "[+]") || strings.HasPrefix(line, "[-]") || strings.HasPrefix(line, "[*]")) {
+			bestLine = line
+		}
+	}
+	if status != "" {
+		return status, bestLine
+	}
+	if bestLine != "" {
+		return "unknown", bestLine
+	}
+	return "unknown", "check finished without a standard verdict"
 }

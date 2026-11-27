@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -304,6 +305,86 @@ func TestWorkspaceSwitchWaitsForInFlightRefresh(t *testing.T) {
 		t.Fatalf("hosts after switch: %+v", st.Hosts)
 	}
 }
+
+func TestWorkspaceAddAndDelete(t *testing.T) {
+	fake := stdFake()
+	var added, removed []string
+	fake.set(gomsf.DbAddWorkspace, func(args ...interface{}) (interface{}, error) {
+		added = append(added, args[0].(string))
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	fake.set(gomsf.DbDelWorkspace, func(args ...interface{}) (interface{}, error) {
+		removed = append(removed, args[0].(string))
+		return map[string]interface{}{"result": "success"}, nil
+	})
+	e := connectedEngine(t, fake)
+
+	if _, eb := e.Exec(context.Background(), "alice", protocol.MethodWorkspaceAdd, json.RawMessage(`{"name":"corp"}`)); eb != nil {
+		t.Fatalf("workspace.add: %+v", eb)
+	}
+	if len(added) != 1 || added[0] != "corp" {
+		t.Fatalf("added %v", added)
+	}
+	if _, eb := e.Exec(context.Background(), "alice", protocol.MethodWorkspaceAdd, json.RawMessage(`{"name":"bad\nname"}`)); eb == nil {
+		t.Fatal("control char workspace name accepted")
+	}
+	if _, eb := e.Exec(context.Background(), "alice", protocol.MethodWorkspaceDelete, json.RawMessage(`{"name":"default"}`)); eb == nil {
+		t.Fatal("default workspace delete must be rejected")
+	}
+	if _, eb := e.Exec(context.Background(), "alice", protocol.MethodWorkspaceDelete, json.RawMessage(`{"name":"corp"}`)); eb != nil {
+		t.Fatalf("workspace.delete: %+v", eb)
+	}
+	if len(removed) != 1 || removed[0] != "corp" {
+		t.Fatalf("removed %v", removed)
+	}
+}
+
+func TestModuleCheckCommandAndParser(t *testing.T) {
+	cases := []struct {
+		out    string
+		status string
+	}{
+		{"[+] 10.0.0.5:445 - The target is vulnerable.\n", "vulnerable"},
+		{"[*] 10.0.0.5:80 - The target appears to be vulnerable.\n", "appears"},
+		{"[*] 10.0.0.5:22 - The target is not exploitable.\n", "safe"},
+		{"[-] This module does not support check.\n", "unsupported"},
+		{"[*] 10.0.0.5:80 - The service is running, but could not be validated.\n", "detected"},
+	}
+	for _, tc := range cases {
+		got, msg := parseCheckOutput(tc.out)
+		if got != tc.status || msg == "" {
+			t.Errorf("parseCheckOutput(%q) = (%q, %q), want %q", tc.out, got, msg, tc.status)
+		}
+	}
+
+	fake := stdFake()
+	writes := scriptedConsole(fake,
+		"banner\nmsf > ", "", "",
+		"[+] 10.0.0.5:445 - The target is vulnerable.\nmsf > ",
+	)
+	e := toolsEngine(t, fake)
+	raw, eb := e.Exec(context.Background(), "alice", protocol.MethodModuleCheck, json.RawMessage(
+		`{"type":"exploit","name":"windows/smb/ms17_010_eternalblue","options":{"RHOSTS":"10.0.0.5","RPORT":445}}`))
+	if eb != nil {
+		t.Fatalf("module.check: %+v", eb)
+	}
+	var payload protocol.ModuleCheckPayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Status != "vulnerable" {
+		t.Fatalf("status %q, want vulnerable (payload %+v)", payload.Status, payload)
+	}
+	if !strings.Contains(writes.joined(), "use exploit/windows/smb/ms17_010_eternalblue") ||
+		!strings.Contains(writes.joined(), "check\n") {
+		t.Fatalf("console writes %v", writes.all())
+	}
+	if _, eb := e.Exec(context.Background(), "", protocol.MethodModuleCheck, json.RawMessage(
+		`{"type":"post","name":"multi/gather/env"}`)); eb == nil {
+		t.Fatal("post module check must be rejected")
+	}
+}
+
 func TestModuleMetadataCacheAvoidsDuplicateRPCsAndClearsOnDisconnect(t *testing.T) {
 	fake := stdFake()
 	var infoCalls, optCalls, payCalls int32

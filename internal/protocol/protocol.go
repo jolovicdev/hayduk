@@ -445,6 +445,7 @@ const (
 	MethodModuleOptions   = "module.options"
 	MethodPayloads        = "module.compatible_payloads"
 	MethodModuleExecute   = "module.execute"
+	MethodModuleCheck     = "module.check"
 	MethodSessionAttach   = "session.attach"
 	MethodSessionDetach   = "session.detach"
 	MethodSessionWrite    = "session.write"
@@ -452,6 +453,8 @@ const (
 	MethodSessionUpgrade  = "session.upgrade"
 	MethodWorkspaceList   = "workspace.list"
 	MethodWorkspaceSet    = "workspace.set"
+	MethodWorkspaceAdd    = "workspace.add"
+	MethodWorkspaceDelete = "workspace.delete"
 	MethodOperatorJoin    = "operator.join"
 	MethodTeamChat        = "team.chat"
 	MethodDBRefresh       = "db.refresh"
@@ -517,6 +520,18 @@ type ModuleExecuteParams struct {
 	Options        map[string]interface{} `json:"options"`
 	Payload        string                 `json:"payload,omitempty"`
 	PayloadOptions map[string]interface{} `json:"payloadOptions,omitempty"`
+}
+
+type ModuleCheckParams struct {
+	Type    string                 `json:"type"`
+	Name    string                 `json:"name"`
+	Options map[string]interface{} `json:"options"`
+}
+
+type ModuleCheckPayload struct {
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Output  string `json:"output"`
 }
 
 type SessionRefParams struct {

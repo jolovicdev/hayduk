@@ -126,6 +126,16 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		}
 		return e.moduleExecute(ctx, rpc, operator, ws, p)
 
+	case protocol.MethodModuleCheck:
+		var p protocol.ModuleCheckParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
+			return nil, eb
+		}
+		return e.moduleCheck(ctx, rpc, operator, ws, p)
+
 	case protocol.MethodSessionAttach:
 		var p protocol.SessionRefParams
 		if eb := parseParams(params, &p); eb != nil {
@@ -249,6 +259,42 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if err := e.refreshDBLocked(ctx); err != nil && !errors.Is(err, errSuperseded) {
 			return nil, mapErr(err)
 		}
+		return nil, nil
+
+	case protocol.MethodWorkspaceAdd:
+		var p protocol.WorkspaceSetParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		name := strings.TrimSpace(p.Name)
+		if !validWorkspaceName(name) {
+			return nil, badParam("workspace name must be 1-64 printable characters without control characters")
+		}
+		if err := gomsf.NewDbManager(rpc).Workspaces().Add(ctx, name); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "workspace %s created", name)
+		return nil, nil
+
+	case protocol.MethodWorkspaceDelete:
+		var p protocol.WorkspaceSetParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		name := strings.TrimSpace(p.Name)
+		if name == "" {
+			return nil, badParam("name is required")
+		}
+		if name == "default" {
+			return nil, badParam("cannot delete the default workspace")
+		}
+		if name == ws {
+			return nil, badParam("switch away from workspace " + name + " before deleting it")
+		}
+		if err := gomsf.NewDbManager(rpc).Workspaces().Remove(ctx, name); err != nil {
+			return nil, mapErr(err)
+		}
+		e.eventfOpIn(ws, operator, protocol.LevelInfo, "workspace %s deleted", name)
 		return nil, nil
 
 	case protocol.MethodDBRefresh:
@@ -466,13 +512,27 @@ func mapErr(err error) *protocol.ErrorBody {
 	}
 }
 
+func validWorkspaceName(name string) bool {
+	if name == "" || len([]rune(name)) > 64 {
+		return false
+	}
+	for _, r := range name {
+		if r < 0x20 || r == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 func knownMethod(method string) bool {
 	switch method {
 	case protocol.MethodConsoleWrite, protocol.MethodConsoleTabs,
 		protocol.MethodModuleInfo, protocol.MethodModuleOptions, protocol.MethodPayloads,
-		protocol.MethodModuleExecute, protocol.MethodSessionAttach, protocol.MethodSessionDetach,
+		protocol.MethodModuleExecute, protocol.MethodModuleCheck,
+		protocol.MethodSessionAttach, protocol.MethodSessionDetach,
 		protocol.MethodSessionWrite, protocol.MethodSessionStop, protocol.MethodSessionUpgrade,
-		protocol.MethodWorkspaceList, protocol.MethodWorkspaceSet, protocol.MethodDBRefresh,
+		protocol.MethodWorkspaceList, protocol.MethodWorkspaceSet,
+		protocol.MethodWorkspaceAdd, protocol.MethodWorkspaceDelete, protocol.MethodDBRefresh,
 		protocol.MethodAttacksFind, protocol.MethodHailMary,
 		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
 		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,

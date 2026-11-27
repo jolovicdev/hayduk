@@ -43,6 +43,7 @@ export default function App() {
   const [findOpen, setFindOpen] = createSignal(false);
   const [hailOpen, setHailOpen] = createSignal(false);
   const [bruteOpen, setBruteOpen] = createSignal(false);
+  const [workspaceCreateOpen, setWorkspaceCreateOpen] = createSignal(false);
   const [showAbout, setShowAbout] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [cmdOpen, setCmdOpen] = createSignal(false);
@@ -109,6 +110,15 @@ export default function App() {
     window.dispatchEvent(new CustomEvent("hayduk:zoom", { detail: { k: dir > 0 ? 1.2 : 1 / 1.2 } }));
   }
 
+  async function deleteWorkspace(name: string) {
+    try {
+      await ws.command("workspace.delete", { name });
+      flash(`deleted workspace ${name}`);
+    } catch (e) {
+      flash(errorMessage(e) || `could not delete workspace ${name}`);
+    }
+  }
+
   async function openWorkspaceMenu(anchor: HTMLElement) {
     if (!connected()) return;
     try {
@@ -117,12 +127,22 @@ export default function App() {
       // workspace list needs a connected msf database
     }
     const rect = anchor.getBoundingClientRect();
+    const active = conn().workspace;
+    const deletable = workspaces().filter(w => w !== "default" && w !== active);
     openContextMenu(rect.left, rect.bottom + 4, [
-      { head: "Workspaces", sub: "switch active msf workspace" },
+      { head: "Workspaces", sub: "switch, create, or delete msf workspace" },
       ...workspaces().map(w => ({
         label: w,
-        icon: w === conn().workspace ? "check" : undefined,
+        icon: w === active ? "check" : undefined,
         fn: () => void switchWorkspace(w),
+      })),
+      { sep: true },
+      { icon: "plus", label: "New workspace…", fn: () => setWorkspaceCreateOpen(true) },
+      ...deletable.map(w => ({
+        icon: "x",
+        label: `Delete "${w}"`,
+        danger: true,
+        fn: () => void deleteWorkspace(w),
       })),
     ]);
   }
@@ -425,6 +445,7 @@ export default function App() {
         pivotSid={pivotSid}
         scan={scan}
         launch={launch}
+        workspaceCreateOpen={workspaceCreateOpen}
         showAbout={showAbout}
         showKeys={showKeys}
         teamMode={teamMode}
@@ -456,6 +477,8 @@ export default function App() {
           setScan(null);
           setLaunch({ type: "auxiliary", path: module, host: target });
         }}
+        onCloseWorkspaceCreate={() => setWorkspaceCreateOpen(false)}
+        onSwitchWorkspace={(name) => void switchWorkspace(name)}
         onCloseAbout={() => setShowAbout(false)}
         onCloseKeys={() => setShowKeys(false)}
         onOperatorDraft={setOperatorDraft}

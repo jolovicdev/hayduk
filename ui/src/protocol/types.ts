@@ -525,6 +525,10 @@ export const MethodModuleExecute = "module.execute";
 /**
  * Command methods.
  */
+export const MethodModuleCheck = "module.check";
+/**
+ * Command methods.
+ */
 export const MethodSessionAttach = "session.attach";
 /**
  * Command methods.
@@ -550,6 +554,14 @@ export const MethodWorkspaceList = "workspace.list";
  * Command methods.
  */
 export const MethodWorkspaceSet = "workspace.set";
+/**
+ * Command methods.
+ */
+export const MethodWorkspaceAdd = "workspace.add";
+/**
+ * Command methods.
+ */
+export const MethodWorkspaceDelete = "workspace.delete";
 /**
  * Command methods.
  */
@@ -669,6 +681,16 @@ export interface ModuleExecuteParams {
   options: { [key: string]: any};
   payload?: string;
   payloadOptions?: { [key: string]: any};
+}
+export interface ModuleCheckParams {
+  type: string;
+  name: string;
+  options: { [key: string]: any};
+}
+export interface ModuleCheckPayload {
+  status: string;
+  message: string;
+  output: string;
 }
 export interface SessionRefParams {
   sid: string;

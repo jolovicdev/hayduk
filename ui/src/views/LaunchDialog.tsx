@@ -5,9 +5,9 @@ import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
 import {
   collectOptions, compatiblePayloadsParams, defaultText, inferServicePort, launchDisabled,
-  missingLaunchOptions, optionKind, payloadGroup,
+  missingLaunchOptions, missingRequired, optionKind, payloadGroup,
 } from "./launchOptions";
-import type { ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
+import type { ModuleCheckPayload, ModuleInfoPayload, ModuleOptionPayload } from "../protocol/types";
 import { errorMessage } from "../errors";
 
 type OptionsMap = Record<string, ModuleOptionPayload>;
@@ -98,10 +98,13 @@ export function LaunchDialog(props: {
   const [payloadValues, setPayloadValues] = createSignal<Record<string, unknown>>({});
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+  const [checking, setChecking] = createSignal(false);
+  const [checkResult, setCheckResult] = createSignal<ModuleCheckPayload | null>(null);
 
   const optsMap = () => (options.latest ?? {}) as OptionsMap;
   const payMap = () => (payloadOptions.latest ?? {}) as OptionsMap;
   const targets = () => info.latest?.targets ?? [];
+  const canCheck = () => props.type === "exploit" || props.type === "auxiliary";
 
   const required = () => Object.entries(optsMap()).filter(([, o]) => o?.required).map(([k]) => k);
   const optional = () => Object.entries(optsMap()).filter(([, o]) => o && !o.required).map(([k]) => k);
@@ -124,6 +127,31 @@ export function LaunchDialog(props: {
 
   function resolvedPayload(): Record<string, unknown> {
     return { ...defaultsFor(payMap()), ...payloadValues() };
+  }
+
+  const checkBlockers = () => (options.loading || !!options.error) ? [] : missingRequired(optsMap(), resolved());
+  const checkBadgeClass = (status: string) => {
+    if (status === "vulnerable" || status === "appears") return "bdg grn";
+    if (status === "detected") return "bdg amb";
+    return "bdg gry";
+  };
+
+  async function runCheck() {
+    setChecking(true);
+    setError("");
+    setCheckResult(null);
+    try {
+      const runOptions = collectOptions(optsMap(), resolved());
+      if (targets().length > 1) runOptions.TARGET = Number(target());
+      const res = await ws.command<ModuleCheckPayload>("module.check", {
+        type: props.type, name: props.path, options: runOptions,
+      });
+      setCheckResult(res);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setChecking(false);
+    }
   }
 
   const blockers = () => missingLaunchOptions({
@@ -271,12 +299,33 @@ export function LaunchDialog(props: {
           Required option{blockers().length > 1 ? "s" : ""} {blockers().join(", ")} need{blockers().length === 1 ? "s" : ""} a value.
         </p>
       </Show>
+      <Show when={checkResult()}>
+        {(res) => (
+          <div class="msec">
+            <div style="display:flex; align-items:center; gap:8px">
+              <span class={checkBadgeClass(res().status)}>{res().status}</span>
+              <span class="mtext">{res().message}</span>
+            </div>
+            <Show when={res().output && res().output !== res().message}>
+              <pre class="toolout" style="max-height:120px">{res().output}</pre>
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={error()}><p class="merror">{error()}</p></Show>
 
       <div class="mbtns">
+        <Show when={canCheck()}>
+          <button class="abtn"
+            disabled={busy() || checking() || options.loading || !!options.error || checkBlockers().length > 0}
+            onClick={() => void runCheck()}>
+            <i aria-hidden="true" class="ph ph-check"></i>
+            {checking() ? "Checking…" : "Check target"}
+          </button>
+        </Show>
         <button class="abtn primary"
           disabled={launchDisabled({
-            busy: busy(),
+            busy: busy() || checking(),
             optionsLoading: options.loading,
             optionsError: !!options.error,
             payloadChosen: !!payload(),
