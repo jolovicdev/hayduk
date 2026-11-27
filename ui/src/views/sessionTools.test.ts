@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseFiles, parsePortForwards, parseProcesses } from "./sessionTools";
+import { joinRemote, parentRemote, parsePortForwards, parseProcesses } from "./sessionTools";
 
 describe("parseProcesses", () => {
   it("reads meterpreter ps rows", () => {
@@ -22,21 +22,20 @@ describe("parseProcesses", () => {
   });
 });
 
-describe("parseFiles", () => {
-  it("reads meterpreter ls rows", () => {
-    const out = [
-      "Listing: C:\\Users\\alice",
-      "=======================",
-      "",
-      "Mode              Size   Type  Last modified              Name",
-      "----              ----   ----  -------------              ----",
-      "100666/rw-rw-rw-  120    fil   2026-01-01 10:00:00 +0100  notes.txt",
-      "40777/rwxrwxrwx   0      dir   2026-01-01 10:00:00 +0100  Documents",
-    ].join("\n");
-    const rows = parseFiles(out);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ name: "notes.txt", kind: "fil" });
-    expect(rows[1]).toMatchObject({ name: "Documents", kind: "dir" });
+describe("remote path navigation", () => {
+  it("joins with the remote separator", () => {
+    expect(joinRemote("/home/msfadmin", "docs", "/")).toBe("/home/msfadmin/docs");
+    expect(joinRemote("C:\\Users", "alice", "\\")).toBe("C:\\Users\\alice");
+    expect(joinRemote("C:\\", "Windows", "\\")).toBe("C:\\Windows");
+    expect(joinRemote("/", "etc", "/")).toBe("/etc");
+  });
+  it("walks up to the root and stops there", () => {
+    expect(parentRemote("/home/msfadmin", "/")).toBe("/home");
+    expect(parentRemote("/home", "/")).toBe("/");
+    expect(parentRemote("/", "/")).toBe("/");
+    expect(parentRemote("C:\\Users\\alice", "\\")).toBe("C:\\Users");
+    expect(parentRemote("C:\\Users", "\\")).toBe("C:\\");
+    expect(parentRemote("C:\\", "\\")).toBe("C:\\");
   });
 });
 

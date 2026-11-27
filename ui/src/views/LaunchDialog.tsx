@@ -75,6 +75,8 @@ export function LaunchDialog(props: {
   // seeds RPORT so the exploit points at the port that matched, not the
   // module default. It stays visible and editable as a normal option.
   prefillPort?: number;
+  // prefillSession seeds SESSION when launching a post module from a session menu.
+  prefillSession?: string;
   onClose: () => void;
 }) {
   const [info] = createResource(async () =>
@@ -113,14 +115,16 @@ export function LaunchDialog(props: {
   // Find attacks carries an explicit matched port; a module opened from the
   // tree is pointed at the port the scan found for its protocol instead of
   // the module default.
+  const firstPrefillHost = () => props.prefillHost?.trim().split(/\s+/)[0];
   const scannedPort = createMemo(() => props.prefillPort
-    ?? inferServicePort(props.path, props.prefillHost, campaignState().services));
+    ?? inferServicePort(props.path, firstPrefillHost(), campaignState().services));
 
-  // resolved() is exactly what launch() sends: defaults, the RHOSTS prefill
-  // and the operator's edits. Required-option gating uses the same view.
+  // resolved() is exactly what launch() sends: defaults, the RHOSTS/SESSION
+  // prefill and the operator's edits. Required-option gating uses the same view.
   function resolved(): Record<string, unknown> {
     const base = defaultsFor(optsMap());
-    if (props.prefillHost && !base.RHOSTS) base.RHOSTS = props.prefillHost;
+    if (props.prefillHost && !base.RHOSTS && optsMap().RHOSTS) base.RHOSTS = props.prefillHost;
+    if (props.prefillSession && optsMap().SESSION) base.SESSION = props.prefillSession;
     if (scannedPort() && optsMap().RPORT) base.RPORT = String(scannedPort());
     return { ...base, ...values() };
   }
@@ -170,11 +174,21 @@ export function LaunchDialog(props: {
     try {
       const runOptions = collectOptions(optsMap(), resolved());
       if (targets().length > 1) runOptions.TARGET = Number(target());
-      await ws.command("module.execute", {
-        type: props.type, name: props.path,
-        options: runOptions,
-        ...(payload() ? { payload: payload(), payloadOptions: collectOptions(payMap(), resolvedPayload()) } : {}),
-      });
+      if (props.type === "post" && props.prefillSession) {
+        // session-bound post modules run through the session channel so
+        // their output streams into the interact transcript; SESSION is
+        // implicit there, not an option
+        delete runOptions.SESSION;
+        await ws.command("session.post", {
+          sid: props.prefillSession, module: props.path, options: runOptions,
+        });
+      } else {
+        await ws.command("module.execute", {
+          type: props.type, name: props.path,
+          options: runOptions,
+          ...(payload() ? { payload: payload(), payloadOptions: collectOptions(payMap(), resolvedPayload()) } : {}),
+        });
+      }
       props.onClose();
     } catch (e) {
       setError(errorMessage(e));
@@ -224,6 +238,11 @@ export function LaunchDialog(props: {
       <Show when={!props.prefillPort && !!optsMap().RPORT && scannedPort()}>
         <p class="mnote">
           RPORT prefilled to {scannedPort()} from the scanned service; edit it below if needed.
+        </p>
+      </Show>
+      <Show when={props.type === "post" && props.prefillSession}>
+        <p class="mnote">
+          Runs in session {props.prefillSession}'s console; output streams into the Interact transcript.
         </p>
       </Show>
 

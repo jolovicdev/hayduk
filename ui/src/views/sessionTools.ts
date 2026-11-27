@@ -19,31 +19,26 @@ export function parseProcesses(output: string): ProcessRow[] {
   return rows;
 }
 
-export interface FileRow {
-  name: string;
-  size: string;
-  kind: string;
+// joinRemote and parentRemote navigate the session's filesystem with the
+// separator the remote OS reported, not the one Hayduk runs on.
+export function joinRemote(dir: string, name: string, sep: string): string {
+  if (!dir) return name;
+  return dir.endsWith(sep) ? dir + name : dir + sep + name;
 }
 
-export function parseFiles(output: string): FileRow[] {
-  const rows: FileRow[] = [];
-  let inTable = false;
-  for (const line of output.split("\n")) {
-    if (/^-{3,}/.test(line.trim())) {
-      inTable = true;
-      continue;
-    }
-    if (!inTable) continue;
-    const parts = line.trim().split(/\s+/);
-    if (parts.length < 5) continue;
-    // Mode Size Type Date Time Zone Name... — the modified column spans
-    // three fields, so the name starts after the date
-    const dateIdx = parts.findIndex(p => /^\d{4}-\d{2}-\d{2}$/.test(p));
-    const name = dateIdx >= 0 ? parts.slice(dateIdx + 3).join(" ") : parts.slice(4).join(" ");
-    if (!name || name === "Name") continue;
-    rows.push({ kind: parts[2]!, size: parts[1]!, name });
+export function parentRemote(path: string, sep: string): string {
+  if (/^[A-Za-z]:[\\/]?$/.test(path)) {
+    return path.length === 2 ? path + sep : path;
   }
-  return rows;
+  const trimmed = path.endsWith(sep) && path.length > sep.length
+    ? path.slice(0, -sep.length)
+    : path;
+  const idx = trimmed.lastIndexOf(sep);
+  if (idx < 0) return ".";
+  if (idx === 0) return sep;
+  const head = trimmed.slice(0, idx);
+  if (/^[A-Za-z]:$/.test(head)) return head + sep;
+  return head;
 }
 
 export interface PortForwardRow {
