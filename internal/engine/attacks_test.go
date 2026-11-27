@@ -280,3 +280,41 @@ func TestMatchAttacksResolvesMultiTokenModulesDeterministically(t *testing.T) {
 		}
 	}
 }
+
+func TestMatchAttacksPrefersHigherRanks(t *testing.T) {
+	exploits := []string{
+		"windows/smb/aaa_manual_bug",
+		"windows/smb/bbb_uncached_bug",
+		"windows/smb/ccc_good_bug",
+		"windows/smb/zzz_excellent_bug",
+		"multi/smb/aaa_excellent_multi",
+	}
+	services := []*protocol.ServiceState{
+		{Host: "10.0.0.5", Port: 445, Proto: "tcp", Name: "smb"},
+	}
+	ranks := map[string]string{
+		"exploit/windows/smb/aaa_manual_bug":    "manual",
+		"exploit/windows/smb/ccc_good_bug":      "good",
+		"exploit/windows/smb/zzz_excellent_bug": "excellent",
+		"exploit/multi/smb/aaa_excellent_multi": "excellent",
+	}
+	matches := matchPreparedAttacks(prepareAttacks(exploits), services, "Windows 10", ranks)
+	want := []string{
+		"windows/smb/zzz_excellent_bug",
+		"windows/smb/ccc_good_bug",
+		"windows/smb/bbb_uncached_bug",
+		"windows/smb/aaa_manual_bug",
+		"multi/smb/aaa_excellent_multi",
+	}
+	if len(matches) != len(want) {
+		t.Fatalf("got %d matches, want %d: %+v", len(matches), len(want), matches)
+	}
+	for i, name := range want {
+		if matches[i].Name != name {
+			t.Fatalf("match[%d] = %s, want %s (full: %+v)", i, matches[i].Name, name, matches)
+		}
+	}
+	if matches[0].Rank != "excellent" || matches[3].Rank != "manual" {
+		t.Fatalf("ranks not attached: %+v", matches)
+	}
+}

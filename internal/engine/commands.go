@@ -84,11 +84,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		info, err := gomsf.NewModuleManager(rpc).Info(ctx, gomsf.ModuleType(p.Type), p.Name)
-		if err != nil {
-			return nil, mapErr(err)
-		}
-		return mustJSON(moduleInfoPayload(info)), nil
+		return e.loadModuleMeta(ctx, rpc, p.Type, p.Name, false)
 
 	case protocol.MethodModuleOptions:
 		var p protocol.ModuleRefParams
@@ -98,19 +94,7 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
-		mod, err := gomsf.NewModuleWithContext(ctx, rpc, gomsf.ModuleType(p.Type), p.Name)
-		if err != nil {
-			return nil, mapErr(err)
-		}
-		opts := make(map[string]*protocol.ModuleOptionPayload)
-		for _, name := range mod.Options() {
-			oi, _ := mod.OptionInfo(name)
-			opts[name] = &protocol.ModuleOptionPayload{
-				Type: oi.Type, Required: oi.Required, Advanced: oi.Advanced,
-				Desc: oi.Desc, Default: oi.Default, Enums: oi.Enums,
-			}
-		}
-		return mustJSON(opts), nil
+		return e.loadModuleMeta(ctx, rpc, p.Type, p.Name, true)
 
 	case protocol.MethodPayloads:
 		var p protocol.ModuleRefParams
@@ -120,11 +104,17 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		if eb := requireModuleRef(p.Type, p.Name); eb != nil {
 			return nil, eb
 		}
+		key := p.Type + "/" + p.Name
+		if cached := e.cachedModuleData(&e.modPayloadsCache, key); cached != nil {
+			return cached, nil
+		}
 		payloads, err := gomsf.NewModuleManager(rpc).CompatiblePayloads(ctx, p.Name)
 		if err != nil {
 			return nil, mapErr(err)
 		}
-		return mustJSON(payloads), nil
+		raw := mustJSON(payloads)
+		e.storeModuleData(&e.modPayloadsCache, rpc, key, raw)
+		return raw, nil
 
 	case protocol.MethodModuleExecute:
 		var p protocol.ModuleExecuteParams

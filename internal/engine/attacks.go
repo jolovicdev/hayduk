@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/jolovicdev/go-msf/v2"
 	"github.com/jolovicdev/hayduk/internal/protocol"
 )
 
@@ -154,11 +155,47 @@ func prepareAttacks(exploits []string) []attackEntry {
 	return out
 }
 
-func matchAttacks(exploits []string, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
-	return matchPreparedAttacks(prepareAttacks(exploits), services, osName)
+// exploitRankWeight orders Metasploit reliability ranks for Find Attacks and
+// Hail Mary. Known high ranks rise above uncached entries, and low/manual
+// modules sink below them so Hail Mary spends its per-host cap on reliable hits.
+func exploitRankWeight(rank string) int {
+	switch strings.ToLower(strings.TrimSpace(rank)) {
+	case "excellent":
+		return 7
+	case "great":
+		return 6
+	case "good":
+		return 5
+	case "normal":
+		return 4
+	case "":
+		return 3
+	case "average":
+		return 2
+	case "low":
+		return 1
+	case "manual":
+		return 0
+	default:
+		return 3
+	}
 }
 
-func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
+func lookupExploitRank(ranks map[string]string, name string) string {
+	if len(ranks) == 0 {
+		return ""
+	}
+	if r, ok := ranks[rankKey(gomsf.ExploitModuleType, name)]; ok {
+		return r
+	}
+	return ranks[name]
+}
+
+func matchAttacks(exploits []string, services []*protocol.ServiceState, osName string) []protocol.AttackMatch {
+	return matchPreparedAttacks(prepareAttacks(exploits), services, osName, nil)
+}
+
+func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceState, osName string, ranks map[string]string) []protocol.AttackMatch {
 	// tokenPorts maps every service token to the port a match should
 	// target. A row whose service name produced the token is a fingerprint
 	// and wins over the well-known-port guess; among equals the lowest port
@@ -187,8 +224,9 @@ func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceSta
 	prefix := osPathPrefix(osName)
 
 	type ranked struct {
-		match   protocol.AttackMatch
-		osFirst bool
+		match      protocol.AttackMatch
+		osFirst    bool
+		rankWeight int
 	}
 	var found []ranked
 	for _, entry := range entries {
@@ -204,11 +242,21 @@ func matchPreparedAttacks(entries []attackEntry, services []*protocol.ServiceSta
 		if osFirst {
 			reason += " · " + prefix
 		}
-		found = append(found, ranked{protocol.AttackMatch{Name: entry.name, Reason: reason, Port: tokenPorts[token].port}, osFirst})
+		rank := lookupExploitRank(ranks, entry.name)
+		found = append(found, ranked{
+			match: protocol.AttackMatch{
+				Name: entry.name, Reason: reason, Port: tokenPorts[token].port, Rank: rank,
+			},
+			osFirst:    osFirst,
+			rankWeight: exploitRankWeight(rank),
+		})
 	}
 	sort.SliceStable(found, func(i, j int) bool {
 		if found[i].osFirst != found[j].osFirst {
 			return found[i].osFirst
+		}
+		if found[i].rankWeight != found[j].rankWeight {
+			return found[i].rankWeight > found[j].rankWeight
 		}
 		return found[i].match.Name < found[j].match.Name
 	})
@@ -257,14 +305,22 @@ func (e *Engine) attacksFind(host string) (json.RawMessage, *protocol.ErrorBody)
 			svcs = append(svcs, s)
 		}
 	}
+	catalogue := e.preparedAttacks
 	var exploits []string
-	if e.modules != nil {
+	if len(catalogue) == 0 && e.modules != nil {
 		exploits = e.modules.Exploits
 	}
+	ranks := copyMap(e.moduleRanks)
 	e.mu.Unlock()
 
 	if hs == nil {
 		return nil, &protocol.ErrorBody{Code: protocol.CodeBadParams, Message: "no such host: " + host}
 	}
-	return mustJSON(protocol.AttacksPayload{Host: host, Matches: matchAttacks(exploits, svcs, hs.OSName)}), nil
+	if len(catalogue) == 0 && len(exploits) > 0 {
+		catalogue = prepareAttacks(exploits)
+	}
+	return mustJSON(protocol.AttacksPayload{
+		Host:    host,
+		Matches: matchPreparedAttacks(catalogue, svcs, hs.OSName, ranks),
+	}), nil
 }

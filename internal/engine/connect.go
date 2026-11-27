@@ -320,6 +320,10 @@ func (e *Engine) bootstrap(ctx context.Context, p protocol.ConnectParams, gen ui
 	e.conn.Workspace = workspace
 	e.conn.Error = ""
 	e.modules = modules
+	e.preparedAttacks = prepareAttacks(modules.Exploits)
+	e.modInfoCache = nil
+	e.modOptionsCache = nil
+	e.modPayloadsCache = nil
 	e.hosts = hostStates(hosts)
 	e.services = serviceStates(services)
 	e.creds = credStates(creds)
@@ -451,6 +455,10 @@ func (e *Engine) DisconnectAs(operator string) {
 	// Clear pending runs so their timers cannot warn after disconnect.
 	e.exploitRuns = nil
 	e.earlySessions = nil
+	e.preparedAttacks = nil
+	e.modInfoCache = nil
+	e.modOptionsCache = nil
+	e.modPayloadsCache = nil
 	if e.conn.Status != "disconnected" {
 		e.conn.Status = "disconnected"
 		e.conn.Error = ""

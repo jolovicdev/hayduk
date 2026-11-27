@@ -36,7 +36,27 @@ createRoot(() => {
   ws.on("proto_mismatch", () => setProtoMismatch(true));
 });
 
-const sessionsByHostMemo = createRoot(() => createMemo(() => sessionsByHost(state())));
-const credsByHostMemo = createRoot(() => createMemo(() => credsByHost(state())));
+const sessionsSlice = createRoot(() => createMemo(() => state().sessions));
+const credsSlice = createRoot(() => createMemo(() => state().creds));
+const servicesSlice = createRoot(() => createMemo(() => state().services));
+const moduleRanksMemo = createRoot(() => createMemo(() => state().moduleRanks ?? {}));
 
-export { state as campaignState, wsStatus, team, boundIdentity, serverVersion, protoMismatch, sessionsByHostMemo, credsByHostMemo };
+const sessionsByHostMemo = createRoot(() => createMemo(() =>
+  sessionsByHost({ sessions: sessionsSlice() } as CampaignState)));
+const credsByHostMemo = createRoot(() => createMemo(() =>
+  credsByHost({ creds: credsSlice() } as CampaignState)));
+const servicesByHostMemo = createRoot(() => createMemo(() => {
+  const map = new Map<string, NonNullable<CampaignState["services"][number]>[]>();
+  for (const s of servicesSlice()) {
+    if (!s) continue;
+    const list = map.get(s.host);
+    if (list) list.push(s);
+    else map.set(s.host, [s]);
+  }
+  return map;
+}));
+
+export {
+  state as campaignState, wsStatus, team, boundIdentity, serverVersion, protoMismatch,
+  sessionsByHostMemo, credsByHostMemo, servicesByHostMemo, moduleRanksMemo,
+};

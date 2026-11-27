@@ -845,6 +845,10 @@ export interface AttackMatch {
    * hit the port the service was actually found on.
    */
   port: number /* int */;
+  /**
+   * Rank is the cached Metasploit reliability rank when known.
+   */
+  rank?: string;
 }
 export interface AttacksPayload {
   host: string;

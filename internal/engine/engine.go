@@ -98,6 +98,17 @@ type Engine struct {
 	loot        []*protocol.LootState
 	modules     *protocol.ModuleIndex
 	moduleRanks map[string]string
+	// preparedAttacks caches the lowercased/split exploit index built from
+	// modules.Exploits so Find Attacks and Hail Mary never re-split thousands
+	// of module paths on every call.
+	preparedAttacks []attackEntry
+	// modInfoCache, modOptionsCache, and modPayloadsCache hold serialized RPC
+	// responses for the active msfrpcd link so reopening modules or toggling
+	// payloads answers without redundant RPC roundtrips. Cleared on disconnect.
+	modInfoCache     map[string]json.RawMessage
+	modOptionsCache  map[string]json.RawMessage
+	modPayloadsCache map[string]json.RawMessage
+	modMetaInflight  map[string]*moduleMetaFlight
 	// interactActive names each operator's active session console, and
 	// attached tracks every session an operator holds open. Both are
 	// per-operator so one team member's attach or detach never moves

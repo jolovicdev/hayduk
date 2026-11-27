@@ -304,3 +304,44 @@ func TestWorkspaceSwitchWaitsForInFlightRefresh(t *testing.T) {
 		t.Fatalf("hosts after switch: %+v", st.Hosts)
 	}
 }
+func TestModuleMetadataCacheAvoidsDuplicateRPCsAndClearsOnDisconnect(t *testing.T) {
+	fake := stdFake()
+	var infoCalls, optCalls, payCalls int32
+	fake.set(gomsf.ModuleInfo, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&infoCalls, 1)
+		return map[string]interface{}{"name": "Test", "rank": "excellent"}, nil
+	})
+	fake.set(gomsf.ModuleOptions, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&optCalls, 1)
+		return map[string]interface{}{
+			"RHOSTS": map[string]interface{}{"type": "addressrange", "required": true, "desc": "targets"},
+		}, nil
+	})
+	fake.set(gomsf.ModuleCompatiblePayloads, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&payCalls, 1)
+		return map[string]interface{}{"payloads": []interface{}{"generic/shell_reverse_tcp"}}, nil
+	})
+	e := connectedEngine(t, fake)
+	params := json.RawMessage(`{"type":"exploit","name":"windows/smb/ms17_010_eternalblue"}`)
+	for i := 0; i < 3; i++ {
+		if _, eb := e.Exec(context.Background(), "", protocol.MethodModuleInfo, params); eb != nil {
+			t.Fatalf("info %d: %+v", i, eb)
+		}
+		if _, eb := e.Exec(context.Background(), "", protocol.MethodModuleOptions, params); eb != nil {
+			t.Fatalf("options %d: %+v", i, eb)
+		}
+		if _, eb := e.Exec(context.Background(), "", protocol.MethodPayloads, params); eb != nil {
+			t.Fatalf("payloads %d: %+v", i, eb)
+		}
+	}
+	if atomic.LoadInt32(&infoCalls) != 1 || atomic.LoadInt32(&optCalls) != 1 || atomic.LoadInt32(&payCalls) != 1 {
+		t.Fatalf("expected 1 RPC each, got info=%d opt=%d pay=%d", infoCalls, optCalls, payCalls)
+	}
+	e.Disconnect()
+	e.mu.Lock()
+	cleared := len(e.modInfoCache) == 0 && len(e.modOptionsCache) == 0 && len(e.modPayloadsCache) == 0
+	e.mu.Unlock()
+	if !cleared {
+		t.Fatal("module metadata caches were not cleared on disconnect")
+	}
+}

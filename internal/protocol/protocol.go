@@ -721,6 +721,8 @@ type AttackMatch struct {
 	// had no port to attribute. Hail Mary forwards it as RPORT so modules
 	// hit the port the service was actually found on.
 	Port int `json:"port"`
+	// Rank is the cached Metasploit reliability rank when known.
+	Rank string `json:"rank,omitempty"`
 }
 
 type AttacksPayload struct {

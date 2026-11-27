@@ -4,9 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -268,69 +265,55 @@ func (e *Engine) refreshDBLocked(ctx context.Context) error {
 
 // The same-* comparators ignore order and compare content: a host whose os
 // fingerprint ripened, or a service whose name resolved, must reach browsers
-// even though the collection length did not move.
+// even though the collection length did not move. Each protocol row is a flat
+// comparable struct, so steady-state polls take an allocation-free linear pass
+// and fall back to O(n) frequency maps only when row order changes.
 
-func sameHosts(a, b []*protocol.HostState) bool {
+func sameHosts(a, b []*protocol.HostState) bool       { return sameComparableSlice(a, b) }
+func sameServices(a, b []*protocol.ServiceState) bool { return sameComparableSlice(a, b) }
+func sameCreds(a, b []*protocol.CredState) bool       { return sameComparableSlice(a, b) }
+func sameLoot(a, b []*protocol.LootState) bool        { return sameComparableSlice(a, b) }
+
+func sameComparableSlice[T comparable](a, b []*T) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	sig := func(h *protocol.HostState) string {
-		return strings.Join([]string{
-			h.Address, h.Name, h.Mac, h.OSName, h.OSFlavor, h.OSVersion, h.Purpose, h.Info, h.Comments,
-		}, "\x1f")
-	}
-	return sameSigs(
-		mapSigs(a, func(h *protocol.HostState) string { return h.Address + "\x1f" + sig(h) }),
-		mapSigs(b, func(h *protocol.HostState) string { return h.Address + "\x1f" + sig(h) }),
-	)
-}
-
-func sameServices(a, b []*protocol.ServiceState) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	sig := func(s *protocol.ServiceState) string {
-		return s.Host + "\x1f" + s.Proto + "\x1f" + strconv.Itoa(s.Port) + "\x1f" +
-			s.Name + "\x1f" + s.State + "\x1f" + s.Info
-	}
-	return sameSigs(mapSigs(a, sig), mapSigs(b, sig))
-}
-
-func sameCreds(a, b []*protocol.CredState) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	sig := func(c *protocol.CredState) string {
-		return c.Host + "\x1f" + c.Proto + "\x1f" + strconv.Itoa(c.Port) + "\x1f" +
-			c.Service + "\x1f" + c.User + "\x1f" + c.Pass + "\x1f" + c.Type
-	}
-	return sameSigs(mapSigs(a, sig), mapSigs(b, sig))
-}
-
-func sameLoot(a, b []*protocol.LootState) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	sig := func(l *protocol.LootState) string {
-		return l.Host + "\x1f" + l.Type + "\x1f" + l.Name + "\x1f" + l.Info
-	}
-	return sameSigs(mapSigs(a, sig), mapSigs(b, sig))
-}
-
-func mapSigs[T any](in []*T, sig func(*T) string) []string {
-	out := make([]string, 0, len(in))
-	for _, v := range in {
-		out = append(out, sig(v))
-	}
-	sort.Strings(out)
-	return out
-}
-
-func sameSigs(a, b []string) bool {
+	ordered := true
 	for i := range a {
-		if a[i] != b[i] {
-			return false
+		if (a[i] == nil) != (b[i] == nil) || (a[i] != nil && *a[i] != *b[i]) {
+			ordered = false
+			break
 		}
 	}
-	return true
+	if ordered {
+		return true
+	}
+	counts := make(map[T]int, len(a))
+	nils := 0
+	for _, v := range a {
+		if v == nil {
+			nils++
+			continue
+		}
+		counts[*v]++
+	}
+	for _, v := range b {
+		if v == nil {
+			nils--
+			if nils < 0 {
+				return false
+			}
+			continue
+		}
+		c := counts[*v]
+		if c == 0 {
+			return false
+		}
+		if c == 1 {
+			delete(counts, *v)
+		} else {
+			counts[*v] = c - 1
+		}
+	}
+	return nils == 0 && len(counts) == 0
 }

@@ -2,7 +2,7 @@ import { For, Show, createMemo, createSignal, onCleanup } from "solid-js";
 import { buildModuleTree, filterTree, visibleChildren, type TreeNode } from "./tree";
 import { rankChip } from "./rank";
 import { copyWithFeedback } from "../clipboard";
-import { campaignState } from "../stores/store";
+import { campaignState, moduleRanksMemo } from "../stores/store";
 import { openContextMenuFor } from "./contextmenu";
 import { EmptyState } from "./EmptyState";
 
@@ -136,7 +136,7 @@ function Branch(props: {
                   onContextMenu={(e) => props.onMenu(e, child, props.type)}>
                   <i aria-hidden="true" class="ph ph-file-code mfil"></i>
                   <span class="tlabel">{child.name}</span>
-                  <Show when={rankChip(campaignState().moduleRanks?.[`${props.type}/${child.path}`])}>
+                  <Show when={rankChip(moduleRanksMemo()[`${props.type}/${child.path}`])}>
                     {(chip) => <span class={`rankchip${chip().hot ? " hot" : ""}`}>{chip().label}</span>}
                   </Show>
                 </button>

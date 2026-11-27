@@ -1,6 +1,7 @@
 import { For, Show, createResource, createSignal } from "solid-js";
 import { Modal } from "../components/modal";
 import { FilterSelect } from "../components/FilterSelect";
+import { rankChip } from "../components/rank";
 import { ws } from "../ws/singleton";
 import { campaignState } from "../stores/store";
 import type { AttacksPayload } from "../protocol/types";
@@ -58,10 +59,17 @@ export function FindAttacksDialog(props: {
               <For each={r().matches} fallback={
                 <p style="color:var(--tx2); text-align:center; padding:12px 0">No exploits matched this host's services.</p>
               }>
-                {(m) => (
+                {(m) => {
+                  const chip = rankChip(m.rank);
+                  return (
                   <div class="fmatch">
                     <div class="fminfo">
-                      <span class="fmname">{m.name}</span>
+                      <span class="fmname">
+                        {m.name}
+                        <Show when={chip}>
+                          {(c) => <span class={`rankchip${c().hot ? " hot" : ""}`} style="margin-left:8px">{c().label}</span>}
+                        </Show>
+                      </span>
                       <span class="fmreason">{m.reason}</span>
                     </div>
                     <button class="abtn"
@@ -69,7 +77,8 @@ export function FindAttacksDialog(props: {
                       <i class="ph ph-rocket-launch"></i>Launch
                     </button>
                   </div>
-                )}
+                  );
+                }}
               </For>
             </div>
           )}

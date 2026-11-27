@@ -50,10 +50,12 @@ func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.H
 		svcs []*protocol.ServiceState
 	}
 	e.mu.Lock()
+	catalogue := e.preparedAttacks
 	var exploits []string
-	if e.modules != nil {
+	if len(catalogue) == 0 && e.modules != nil {
 		exploits = append([]string(nil), e.modules.Exploits...)
 	}
+	ranks := copyMap(e.moduleRanks)
 	var candidates []candidate
 	for _, h := range e.hosts {
 		if h == nil || !hostSet[h.Address] {
@@ -69,10 +71,12 @@ func (e *Engine) hailMary(ctx context.Context, operator, ws string, p protocol.H
 	}
 	e.mu.Unlock()
 
-	catalogue := prepareAttacks(exploits)
+	if len(catalogue) == 0 && len(exploits) > 0 {
+		catalogue = prepareAttacks(exploits)
+	}
 	var targets []hailMaryTarget
 	for _, c := range candidates {
-		matches := matchPreparedAttacks(catalogue, c.svcs, c.host.OSName)
+		matches := matchPreparedAttacks(catalogue, c.svcs, c.host.OSName, ranks)
 		if len(matches) > p.MaxPerHost {
 			matches = matches[:p.MaxPerHost]
 		}
