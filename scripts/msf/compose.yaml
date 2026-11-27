@@ -17,11 +17,17 @@ services:
       MSF_DATABASE_CONFIG: /tmp/database.yml
     volumes:
       - ./database.yml:/tmp/database.yml:ro
+      # Shared with hayduk --staging-dir so browser file transfers work
+      # against the containerized daemon. Create it before `up` (up.sh does):
+      # docker would otherwise create the mount point as root.
+      - ${HAYDUK_STAGING:-/tmp/hayduk-staging}:${HAYDUK_STAGING:-/tmp/hayduk-staging}
     ports:
       - "127.0.0.1:55553:55553"
       # handler range for callbacks from lab targets on the LAN; LHOST is
       # the docker host's address and these ports forward into the container
       - "4444-4450:4444-4450"
+      # web delivery servers (exploit/multi/script/web_delivery)
+      - "127.0.0.1:8080-8085:8080-8085"
     depends_on:
       db:
         condition: service_healthy
