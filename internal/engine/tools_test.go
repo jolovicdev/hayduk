@@ -2,10 +2,12 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -90,16 +92,6 @@ func (c *consoleWrites) joined() string {
 	return strings.Join(c.all(), "")
 }
 
-func (c *consoleWrites) lastOutputPath() string {
-	path := ""
-	for _, line := range c.all() {
-		if _, after, ok := strings.Cut(line, "-o "); ok {
-			path = strings.TrimSpace(after)
-		}
-	}
-	return path
-}
-
 // scriptedConsole answers utility-console reads from a queue, one chunk per
 // read, and records every line written to the console it hands out.
 func scriptedConsole(fake *fakeRPC, chunks ...string) *consoleWrites {
@@ -123,19 +115,6 @@ func scriptedConsole(fake *fakeRPC, chunks ...string) *consoleWrites {
 			data = queue[0]
 			queue = queue[1:]
 		}
-		// msf echoes back the path it was handed, so a scripted chunk
-		// containing %OUT% stands in for whatever -o the last write named.
-		// Such a chunk waits its turn: the fake always reports idle, so a
-		// drain reads several times before the command it answers is even
-		// written.
-		if strings.Contains(data, "%OUT%") {
-			if out := writes.lastOutputPath(); out != "" {
-				data = strings.ReplaceAll(data, "%OUT%", out)
-			} else {
-				queue = append([]string{data}, queue...)
-				data = ""
-			}
-		}
 		return map[string]interface{}{"data": data, "prompt": "msf > ", "busy": false}, nil
 	})
 	return writes
@@ -153,14 +132,23 @@ func toolsEngine(t *testing.T, fake *fakeRPC) *Engine {
 	return e
 }
 
-func TestPayloadGenerateSavesOnHost(t *testing.T) {
+// payloadExecuteFake answers module.execute for a payload module and records
+// the arguments, so tests can assert what reached the daemon.
+func payloadExecuteFake(fake *fakeRPC, artifact string) *map[string]interface{} {
+	var opts map[string]interface{}
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		if args[0].(string) != "payload" {
+			return nil, fmt.Errorf("module.execute type %v, want payload", args[0])
+		}
+		opts = args[2].(map[string]interface{})
+		return map[string]interface{}{"payload": artifact}, nil
+	})
+	return &opts
+}
+
+func TestPayloadGenerateReturnsArtifactBytes(t *testing.T) {
 	fake := stdFake()
-	writes := scriptedConsole(fake,
-		"banner\nmsf > ",
-		"",
-		"LHOST => 127.0.0.1\n",
-		"[*] Writing 1060 bytes to %OUT%...\nmsf payload(linux/x64/meterpreter/reverse_tcp) > ",
-	)
+	opts := payloadExecuteFake(fake, "SEVMTE8=")
 	e := toolsEngine(t, fake)
 	raw, eb := e.Exec(context.Background(), "", "payload.generate", json.RawMessage(
 		`{"payload":"linux/x64/meterpreter/reverse_tcp","format":"base64","options":{"LHOST":"127.0.0.1"}}`))
@@ -171,20 +159,21 @@ func TestPayloadGenerateSavesOnHost(t *testing.T) {
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatal(err)
 	}
-	// the file lands in a world-writable directory, so the name carries a
-	// random component: a predictable one can be pre-created as a symlink
-	// and `generate -o` would write through it
-	if !strings.HasPrefix(payload.SavedPath, "/tmp/hayduk-reverse_tcp-") ||
-		!strings.HasSuffix(payload.SavedPath, ".base64") {
-		t.Fatalf("payload %+v writes %v", payload, writes.all())
+	if payload.Filename != "reverse_tcp.b64" || payload.Size != len("SEVMTE8=") {
+		t.Fatalf("payload %+v", payload)
 	}
-	if payload.Filename != strings.TrimPrefix(payload.SavedPath, "/tmp/") {
-		t.Fatalf("filename %q does not match saved path %q", payload.Filename, payload.SavedPath)
+	if payload.Text != "SEVMTE8=" {
+		t.Fatalf("text format must carry the raw text: %+v", payload)
 	}
-	joined := writes.joined()
-	if !strings.Contains(joined, "use payload/linux/x64/meterpreter/reverse_tcp") ||
-		!strings.Contains(joined, "generate -f base64 -o "+payload.SavedPath) {
-		t.Fatalf("console writes %v", writes.all())
+	decoded, err := base64.StdEncoding.DecodeString(payload.DataBase64)
+	if err != nil || string(decoded) != "SEVMTE8=" {
+		t.Fatalf("dataBase64 %q decodes to %q (%v)", payload.DataBase64, decoded, err)
+	}
+	if payload.SavedPath != "" {
+		t.Fatalf("RPC generation must not claim a host path: %+v", payload)
+	}
+	if (*opts)["Format"] != "base64" || (*opts)["LHOST"] != "127.0.0.1" {
+		t.Fatalf("options reaching module.execute: %v", *opts)
 	}
 	if _, eb := e.Exec(context.Background(), "", "payload.generate", json.RawMessage(
 		`{"payload":"x","format":"nope"}`)); eb == nil {
@@ -192,16 +181,39 @@ func TestPayloadGenerateSavesOnHost(t *testing.T) {
 	}
 }
 
-// Two generations must not land on the same path, or the second overwrites
-// the first at a name another local user could have claimed.
-func TestPayloadGenerateNamesDifferPerRun(t *testing.T) {
-	seen := map[string]bool{}
-	for i := 0; i < 2; i++ {
-		path := payloadOutputPath("reverse_tcp", "bin")
-		if seen[path] {
-			t.Fatalf("payload path %q repeated across runs", path)
-		}
-		seen[path] = true
+// Binary formats carry raw bytes with NULs through the RPC string; the
+// base64 envelope must round-trip them exactly and no text preview is shown.
+func TestPayloadGenerateBinaryFormatRoundTrips(t *testing.T) {
+	fake := stdFake()
+	elf := "\x7fELF\x02\x01\x01\x00"
+	payloadExecuteFake(fake, elf)
+	e := toolsEngine(t, fake)
+	raw, eb := e.Exec(context.Background(), "", "payload.generate", json.RawMessage(
+		`{"payload":"linux/x64/meterpreter/reverse_tcp","format":"exe","options":{"LHOST":"127.0.0.1","LPORT":4444}}`))
+	if eb != nil {
+		t.Fatalf("payload.generate: %+v", eb)
+	}
+	var payload protocol.PayloadGeneratePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(payload.DataBase64)
+	if err != nil || string(decoded) != elf {
+		t.Fatalf("binary round-trip: %q (%v)", decoded, err)
+	}
+	if payload.Text != "" || payload.Filename != "reverse_tcp.exe" || payload.Size != len(elf) {
+		t.Fatalf("payload %+v", payload)
+	}
+}
+
+func TestPayloadGenerateEmptyArtifactFails(t *testing.T) {
+	fake := stdFake()
+	payloadExecuteFake(fake, "")
+	e := toolsEngine(t, fake)
+	_, eb := e.Exec(context.Background(), "", "payload.generate", json.RawMessage(
+		`{"payload":"linux/x64/meterpreter/reverse_tcp","format":"exe"}`))
+	if eb == nil || eb.Code != protocol.CodeInternal {
+		t.Fatalf("empty artifact: %+v", eb)
 	}
 }
 
@@ -304,38 +316,40 @@ func TestServiceDeleteRefusesAcrossProtocols(t *testing.T) {
 	}
 }
 
-// An option value with a space - a User-Agent, a custom command - has to
-// reach msfconsole as one token, and one carrying a newline must not break
-// out into a console line of its own.
-func TestPayloadGenerateQuotesOptionValues(t *testing.T) {
+// Option values reach module.execute as typed: RPC carries them in a map,
+// so spaces and quotes need no console quoting, and JSON numbers normalize
+// to integers the msf option validator accepts.
+func TestPayloadGeneratePassesOptionsVerbatim(t *testing.T) {
 	fake := stdFake()
-	writes := scriptedConsole(fake,
-		"banner\nmsf > ", "", "", "",
-		"[*] Writing 1060 bytes to %OUT%...\nmsf > ",
-	)
+	opts := payloadExecuteFake(fake, "x")
 	e := toolsEngine(t, fake)
 	if _, eb := e.Exec(context.Background(), "", "payload.generate", json.RawMessage(
 		`{"payload":"linux/x64/meterpreter/reverse_tcp","format":"base64",
-		  "options":{"HttpUserAgent":"Mozilla 5.0 o'brien","LPORT":4444,"PrependSleep":false}}`)); eb != nil {
+		  "options":{"HttpUserAgent":"Mozilla 5.0 o'brien","LPORT":4444,"PrependSleep":false},
+		  "encoder":"x86/shikata_ga_nai","iterations":3}`)); eb != nil {
 		t.Fatalf("payload.generate: %+v", eb)
 	}
-	joined := writes.joined()
-	for _, want := range []string{
-		`set HttpUserAgent 'Mozilla 5.0 o'\''brien'`,
-		"set LPORT 4444",
-		"set PrependSleep false",
-	} {
-		if !strings.Contains(joined, want) {
-			t.Fatalf("console writes missing %q: %v", want, writes.all())
-		}
+	got := *opts
+	if got["HttpUserAgent"] != "Mozilla 5.0 o'brien" {
+		t.Fatalf("HttpUserAgent %v", got["HttpUserAgent"])
+	}
+	if got["LPORT"] != int64(4444) || got["PrependSleep"] != false {
+		t.Fatalf("LPORT %v (%T) PrependSleep %v", got["LPORT"], got["LPORT"], got["PrependSleep"])
+	}
+	if got["Encoder"] != "x86/shikata_ga_nai" || got["Iterations"] != 3 {
+		t.Fatalf("encoder options %v", got)
 	}
 }
 
 // An option name is an identifier; a newline in one would smuggle a second
-// console command into the utility console's script.
+// option into the module.execute call. Rejected names must not reach the RPC.
 func TestPayloadGenerateRejectsOptionNameInjection(t *testing.T) {
 	fake := stdFake()
-	writes := scriptedConsole(fake, "banner\nmsf > ")
+	var calls int32
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&calls, 1)
+		return map[string]interface{}{"payload": "x"}, nil
+	})
 	e := toolsEngine(t, fake)
 	for _, name := range []string{"FOO\nset LHOST 1.2.3.4", "set X", "A B", ""} {
 		raw, _ := json.Marshal(map[string]interface{}{
@@ -346,21 +360,24 @@ func TestPayloadGenerateRejectsOptionNameInjection(t *testing.T) {
 			t.Fatalf("option name %q was accepted", name)
 		}
 	}
-	for _, sent := range writes.all() {
-		if strings.Contains(sent, "set ") || strings.Contains(sent, "generate ") ||
-			strings.Contains(sent, "use payload/") {
-			t.Fatalf("rejected option still reached the console: %v", writes.all())
-		}
+	if atomic.LoadInt32(&calls) != 0 {
+		t.Fatalf("rejected option names still reached module.execute (%d calls)", calls)
 	}
 }
 
 // A value is not a name: quoting keeps its spaces and quotes in one argv
 // token, but the console still reads input line by line. An embedded newline
 // must be rejected before any of the command reaches the console, or the
-// second line would run as a command of its own.
+// second line would run as a command of its own. Payload options travel by
+// RPC instead, and a newline there is refused before module.execute.
 func TestUtilityConsoleRejectsLineBreakInjection(t *testing.T) {
 	fake := stdFake()
 	writes := scriptedConsole(fake, "banner\nmsf > ")
+	var payCalls int32
+	fake.set(gomsf.ModuleExecute, func(args ...interface{}) (interface{}, error) {
+		atomic.AddInt32(&payCalls, 1)
+		return map[string]interface{}{"payload": "x"}, nil
+	})
 	e := toolsEngine(t, fake)
 
 	_, eb := e.Exec(context.Background(), "", "db.cred_add", json.RawMessage(
@@ -375,9 +392,12 @@ func TestUtilityConsoleRejectsLineBreakInjection(t *testing.T) {
 		t.Fatalf("payload option with a line break: %+v", eb)
 	}
 	for _, sent := range writes.all() {
-		if strings.Contains(sent, "creds add") || strings.Contains(sent, "use payload/") {
+		if strings.Contains(sent, "creds add") {
 			t.Fatalf("rejected value still reached the console: %v", writes.all())
 		}
+	}
+	if atomic.LoadInt32(&payCalls) != 0 {
+		t.Fatal("rejected payload value still reached module.execute")
 	}
 }
 

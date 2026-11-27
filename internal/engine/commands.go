@@ -404,6 +404,13 @@ func (e *Engine) execCommand(ctx context.Context, operator, method string, param
 		}
 		return e.sessionPostModules(ctx, rpc, p.SID)
 
+	case protocol.MethodWebDelivery:
+		var p protocol.WebDeliveryParams
+		if eb := parseParams(params, &p); eb != nil {
+			return nil, eb
+		}
+		return e.webDelivery(ctx, rpc, operator, ws, p)
+
 	case protocol.MethodPayloadGenerate:
 		var p protocol.PayloadGenerateParams
 		if eb := parseParams(params, &p); eb != nil {
@@ -597,7 +604,7 @@ func knownMethod(method string) bool {
 		protocol.MethodJobStop, protocol.MethodSessionRun, protocol.MethodPayloadGenerate,
 		protocol.MethodSessionFsList, protocol.MethodSessionFileDownload,
 		protocol.MethodSessionFileUpload, protocol.MethodSessionScreenshot,
-		protocol.MethodSessionPost, protocol.MethodSessionPostModules,
+		protocol.MethodSessionPost, protocol.MethodSessionPostModules, protocol.MethodWebDelivery,
 		protocol.MethodHostAdd, protocol.MethodHostDelete, protocol.MethodServiceDelete,
 		protocol.MethodDBImport, protocol.MethodHostNote, protocol.MethodCredAdd,
 		protocol.MethodCredDelete, protocol.MethodLootDownload,

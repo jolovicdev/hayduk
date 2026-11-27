@@ -486,14 +486,17 @@ const (
 	MethodSessionPost = "session.post"
 	// MethodSessionPostModules lists post modules compatible with a session.
 	MethodSessionPostModules = "session.post_modules"
-	MethodHostAdd            = "db.host_add"
-	MethodHostDelete         = "db.host_delete"
-	MethodServiceDelete      = "db.service_delete"
-	MethodDBImport           = "db.import"
-	MethodHostNote           = "db.host_note"
-	MethodCredAdd            = "db.cred_add"
-	MethodCredDelete         = "db.cred_delete"
-	MethodLootDownload       = "loot.download"
+	// MethodWebDelivery starts exploit/multi/script/web_delivery and returns
+	// the one-liner the module prints for the chosen target.
+	MethodWebDelivery   = "web.delivery"
+	MethodHostAdd       = "db.host_add"
+	MethodHostDelete    = "db.host_delete"
+	MethodServiceDelete = "db.service_delete"
+	MethodDBImport      = "db.import"
+	MethodHostNote      = "db.host_note"
+	MethodCredAdd       = "db.cred_add"
+	MethodCredDelete    = "db.cred_delete"
+	MethodLootDownload  = "loot.download"
 	// MethodServicesScan runs a version-detecting nmap scan through the
 	// Metasploit console and imports the results into the workspace.
 	MethodServicesScan = "services.scan"
@@ -708,20 +711,45 @@ type SessionPostModulesPayload struct {
 	Modules []string `json:"modules"`
 }
 
+type WebDeliveryParams struct {
+	Payload string `json:"payload"`
+	Target  string `json:"target"`
+	Lhost   string `json:"lhost"`
+	Lport   int    `json:"lport"`
+	SrvPort int    `json:"srvPort,omitempty"`
+	// SrvHost is the address the delivery server binds and prints in the
+	// one-liner; it defaults to Lhost. Containerized daemons need the two
+	// apart: the callback may ride a forwarded port while the web server
+	// must bind an address the target can actually dial.
+	SrvHost string `json:"srvHost,omitempty"`
+}
+
+type WebDeliveryPayload struct {
+	JobID   int    `json:"jobId"`
+	URL     string `json:"url"`
+	Command string `json:"command"`
+	Target  string `json:"target"`
+}
+
 type SessionDetachParams struct {
 	SID string `json:"sid,omitempty"`
 }
 
 type PayloadGenerateParams struct {
-	Payload string                 `json:"payload"`
-	Options map[string]interface{} `json:"options"`
-	Format  string                 `json:"format"`
+	Payload    string                 `json:"payload"`
+	Options    map[string]interface{} `json:"options"`
+	Format     string                 `json:"format"`
+	Encoder    string                 `json:"encoder,omitempty"`
+	Iterations int                    `json:"iterations,omitempty"`
 }
 
 type PayloadGeneratePayload struct {
-	Filename  string `json:"filename"`
-	Content   string `json:"content,omitempty"`
-	SavedPath string `json:"savedPath,omitempty"`
+	Filename   string `json:"filename"`
+	DataBase64 string `json:"dataBase64,omitempty"`
+	Size       int    `json:"size,omitempty"`
+	Text       string `json:"text,omitempty"`
+	Content    string `json:"content,omitempty"`
+	SavedPath  string `json:"savedPath,omitempty"`
 }
 
 type HostAddParams struct {

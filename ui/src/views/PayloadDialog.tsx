@@ -3,12 +3,15 @@ import { Modal } from "../components/modal";
 import { campaignState } from "../stores/store";
 import { ws } from "../ws/singleton";
 import { FilterSelect } from "../components/FilterSelect";
+import { copyWithFeedback } from "../clipboard";
+import { base64ToBytes, downloadBytes } from "../bytes";
 import { errorMessage } from "../errors";
+import type { PayloadGeneratePayload } from "../protocol/types";
 
 const FORMATS = ["exe", "elf", "macho", "msi", "apk", "war", "jar", "raw",
   "base64", "hex", "c", "csharp", "java", "python", "powershell", "ps1", "ruby", "sh"];
 
-export function PayloadDialog(props: { onClose: () => void }) {
+export function PayloadDialog(props: { onClose: () => void; onWebDelivery?: () => void }) {
   const modules = createMemo(() => campaignState().modules);
   const payloads = createMemo(() => modules()?.payloads ?? []);
   const [payload, setPayload] = createSignal("");
@@ -19,10 +22,10 @@ export function PayloadDialog(props: { onClose: () => void }) {
   });
   const [lhost, setLhost] = createSignal("");
   const [lport, setLport] = createSignal("4444");
-  const [format, setFormat] = createSignal("base64");
+  const [format, setFormat] = createSignal("elf");
   const [error, setError] = createSignal("");
   const [busy, setBusy] = createSignal(false);
-  const [result, setResult] = createSignal<{ filename: string; content?: string; savedPath?: string } | null>(null);
+  const [result, setResult] = createSignal<PayloadGeneratePayload | null>(null);
 
   const valid = () => payload() !== "" && lhost().trim() !== "" && Number(lport()) > 0;
 
@@ -31,7 +34,7 @@ export function PayloadDialog(props: { onClose: () => void }) {
     setError("");
     setResult(null);
     try {
-      const res = await ws.command<{ filename: string; content?: string; savedPath?: string }>(
+      const res = await ws.command<PayloadGeneratePayload>(
         "payload.generate",
         {
           payload: payload(), format: format(),
@@ -49,8 +52,9 @@ export function PayloadDialog(props: { onClose: () => void }) {
   return (
     <Modal title="Generate payload" onClose={props.onClose} width="520px">
       <p class="mdesc">
-        Generates with the framework payload engine and writes the result to a
-        file on the msfrpcd host; copy it to the target from the reported path.
+        Generates with the framework payload engine and returns the artifact straight
+        to your browser, even when msfrpcd runs on another machine. Start a matching
+        listener before it runs.
       </p>
       <div class="mform">
         <div class="field">
@@ -75,13 +79,33 @@ export function PayloadDialog(props: { onClose: () => void }) {
       <Show when={error()}><p class="merror">{error()}</p></Show>
       <Show when={result()}>
         {(r) => (
-          <p class="mtext" style="margin-top:12px">
-            Saved on the msfrpcd host at <b>{r().savedPath}</b>. Copy it to the target,
-            and start a matching listener before it runs.
-          </p>
+          <div class="msec">
+            <Show when={r().text}>
+              <pre class="toolout" style="max-height:160px">{r().text}</pre>
+            </Show>
+            <div class="mbtns" style="margin-top:8px">
+              <Show when={r().dataBase64}>
+                <button class="abtn primary"
+                  onClick={() => downloadBytes(r().filename, base64ToBytes(r().dataBase64!))}>
+                  <i aria-hidden="true" class="ph ph-download-simple"></i>
+                  Download {r().filename} ({r().size} bytes)
+                </button>
+              </Show>
+              <Show when={r().text}>
+                <button class="abtn" onClick={() => copyWithFeedback(r().text!)}>
+                  <i aria-hidden="true" class="ph ph-copy"></i>Copy text
+                </button>
+              </Show>
+            </div>
+          </div>
         )}
       </Show>
       <div class="mbtns">
+        <Show when={props.onWebDelivery}>
+          <button class="abtn" onClick={props.onWebDelivery}>
+            <i aria-hidden="true" class="ph ph-globe"></i>Web delivery…
+          </button>
+        </Show>
         <button class="abtn" disabled={busy() || !valid()}
           onClick={() => void generate()}>
           {busy() ? "Generating…" : "Generate"}

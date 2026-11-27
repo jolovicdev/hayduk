@@ -11,6 +11,7 @@ import { copyWithFeedback } from "../clipboard";
 import { ageOf } from "./format";
 import { jobRows, type JobRow } from "./jobs";
 import { PayloadDialog } from "./PayloadDialog";
+import { WebDeliveryDialog } from "./WebDeliveryDialog";
 import type { ListenerState, SessionState } from "../protocol/types";
 import { errorMessage } from "../errors";
 import { listenerRows } from "./listeners";
@@ -19,6 +20,7 @@ export function ListenersView(props: { onInteract: (sid: string) => void; active
   const now = createNowSignal(10_000, () => props.active?.() ?? true);
   const [starting, setStarting] = createSignal(false);
   const [showGenerate, setShowGenerate] = createSignal(false);
+  const [showWebDelivery, setShowWebDelivery] = createSignal(false);
   const [payload, setPayload] = createSignal("");
   const [lhost, setLhost] = createSignal("");
   const [lport, setLport] = createSignal("4444");
@@ -39,7 +41,8 @@ export function ListenersView(props: { onInteract: (sid: string) => void; active
 
   const rows = createMemo(() => listenerRows(jobRows(jobs()), listeners()));
   const handlerSessions = createMemo(() => Object.values(sessions())
-    .filter((s): s is SessionState => !!s && (s.viaExploit ?? "").includes("multi/handler")));
+    .filter((s): s is SessionState => !!s &&
+      ((s.viaExploit ?? "").includes("multi/handler") || (s.viaExploit ?? "").includes("multi/script/web_delivery"))));
   const launchFor = (jobId: string) => listeners().find(l => l?.jobId === jobId);
   // a launch knows its payload but not its job's sessions; the payload is as
   // close to a link as the daemon's job and session records come
@@ -81,6 +84,9 @@ export function ListenersView(props: { onInteract: (sid: string) => void; active
   return (
     <>
       <div class="pane-bar end">
+        <button class="tbtn" onClick={() => setShowWebDelivery(true)}>
+          <i aria-hidden="true" class="ph ph-globe"></i>Web delivery
+        </button>
         <button class="tbtn" onClick={() => setShowGenerate(true)}>
           <i aria-hidden="true" class="ph ph-download-simple"></i>Generate payload
         </button>
@@ -183,7 +189,12 @@ export function ListenersView(props: { onInteract: (sid: string) => void; active
       </Show>
 
       <Show when={showGenerate()}>
-        <PayloadDialog onClose={() => setShowGenerate(false)} />
+        <PayloadDialog onClose={() => setShowGenerate(false)}
+          onWebDelivery={() => { setShowGenerate(false); setShowWebDelivery(true); }} />
+      </Show>
+
+      <Show when={showWebDelivery()}>
+        <WebDeliveryDialog onClose={() => setShowWebDelivery(false)} />
       </Show>
     </>
   );

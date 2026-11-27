@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -154,15 +154,25 @@ func (e *Engine) sessionRun(ctx context.Context, p protocol.SessionRunParams) (j
 	return mustJSON(protocol.SessionRunPayload{Output: cleanOutput(out)}), nil
 }
 
-// Payload generation writes to a file on the msfrpcd host for every
-// format: over RPC a payload printed to the console never reaches the
-// console reader, so claiming a browser download would be a lie. The
-// operator copies the file from the reported path.
+// Payload generation runs directly through msfrpcd's module.execute on the
+// payload module, which returns the generated artifact bytes in the RPC reply.
+// That lets browsers download generated payloads straight to the operator's
+// machine even when msfrpcd runs on a remote host.
 var payloadFormats = map[string]bool{
 	"base64": true, "hex": true, "c": true, "csharp": true, "java": true,
 	"python": true, "powershell": true, "ps1": true, "ruby": true, "sh": true,
 	"exe": true, "elf": true, "macho": true, "msi": true,
 	"apk": true, "war": true, "jar": true, "raw": true,
+}
+
+var textPayloadFormats = map[string]bool{
+	"base64": true, "hex": true, "c": true, "csharp": true, "java": true,
+	"python": true, "powershell": true, "ps1": true, "ruby": true, "sh": true,
+}
+
+var payloadFormatExt = map[string]string{
+	"powershell": "ps1", "python": "py", "ruby": "rb", "csharp": "cs",
+	"raw": "bin", "base64": "b64", "hex": "hex",
 }
 
 func (e *Engine) payloadGenerate(ctx context.Context, rpc gomsf.RPCCaller, p protocol.PayloadGenerateParams) (json.RawMessage, *protocol.ErrorBody) {
@@ -172,33 +182,47 @@ func (e *Engine) payloadGenerate(ctx context.Context, rpc gomsf.RPCCaller, p pro
 	if !payloadFormats[p.Format] {
 		return nil, badParam("unsupported format: " + p.Format)
 	}
-	e.toolsMu.Lock()
-	defer e.toolsMu.Unlock()
-	normalizeNumericOptions(p.Options)
-	lines := []string{"use payload/" + p.Payload}
-	keys := make([]string, 0, len(p.Options))
-	for k := range p.Options {
-		keys = append(keys, k)
+	if strings.ContainsAny(p.Payload, " \t\r\n") {
+		return nil, badParam("invalid payload name")
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
+	normalizeNumericOptions(p.Options)
+	opts := make(map[string]interface{}, len(p.Options)+3)
+	for k, v := range p.Options {
 		if !optionNameRe.MatchString(k) {
 			return nil, badParam("invalid payload option name: " + k)
 		}
-		lines = append(lines, "set "+k+" "+consoleOptionArg(p.Options[k]))
+		if s, ok := v.(string); ok && strings.ContainsAny(s, "\r\n") {
+			return nil, badParam(errConsoleLineBreak.Error())
+		}
+		opts[k] = v
 	}
-	saved := payloadOutputPath(payloadBase(p.Payload), p.Format)
-	lines = append(lines, "generate -f "+p.Format+" -o "+saved)
-	out, err := e.utilityConsole(ctx, rpc, lines, nil)
+	opts["Format"] = p.Format
+	if enc := strings.TrimSpace(p.Encoder); enc != "" {
+		if strings.ContainsAny(enc, " \t\r\n") {
+			return nil, badParam("invalid encoder name")
+		}
+		opts["Encoder"] = enc
+	}
+	if p.Iterations > 0 {
+		opts["Iterations"] = p.Iterations
+	}
+	res, err := gomsf.NewModuleManager(rpc).Execute(ctx, gomsf.PayloadModuleType, p.Payload, opts)
 	if err != nil {
 		return nil, mapErr(err)
 	}
-	if !strings.Contains(out, "Writing") || !strings.Contains(out, saved) {
-		return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "payload generation produced no file"}
+	if res == nil || len(res.Payload) == 0 {
+		return nil, &protocol.ErrorBody{Code: protocol.CodeInternal, Message: "payload generation produced empty output"}
 	}
-	return mustJSON(protocol.PayloadGeneratePayload{
-		Filename: strings.TrimPrefix(saved, "/tmp/"), SavedPath: saved,
-	}), nil
+	rawBytes := []byte(res.Payload)
+	out := protocol.PayloadGeneratePayload{
+		Filename:   payloadFilename(p.Payload, p.Format),
+		DataBase64: base64.StdEncoding.EncodeToString(rawBytes),
+		Size:       len(rawBytes),
+	}
+	if textPayloadFormats[p.Format] {
+		out.Text = res.Payload
+	}
+	return mustJSON(out), nil
 }
 
 func payloadBase(payload string) string {
@@ -208,17 +232,12 @@ func payloadBase(payload string) string {
 	return payload
 }
 
-// The generated file lands on the msfrpcd host, and this process cannot
-// create a directory over there, so the name itself has to carry the
-// uniqueness. A predictable path in a world-writable directory can be
-// pre-created as a symlink by another local user, and `generate -o` follows
-// it, writing the payload wherever they pointed it.
-func payloadOutputPath(base, format string) string {
-	var b [6]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("/tmp/hayduk-%s-%d.%s", base, time.Now().UnixNano(), format)
+func payloadFilename(payload, format string) string {
+	ext := format
+	if mapped, ok := payloadFormatExt[format]; ok {
+		ext = mapped
 	}
-	return fmt.Sprintf("/tmp/hayduk-%s-%x.%s", base, b, format)
+	return fmt.Sprintf("%s.%s", payloadBase(payload), ext)
 }
 
 // services -d selects on host and port alone. Metasploit's services command

@@ -635,6 +635,11 @@ export const MethodSessionPost = "session.post";
  */
 export const MethodSessionPostModules = "session.post_modules";
 /**
+ * MethodWebDelivery starts exploit/multi/script/web_delivery and returns
+ * the one-liner the module prints for the chosen target.
+ */
+export const MethodWebDelivery = "web.delivery";
+/**
  * Command methods.
  */
 export const MethodHostAdd = "db.host_add";
@@ -864,6 +869,26 @@ export interface SessionPostPayload {
 export interface SessionPostModulesPayload {
   modules: string[];
 }
+export interface WebDeliveryParams {
+  payload: string;
+  target: string;
+  lhost: string;
+  lport: number /* int */;
+  srvPort?: number /* int */;
+  /**
+   * SrvHost is the address the delivery server binds and prints in the
+   * one-liner; it defaults to Lhost. Containerized daemons need the two
+   * apart: the callback may ride a forwarded port while the web server
+   * must bind an address the target can actually dial.
+   */
+  srvHost?: string;
+}
+export interface WebDeliveryPayload {
+  jobId: number /* int */;
+  url: string;
+  command: string;
+  target: string;
+}
 export interface SessionDetachParams {
   sid?: string;
 }
@@ -871,9 +896,14 @@ export interface PayloadGenerateParams {
   payload: string;
   options: { [key: string]: any};
   format: string;
+  encoder?: string;
+  iterations?: number /* int */;
 }
 export interface PayloadGeneratePayload {
   filename: string;
+  dataBase64?: string;
+  size?: number /* int */;
+  text?: string;
   content?: string;
   savedPath?: string;
 }

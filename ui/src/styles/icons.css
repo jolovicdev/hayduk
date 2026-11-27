@@ -39,6 +39,8 @@
 .ph-fill.ph-apple-logo:before { content: "\e516"; }
 .ph.ph-archive:before { content: "\e00c"; }
 .ph-fill.ph-archive:before { content: "\e00c"; }
+.ph.ph-arrow-up:before { content: "\e08e"; }
+.ph-fill.ph-arrow-up:before { content: "\e08e"; }
 .ph.ph-arrows-clockwise:before { content: "\e094"; }
 .ph-fill.ph-arrows-clockwise:before { content: "\e094"; }
 .ph.ph-arrows-out-simple:before { content: "\e0a6"; }
@@ -79,6 +81,8 @@
 .ph-fill.ph-folder-open:before { content: "\e256"; }
 .ph.ph-gear:before { content: "\e270"; }
 .ph-fill.ph-gear:before { content: "\e270"; }
+.ph.ph-globe:before { content: "\e288"; }
+.ph-fill.ph-globe:before { content: "\e288"; }
 .ph.ph-graph:before { content: "\eb58"; }
 .ph-fill.ph-graph:before { content: "\eb58"; }
 .ph.ph-hard-drives:before { content: "\e2a0"; }
@@ -95,6 +99,8 @@
 .ph-fill.ph-lightning:before { content: "\e2de"; }
 .ph.ph-linux-logo:before { content: "\eb02"; }
 .ph-fill.ph-linux-logo:before { content: "\eb02"; }
+.ph.ph-list:before { content: "\e2f0"; }
+.ph-fill.ph-list:before { content: "\e2f0"; }
 .ph.ph-magnifying-glass:before { content: "\e30c"; }
 .ph-fill.ph-magnifying-glass:before { content: "\e30c"; }
 .ph.ph-minus:before { content: "\e32a"; }
@@ -131,6 +137,8 @@
 .ph-fill.ph-terminal-window:before { content: "\eae8"; }
 .ph.ph-tree:before { content: "\e6da"; }
 .ph-fill.ph-tree:before { content: "\e6da"; }
+.ph.ph-upload-simple:before { content: "\e4c0"; }
+.ph-fill.ph-upload-simple:before { content: "\e4c0"; }
 .ph.ph-user:before { content: "\e4c2"; }
 .ph-fill.ph-user:before { content: "\e4c2"; }
 .ph.ph-users-three:before { content: "\e68e"; }
